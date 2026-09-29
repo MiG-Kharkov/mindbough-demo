@@ -213,6 +213,22 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 .tabs{display:flex;gap:4px;margin:-4px 0 12px;border-bottom:1px solid var(--line)}
 .tab{border:0;background:none;padding:8px 12px;font:inherit;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
 .tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+/* compare branches */
+.cmp-card{border-left-color:var(--accent)}
+.cmp-card.chosen{border-left-width:5px}
+.cmp-name{font-weight:700;overflow-wrap:anywhere}
+.cmp-tag{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:0 7px;margin-left:6px;border:1px solid var(--accent);color:var(--accent);vertical-align:1px}
+.cmp-tag.on{background:var(--accent);color:var(--accent-ink)}
+.cmp-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table.cmp{border-collapse:separate;border-spacing:0;font-size:13.5px;line-height:1.4;min-width:100%}
+table.cmp th,table.cmp td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top;min-width:140px;max-width:220px;overflow-wrap:anywhere}
+table.cmp th:first-child{position:sticky;left:0;z-index:1;background:var(--panel);min-width:96px;max-width:120px;color:var(--muted);font-weight:600;box-shadow:1px 0 0 var(--line)}
+table.cmp thead th{vertical-align:bottom}
+table.cmp td.pick,table.cmp th.pick{background:var(--accent-soft)}
+table.cmp tr.cmp-sum td{font-weight:600}
+table.cmp tr.cmp-act td,table.cmp tr.cmp-act th{border-bottom:0}
+.cmp-go{border:0;background:none;padding:0;font:inherit;font-weight:700;color:var(--accent);text-align:left}
+.cmp-pick{font-size:14px;margin:12px 0 0}
 /* branch into options */
 .op-row{display:flex;gap:10px;align-items:flex-start;padding:10px 2px;border-bottom:1px solid var(--line)}
 .op-row input[type=checkbox]{width:18px;height:18px;margin-top:9px;accent-color:var(--accent);flex:none}
@@ -375,6 +391,8 @@ button.decision:not(:disabled):hover{box-shadow:0 0 0 3px var(--flag-soft)}
 .btn.primary:hover{filter:brightness(1.07)}
 .tag.e{opacity:.75;font-weight:500;font-style:italic}
 .kid.edit{border-style:dashed}
+.kid.cmp{display:inline-flex;align-items:center;gap:4px;background:none;font-weight:600}
+.kid.cmp .i{width:13px;height:13px}
 .model-chip{border:1px solid var(--line);background:none;color:var(--muted);border-radius:6px;padding:0 6px;font-size:11px;font-weight:500;font-family:"IBM Plex Mono",ui-monospace,monospace;display:inline-flex;align-items:center;gap:4px;line-height:18px}
 button.model-chip:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 button.model-chip svg.i{width:11px;height:11px}
@@ -520,7 +538,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main b806d90'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main e295be9'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -542,6 +560,7 @@ const ICON = {
   trash: '<svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   send: '<svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   stop: '<svg class="i" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+  compare: '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="14" y="4" width="7" height="16" rx="1.5"/></svg>',
   options: '<svg class="i" viewBox="0 0 24 24"><path d="M12 21v-8M12 13 6 7M12 13l6-6M12 13V5.5"/><circle cx="5" cy="5.6" r="1.8"/><circle cx="19" cy="5.6" r="1.8"/><circle cx="12" cy="3.6" r="1.8"/></svg>',
   bough: '<svg class="i" viewBox="0 0 24 24"><path d="M6.3 18.6C7.6 13.8 10.8 10.3 16.2 7.9M9.4 12.9C8.6 10.1 9.1 7.4 11 5.2"/><g fill="currentColor" stroke="none"><circle cx="5.9" cy="19.3" r="2.2"/><circle cx="17.6" cy="7.3" r="2.6"/><circle cx="11.8" cy="4.4" r="2.6"/></g></svg>',
   bookmark: '<svg class="i" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
@@ -875,7 +894,8 @@ function msgHTML(c, m) {
     ...edits.map(k => ({ k, t: `✎ ${branchName(k)}`, cls: 'kid edit', title: 'Edited version of this message' })),
     ...kids.map(k => ({ k, t: `↳ ${branchName(k)}`, cls: 'kid', title: 'Branch that continues from here' })),
   ].sort((a, b) => a.k.created - b.k.created);
-  const kidsHTML = badges.length ? `<div class="kids">${badges.map(x => `<button class="${x.cls}" data-act="goto" data-bid="${x.k.id}" title="${x.title}">${esc(x.t)}</button>`).join('')}</div>` : '';
+  const cmp = kids.length > 1 ? `<button class="kid cmp" data-act="compare" title="Compare these branches side by side, then choose one">${ICON.compare}Compare ${kids.length}</button>` : '';
+  const kidsHTML = badges.length ? `<div class="kids">${badges.map(x => `<button class="${x.cls}" data-act="goto" data-bid="${x.k.id}" title="${x.title}">${esc(x.t)}</button>`).join('')}${cmp}</div>` : '';
   let dec = '';
   if (m.flagged) {
     const d = m.decision || {};
@@ -1137,6 +1157,7 @@ $('#canvas').addEventListener('click', async e => {
   if (act === 'prompt') { openPromptView(c, m); return; }
   if (act === 'remember') { rememberFrom(c, m); return; }
   if (act === 'options') { openOptions(c, m); return; }
+  if (act === 'compare') { openCompare(c, m); return; }
   if (act === 'delmsg') { removeMessages(c, new Set([m.id])); return; }
   if (act === 'regen-menu') { openModelMenu(btn, c, m, 'regen'); return; }
   if (act === 'edit') { startEdit(c, m); return; }
@@ -1540,6 +1561,138 @@ async function createOptionBranches() {
   const stopped = fanOut.cancel; fanOut = null;
   if (db.current === c.id && c.branches[made[0]]) goTo(made[0], 'top');
   toast(stopped ? `Stopped: ${made.length - done} branch${made.length - done === 1 ? '' : 'es'} left unanswered` : `${made.length} branches answered`);
+}
+
+/* ---------------- compare branches ---------------- */
+// The branches that continue from a message (edited versions of it are not alternatives to compare)
+function compareKids(c, m) {
+  return Object.values(c.branches).filter(b => b.forkMsgId === m.id && !(b.editOf && c.messages[b.editOf])).sort((a, b) => a.created - b.created);
+}
+// Changes when a compared branch gets, loses or changes a message, so a saved comparison can offer Refresh
+const compareSig = (c, kids) => kids.map(b => { const l = c.messages[b.msgIds[b.msgIds.length - 1]]; return `${b.id}:${b.msgIds.length}:${l ? l.ts : 0}:${l ? (l.text || '').length : 0}`; }).join('|');
+const branchMsgs = (c, b) => b.msgIds.map(id => c.messages[id]).filter(x => x && !x.hidden && !x.error && x.text);
+// What a branch amounts to, without a model: its decisions, else the first sentence of its last answer
+function branchGist(c, b) {
+  const msgs = branchMsgs(c, b), decs = msgs.filter(x => x.flagged && x.decision && x.decision.summary);
+  if (decs.length) return decs.slice(-2).map(x => `⚑ ${x.decision.summary}`).join(' ');
+  const last = [...msgs].reverse().find(x => x.role === 'model');
+  return last ? sentenceOf(last.text.slice(0, 1200), 180) : '';
+}
+function branchDigest(c, b) {
+  const t = branchMsgs(c, b).map(x => `${x.role === 'user' ? 'User' : 'Assistant'}: ${x.text}${x.flagged && x.decision && x.decision.summary ? `\n[Decision: ${x.decision.summary}]` : ''}`).join('\n\n');
+  return t.length > 6000 ? `${t.slice(0, 1500)}\n…\n${t.slice(-4500)}` : t;
+}
+let cmpView = null; // { cid, mid, loading, error }
+function openCompare(c, m) {
+  cmpView = { cid: c.id, mid: m.id, loading: false, error: '' };
+  openSheet({ title: `Compare ${compareKids(c, m).length} branches`, compare: true, render: renderCompare, onClick: compareClick });
+}
+function renderCompareIfOpen() { if (sheetView && sheetView.compare) $('#sheetDyn').innerHTML = renderCompare(); }
+function renderCompare() {
+  const c = db.convos[cmpView.cid], m = c && c.messages[cmpView.mid];
+  if (!m) return '';
+  const kids = compareKids(c, m), cmp = m.compare || {}, hasKey = !!keyInput.value.trim();
+  const byId = Object.fromEntries(kids.map(b => [b.id, b]));
+  const cols = (cmp.cols || []).filter(x => byId[x.bid]);
+  const table = cmp.criteria && cols.length > 1;
+  const stale = table && cmp.sig !== compareSig(c, kids);
+  const tags = bid => `${table && cmp.pick && cmp.pick.bid === bid ? '<span class="cmp-tag">Suggested</span>' : ''}${cmp.chosen === bid ? '<span class="cmp-tag on">Chosen</span>' : ''}`;
+  const choose = bid => RO ? '' : `<button class="btn" data-cmp="choose" data-bid="${bid}">Choose</button>`;
+  let html = `<p class="pv-note">Branches that continue from “${esc(snippetOf(m.text, 90))}”</p>`;
+  if (table) {
+    const pk = x => cmp.pick && cmp.pick.bid === x.bid ? ' class="pick"' : '';
+    html += `<div class="cmp-wrap"><table class="cmp"><thead><tr><th></th>${cols.map(x => `<th${pk(x)}><button class="cmp-go" data-cmp="goto" data-bid="${x.bid}">${esc(branchName(byId[x.bid], c))}</button>${tags(x.bid)}</th>`).join('')}</tr></thead><tbody>
+      ${cmp.criteria.map((cr, i) => `<tr><th>${esc(cr)}</th>${cols.map(x => `<td${pk(x)}>${esc(x.cells[i] || '')}</td>`).join('')}</tr>`).join('')}
+      <tr class="cmp-sum"><th>In short</th>${cols.map(x => `<td${pk(x)}>${esc(x.summary || '')}</td>`).join('')}</tr>
+      ${RO ? '' : `<tr class="cmp-act"><th></th>${cols.map(x => `<td${pk(x)}>${choose(x.bid)}</td>`).join('')}</tr>`}</tbody></table></div>
+      ${cmp.pick && byId[cmp.pick.bid] ? `<p class="cmp-pick"><b>${esc(cmp.model)} suggests ${esc(branchName(byId[cmp.pick.bid], c))}</b>${cmp.pick.why ? `: ${esc(cmp.pick.why)}` : ''} It is only a suggestion: you choose.</p>` : ''}
+      <p class="set-hint${stale ? ' warn' : ''}">${stale ? 'The branches have changed since this comparison. ' : ''}Compared ${esc(shortDate(cmp.at))} by ${esc(cmp.model)}.</p>`;
+  } else {
+    html += kids.map(b => {
+      const n = b.msgIds.length, d = branchMsgs(c, b).filter(x => x.flagged).length, gist = branchGist(c, b);
+      return `<div class="dp-card cmp-card${cmp.chosen === b.id ? ' chosen' : ''}"><div class="cmp-name">${esc(branchName(b, c))}${tags(b.id)}</div>
+        <div class="dp-meta">${n} message${n === 1 ? '' : 's'}${d ? ` · ${d} decision${d === 1 ? '' : 's'}` : ''}</div>
+        <div class="dp-text">${gist ? esc(gist) : '<i>Not answered yet</i>'}</div>
+        <div class="dp-actions"><button class="btn" data-cmp="goto" data-bid="${b.id}">Go to</button>${choose(b.id)}</div></div>`;
+    }).join('');
+  }
+  if (cmpView.loading) html += `<p class="pv-empty">Comparing ${kids.length} branches…</p>`;
+  if (cmpView.error) html += `<p class="set-hint warn">${esc(cmpView.error)}</p>`;
+  if (!RO && !cmpView.loading) html += `<div class="pv-actions"><span class="set-hint">${hasKey ? `One request with ${esc(cheapModel())}` : 'Needs an API key'}</span>
+    <button class="btn${!table || stale ? ' primary' : ''}" data-cmp="ai"${hasKey ? '' : ' disabled'}>${table ? 'Refresh' : 'Compare with AI'}</button></div>`;
+  return html;
+}
+function compareClick(e) {
+  const b = e.target.closest('[data-cmp]');
+  if (!b || !cmpView) return;
+  const c = db.convos[cmpView.cid], m = c && c.messages[cmpView.mid];
+  if (!m) return;
+  if (b.dataset.cmp === 'goto') { closeSheet(); goTo(b.dataset.bid, 'top'); }
+  if (b.dataset.cmp === 'ai') compareWithAI(c, m);
+  if (b.dataset.cmp === 'choose') chooseBranch(c, m, b.dataset.bid);
+}
+async function compareWithAI(c, m) {
+  const v = cmpView, kids = compareKids(c, m);
+  if (kids.length < 2 || v.loading) return;
+  const b = branchOf(c, m.id);
+  const q = m.role === 'model' && b ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
+  const prompt = 'A user explored alternatives in separate branches of a conversation. Compare them to help the user choose.\n'
+    + '- Pick 3 to 5 criteria that matter most for this choice.\n'
+    + '- For each option, write one short cell per criterion (at most 12 words, in the order of the criteria) and a one-sentence summary.\n'
+    + '- Suggest the best pick, with one sentence on why. If it depends, pick the most sensible default and say what it depends on.\n'
+    + '- Refer to options by their number. Use the language of the conversation.\n\n'
+    + `Where the branches start:\n${q ? `User: ${q.text.slice(0, 1500)}\n\n` : ''}${m.role === 'user' ? 'User' : 'Assistant'}: ${(m.text || '').slice(0, 3000)}\n\n`
+    + kids.map((k, i) => `=== Option ${i + 1}: ${branchName(k, c)} ===\n${branchDigest(c, k) || '(not answered yet)'}`).join('\n\n');
+  const schema = { type: 'OBJECT', required: ['criteria', 'options', 'pick'], properties: {
+    criteria: { type: 'ARRAY', items: { type: 'STRING' } },
+    options: { type: 'ARRAY', items: { type: 'OBJECT', required: ['option', 'cells', 'summary'], properties: { option: { type: 'INTEGER' }, cells: { type: 'ARRAY', items: { type: 'STRING' } }, summary: { type: 'STRING' } } } },
+    pick: { type: 'OBJECT', required: ['option', 'why'], properties: { option: { type: 'INTEGER' }, why: { type: 'STRING' } } } } };
+  v.loading = true; v.error = ''; renderCompareIfOpen();
+  try {
+    const { data, model } = await helperJSON(prompt, schema);
+    const criteria = (Array.isArray(data.criteria) ? data.criteria : []).map(x => clean(x, 60)).filter(Boolean).slice(0, 5);
+    if (!criteria.length) throw new Error('no criteria in the reply');
+    const opts = Array.isArray(data.options) ? data.options : [];
+    const cols = kids.map((k, i) => {
+      const o = opts.find(x => x && +x.option === i + 1) || opts[i] || {};
+      return { bid: k.id, cells: criteria.map((_, j) => clean(Array.isArray(o.cells) ? o.cells[j] : '', 140)), summary: clean(o.summary, 240) };
+    });
+    const pi = data.pick ? +data.pick.option : 0;
+    const pick = pi >= 1 && pi <= kids.length ? { bid: kids[pi - 1].id, why: clean(data.pick.why, 240) } : null;
+    m.compare = { at: Date.now(), model, criteria, cols, ...(pick ? { pick } : {}), sig: compareSig(c, kids), ...(m.compare && m.compare.chosen ? { chosen: m.compare.chosen } : {}) };
+    save();
+  } catch (err) { v.error = `Couldn’t compare (${err.message}). Try again, or choose from the list.`; }
+  v.loading = false;
+  if (cmpView === v) renderCompareIfOpen();
+}
+// Choosing turns the branch's last answer into a decision ("Chose X over Y: why") and folds the other branches
+function chooseBranch(c, m, bid) {
+  const win = c.branches[bid]; if (!win) return;
+  const others = compareKids(c, m).filter(b => b.id !== bid);
+  const msgs = branchMsgs(c, win), target = [...msgs].reverse().find(x => x.role === 'model') || msgs[msgs.length - 1];
+  if (!target) { toast('This branch has nothing to choose yet'); return; }
+  const cmp = m.compare || {}, col = (cmp.cols || []).find(x => x.bid === bid);
+  const why = cmp.pick && cmp.pick.bid === bid && cmp.pick.why ? cmp.pick.why : col && col.summary ? col.summary : '';
+  const names = others.map(b => branchName(b, c));
+  const over = names.length > 3 ? ` over ${names.length} other options` : names.length ? ` over ${names.join(', ')}` : '';
+  const undo = { flagged: !!target.flagged, decision: target.decision ? JSON.parse(JSON.stringify(target.decision)) : null, folds: others.concat(win).map(b => [b, !!b.collapsed]), chosen: cmp.chosen };
+  target.flagged = true;
+  setDecision(target, clean(`Chose ${branchName(win, c)}${over}${why ? `: ${why}` : '.'}`, 300));
+  others.forEach(b => { b.collapsed = true; });
+  win.collapsed = false;
+  m.compare = { ...cmp, chosen: bid };
+  c.updated = Date.now(); save();
+  cmpView = null; closeSheet();
+  renderCanvas(); renderSidebar(); renderDecCount();
+  goToMessage(target.id);
+  toast(`Chose ${branchName(win, c)} · the others are folded`, { label: 'Undo', fn: () => {
+    target.flagged = undo.flagged;
+    if (undo.decision) target.decision = undo.decision; else delete target.decision;
+    undo.folds.forEach(([b, was]) => { b.collapsed = was; });
+    if (undo.chosen) m.compare.chosen = undo.chosen; else delete m.compare.chosen;
+    c.updated = Date.now(); save();
+    renderCanvas(); renderSidebar(); renderDecCount();
+  } });
 }
 
 /* ---------------- branch names ---------------- */
