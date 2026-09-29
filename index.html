@@ -520,7 +520,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main 80c2b25'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main b806d90'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -645,7 +645,12 @@ function newConvo() {
 }
 
 const defaultBranchName = b => b.n === 0 ? 'Main branch' : `Branch ${b.n}`;
-const branchName = b => (b.name && b.name.trim()) || defaultBranchName(b);
+// An unnamed branch is called after its first message until it gets a name (from the model, F-29, or from you)
+const autoBranchName = (b, c = cur()) => {
+  const first = b.parentId && c && c.branches[b.id] === b && c.messages[b.msgIds[0]];
+  return (first && first.text && sentenceOf(first.text.slice(0, 300), 32)) || defaultBranchName(b);
+};
+const branchName = (b, c) => (b.name && b.name.trim()) || autoBranchName(b, c);
 function depthOf(c, bid) { let d = 0, b = c.branches[bid]; while (b && b.parentId) { d++; b = c.branches[b.parentId]; } return d; }
 function childrenOf(c, bid) {
   const p = c.branches[bid];
@@ -1157,7 +1162,7 @@ function inlineRename(b, targetEl, small) {
   const input = document.createElement('input');
   input.className = 'name-input' + (small ? ' small' : '');
   input.value = branchName(b);
-  input.placeholder = defaultBranchName(b);
+  input.placeholder = autoBranchName(b);
   input.maxLength = 60;
   input.setAttribute('aria-label', 'Branch name');
   targetEl.replaceWith(input);
@@ -1167,7 +1172,7 @@ function inlineRename(b, targetEl, small) {
     if (done) return; done = true;
     if (commit) {
       const v = input.value.trim();
-      if (!v || v === defaultBranchName(b)) delete b.name; else b.name = v;
+      if (!v || v === autoBranchName(b)) delete b.name; else b.name = v;
       c.updated = Date.now();
       save();
     }
@@ -1537,6 +1542,34 @@ async function createOptionBranches() {
   toast(stopped ? `Stopped: ${made.length - done} branch${made.length - done === 1 ? '' : 'es'} left unanswered` : `${made.length} branches answered`);
 }
 
+/* ---------------- branch names ---------------- */
+// After a branch's first answer, the cheapest model titles it, unless it has a name already
+async function nameBranch(c, am) {
+  const b = c.branches[am.branchId];
+  if (!b || !b.parentId || b.name || !keyInput.value.trim()) return;
+  if (b.msgIds.map(id => c.messages[id]).find(x => x && x.role === 'model') !== am) return;
+  const q = historyFor(c, b.id, am.id).reverse().find(x => x.role === 'user');
+  const prompt = 'Give this branch of a conversation a short title of 2 to 5 words, in the language of the conversation, like a heading. No quotes and no final period.'
+    + `\n\nQuestion:\n${(q ? q.text : '').slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
+  try {
+    const { data } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } });
+    const name = clean(data && data.title, 60).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim();
+    if (!name || b.name || !c.branches[b.id] || !db.convos[c.id]) return;
+    b.name = name;
+    save();
+    if (db.current === c.id) paintBranchName(c, b);
+  } catch (err) {} // the name taken from the first message stays
+}
+// Update the name where it is shown without re-rendering the canvas, which could be holding an edit in progress
+function paintBranchName(c, b) {
+  const name = branchName(b, c), head = colEls[b.id] && colEls[b.id].querySelector('.col-head .name');
+  if (head && head.firstChild && head.firstChild.nodeType === 3) head.firstChild.textContent = name;
+  document.querySelectorAll(`#canvas .kid[data-bid="${b.id}"]`).forEach(k => { k.textContent = `${k.classList.contains('edit') ? '✎' : '↳'} ${name}`; });
+  renderChrome();
+  if (!document.activeElement || !document.activeElement.classList.contains('name-input')) renderOutline();
+  scheduleLayout();
+}
+
 /* ---------------- path selection ---------------- */
 let sel = null; // { cid, anchor, ids:Set }
 const branchOf = (c, mid) => Object.values(c.branches).find(b => b.msgIds.includes(mid));
@@ -1862,7 +1895,7 @@ function requestRecord(req, model) {
 
 // Streams a Gemini answer into message `am`. `backup` = previous version (in-place regeneration)
 async function streamInto(c, am, req, key, picked, backup) {
-  let model = am.model;
+  let model = am.model, done = false;
   if (!req.turns.length) {
     am.streaming = false;
     const msg = 'All your messages on this path are excluded, so Gemini would receive nothing. Include at least one in history again.';
@@ -1935,6 +1968,7 @@ async function streamInto(c, am, req, key, picked, backup) {
       else if (finish && finish !== 'STOP') am.error = `Empty response (reason: ${finish}).`;
       else am.error = 'Gemini returned an empty response.';
     }
+    done = !am.error;
   } catch (err) {
     if (err.name === 'AbortError') { if (!am.text && !backup) am.text = '_(stopped)_'; }
     else {
@@ -1960,6 +1994,7 @@ async function streamInto(c, am, req, key, picked, backup) {
     renderSidebar();
     renderOutline();
   }
+  if (done) nameBranch(c, am);
 }
 
 /* ---------------- sheet: Settings and other panels ---------------- */
