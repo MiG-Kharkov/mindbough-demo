@@ -507,7 +507,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main 34a85bb'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 995aaf0'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -529,6 +529,7 @@ const ICON = {
   trash: '<svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   send: '<svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   stop: '<svg class="i" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+  bough: '<svg class="i" viewBox="0 0 24 24"><path d="M6.3 18.6C7.6 13.8 10.8 10.3 16.2 7.9M9.4 12.9C8.6 10.1 9.1 7.4 11 5.2"/><g fill="currentColor" stroke="none"><circle cx="5.9" cy="19.3" r="2.2"/><circle cx="17.6" cy="7.3" r="2.6"/><circle cx="11.8" cy="4.4" r="2.6"/></g></svg>',
   bookmark: '<svg class="i" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
   layers: '<svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
   chevRight: '<svg class="i" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
@@ -709,12 +710,15 @@ function renderSidebar() {
       <div class="t"><b>${esc(c.title)}</b><small>${when}, ${nb} branch${nb === 1 ? '' : 'es'}</small></div>
       <button class="rowbtn" data-share="${id}" title="Share as a read-only page (.html)" aria-label="Share read-only">${ICON.share}</button>
       <button class="rowbtn" data-json="${id}" title="Download as .json" aria-label="Download JSON">${ICON.download}</button>
+      <button class="rowbtn" data-ts="${id}" title="Export as a Thinking State (.zip) for agents and tools" aria-label="Export as a Thinking State">${ICON.bough}</button>
       <button class="del" data-del="${id}" aria-label="Delete conversation">${ICON.trash}</button></div>`;
   }).join('');
 }
 $('#convList').addEventListener('click', e => {
   const sh = e.target.closest('[data-share]');
   if (sh) { exportReadOnly(sh.dataset.share); return; }
+  const tsb = e.target.closest('[data-ts]');
+  if (tsb) { exportThinkingState(tsb.dataset.ts); return; }
   const js = e.target.closest('[data-json]');
   if (js) { exportJSON([js.dataset.json]); return; }
   const del = e.target.closest('[data-del]');
@@ -1992,7 +1996,7 @@ function toast(t, action) {
 
 /* ---------------- sharing: export / import ---------------- */
 function download(name, text, type) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+  const url = URL.createObjectURL(text instanceof Blob ? text : new Blob([text], { type }));
   const a = document.createElement('a');
   a.href = url; a.download = name;
   document.body.appendChild(a); a.click();
@@ -2017,6 +2021,97 @@ function exportJSON(ids, withMemory) {
   const name = ids.length === 1 ? `${slug(db.convos[ids[0]].title)}.json` : `gemini-tree-chat-${stamp()}.json`;
   download(name, JSON.stringify(data, null, 2), 'application/json');
   toast(ids.length === 1 ? 'Conversation exported' : `Exported ${ids.length} conversations`);
+}
+/* ---------------- export as a Thinking State (spec v0.1, an OKF profile) ---------------- */
+// Minimal ZIP writer, stored without compression: enough for a folder of small text files
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(bytes) { let c = 0xFFFFFFFF; for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipFiles(files) {
+  const enc = new TextEncoder(), parts = [], central = [], d = new Date();
+  const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), data = enc.encode(f.text), crc = crc32(data);
+    const head = (sig, size) => { const v = new DataView(new ArrayBuffer(size)); v.setUint32(0, sig, true); return v; };
+    const loc = head(0x04034b50, 30);
+    [[4, 20], [6, 0x0800], [8, 0], [10, time], [12, date], [26, name.length], [28, 0]].forEach(([o, x]) => loc.setUint16(o, x, true)); // 0x0800: UTF-8 names
+    [[14, crc], [18, data.length], [22, data.length]].forEach(([o, x]) => loc.setUint32(o, x, true));
+    parts.push(loc.buffer, name, data);
+    const cen = head(0x02014b50, 46);
+    [[4, 20], [6, 20], [8, 0x0800], [10, 0], [12, time], [14, date], [28, name.length], [30, 0], [32, 0], [34, 0], [36, 0]].forEach(([o, x]) => cen.setUint16(o, x, true));
+    [[16, crc], [20, data.length], [24, data.length], [38, 0], [42, offset]].forEach(([o, x]) => cen.setUint32(o, x, true));
+    central.push(cen.buffer, name);
+    offset += 30 + name.length + data.length;
+  }
+  const size = central.reduce((n, b) => n + b.byteLength, 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, size, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end.buffer], { type: 'application/zip' });
+}
+const yq = v => JSON.stringify(String(v)); // a JSON string is a valid YAML double-quoted scalar
+const sentenceOf = (t, max) => { const x = firstSentence(plain(t || '')); return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x; };
+const snippetOf = (t, max) => { const x = plain(t || ''); return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x; };
+function nodeId(t, taken) {
+  const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz', day = new Date(t || Date.now()).toISOString().slice(0, 10).replace(/-/g, '');
+  let id;
+  do { const r = crypto.getRandomValues(new Uint8Array(6)); id = day + '-' + [...r].map(b => alphabet[b % 36]).join(''); } while (taken.has(id));
+  taken.add(id); return id;
+}
+function nodeDoc(n) {
+  const out = ['---', `type: ${n.type}`, `title: ${yq(n.title)}`, `description: ${yq(n.description)}`];
+  if (n.generated) out.push(`generated: { by: ${yq(n.generated.by)}, at: ${yq(n.generated.at)} }`);
+  if (n.sources) { out.push('sources:'); n.sources.forEach(x => out.push(`  - { resource: ${yq(x.resource)}, title: ${yq(x.title)} }`)); }
+  out.push('thinking:', `  status: ${n.status}`);
+  if (n.parent) out.push(`  parent: ${n.parent}`);
+  return out.concat('---', '', n.body || '').join('\n').trimEnd() + '\n';
+}
+// One conversation → a Thinking State bundle: a Thought (or the root Question) per branch, a Decision per flagged message,
+// the decisions as project memory, and the raw conversation in sessions/ (spec Appendix B)
+function thinkingStateFiles(c) {
+  const folder = slug(c.title), session = `sessions/${folder}.json`, at = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  const taken = new Set(), nodes = [], byBranch = {};
+  const who = m => m.role === 'user' ? '**You:**' : `**Gemini**${m.model ? ` (\`${m.model}\`)` : ''}:`;
+  const transcript = ids => ids.map(id => c.messages[id]).filter(Boolean).map(m => `${who(m)}${m.hidden ? ' _(excluded from history)_' : ''}\n\n${(m.text || m.error || '').trim()}`).join('\n\n');
+  for (const b of dfs(c)) {
+    const msgs = b.msgIds.map(id => c.messages[id]).filter(Boolean);
+    const first = msgs.find(m => m.role === 'user');
+    const own = msgs.find(m => m.node && m.node.id); // a branch that came from a Thinking State keeps its node id
+    const id = own ? own.node.id : nodeId(b.created, taken); taken.add(id);
+    byBranch[b.id] = id;
+    const isRoot = !b.parentId, eo = b.editOf && c.messages[b.editOf];
+    const title = isRoot ? c.title : (b.name && b.name.trim()) || (first ? sentenceOf(first.text, 80) : branchName(b));
+    nodes.push({ id, type: isRoot && first && /\?\s*$/.test(first.text.trim()) ? 'Question' : 'Thought', title: title.slice(0, 120),
+      description: eo ? `Edited version of: ${snippetOf(eo.text, 200)}` : first ? sentenceOf(first.text, 240) : 'An empty branch.',
+      status: 'open', parent: b.parentId ? byBranch[b.parentId] : null, sources: [{ resource: `/${session}#${b.id}`, title: 'Demo conversation' }],
+      body: msgs.length ? `## Conversation\n\n${transcript(b.msgIds)}` : '' });
+    for (const m of msgs.filter(x => x.flagged)) {
+      const summary = (m.decision && m.decision.summary) || sentenceOf(m.text, 240);
+      nodes.push({ id: m.node && m.node.id && m.node.id !== id ? m.node.id : nodeId(m.ts, taken), type: 'Decision', title: sentenceOf(summary, 120), description: summary, status: 'accepted', parent: id,
+        generated: m.role === 'model' && m.model ? { by: `mindbough-demo/${m.model}`, at: new Date(m.ts).toISOString().replace(/\.\d+Z$/, 'Z') } : null,
+        sources: [{ resource: `/${session}#${m.id}`, title: 'The flagged message' }], body: (m.text || '').trim() });
+    }
+  }
+  const root = nodes[0], decisions = nodes.filter(n => n.type === 'Decision');
+  const kids = {}; nodes.forEach(n => { if (n.parent) (kids[n.parent] = kids[n.parent] || []).push(n); });
+  const tree = []; const walk = (n, d) => { tree.push(`${'  '.repeat(d)}* [${n.title.replace(/[[\]]/g, '')}](${n.id}.md) - ${n.type} · ${n.status}: ${n.description}`); (kids[n.id] || []).forEach(k => walk(k, d + 1)); };
+  walk(root, 0);
+  const files = [
+    { name: 'README.md', text: `---\ntype: Thinking State\ntitle: ${yq(c.title)}\ndescription: ${yq('Exported from a Mindbough demo conversation.')}\nthinking:\n  profile: "0.1"\n  root: ${root.id}\ngenerated: { by: ${yq('mindbough-demo/' + APP_VERSION)}, at: ${yq(at)} }\n---\n\n# ${c.title}\n\nA Thinking State exported from the Mindbough demo on ${at.slice(0, 10)}. Start at the [thought tree](nodes/index.md): every branch of the conversation is a node, and every flagged message a decision.\n\nThe raw conversation is in \`${session}\`, which is git-ignored by default because conversations can hold private data.\n\nTo continue with an agent: \`python3 skills/mindbough/scripts/mb.py context ${folder} root\`.\n` },
+    { name: 'index.md', text: `---\nokf_version: "0.2"\n---\n\n# Thinking State\n\n* [${c.title.replace(/[[\]]/g, '')}](README.md) - Exported from a Mindbough demo conversation.\n* [Thought tree](nodes/index.md) - ${nodes.length} node${nodes.length === 1 ? '' : 's'}\n* [Project memory](memory/project.md) - the decisions of this conversation\n* [Log](log.md) - how the thinking changed, newest first\n` },
+    { name: 'nodes/index.md', text: `# Thought tree\n\n${tree.join('\n')}\n` },
+    { name: 'memory/project.md', text: `---\ntype: Memory\ntitle: Project memory\ndescription: ${yq('The decisions of this conversation; loaded into every context pack.')}\n---\n\n` + (decisions.length ? decisions.map(n => `- ${n.description} ([decision](/nodes/${n.id}.md))`).join('\n') : '<!-- No decisions yet: flag messages in the demo to add them. -->') + '\n' },
+    { name: 'log.md', text: `# Thinking log\n\n## ${at.slice(0, 10)}\n* **Creation**: Exported from the Mindbough demo conversation “${c.title}”.\n` },
+    { name: '.gitignore', text: '# raw interaction logs may hold private data\nsessions/\n.mindbough/\n' },
+    { name: session, text: JSON.stringify({ app: 'gemini-tree-chat', version: 1, exported: at, conversations: [cleanConvo(c)] }, null, 2) },
+    ...nodes.map(n => ({ name: `nodes/${n.id}.md`, text: nodeDoc(n) })),
+  ];
+  return { folder, files: files.map(f => ({ name: `${folder}/${f.name}`, text: f.text })) };
+}
+function exportThinkingState(id) {
+  const c = db.convos[id]; if (!c) return;
+  const { folder, files } = thinkingStateFiles(c);
+  download(`${folder}-thinking-state.zip`, zipFiles(files), 'application/zip');
+  toast('Thinking State downloaded (.zip)');
 }
 function exportReadOnly(id) {
   const c = cleanConvo(db.convos[id]);
