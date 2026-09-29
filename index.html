@@ -126,11 +126,12 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .side-tools{display:flex;gap:6px;margin:0 14px 12px}
 .side-tools button{flex:1;display:flex;gap:6px;align-items:center;justify-content:center;border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:7px 8px;font-size:13px}
 .side-tools button:hover{border-color:var(--accent);color:var(--accent)}
+.sample-link{display:block;margin:-4px 14px 12px;padding:4px 2px;border:0;background:none;color:var(--accent);font-size:13px;text-align:left;text-decoration:underline;text-underline-offset:3px}
 #roBanner{display:none;margin:4px 14px 14px;padding:12px;border-radius:12px;background:var(--panel);border:1px solid var(--line);font-size:13px;color:var(--muted)}
 #roBanner b{display:block;color:var(--ink);font-size:14px;margin-bottom:4px}
 #roBanner button{margin-top:10px;width:100%;display:flex;gap:6px;align-items:center;justify-content:center;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:9px;padding:8px;font-weight:600}
 body.readonly #roBanner{display:block}
-body.readonly #newChat,body.readonly .side-tools,body.readonly .conv .del,body.readonly .conv .rowbtn,
+body.readonly #newChat,body.readonly .side-tools,body.readonly .sample-link,body.readonly .conv .del,body.readonly .conv .rowbtn,
 body.readonly .keywrap,body.readonly #model,body.readonly .composer,body.readonly .side-foot .edit-only,
 body.readonly [data-act="delbranch"],body.readonly .actions .ib:not([data-act="copy"]):not([data-act="selpath"]),body.readonly #selBar .edit-only{display:none}
 .side-foot{padding:12px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);line-height:1.5}
@@ -339,6 +340,7 @@ button.model-chip svg.i{width:11px;height:11px}
       <button id="exportAllBtn" title="Download every conversation as one .json file"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Export all</button>
       <input type="file" id="importFile" accept=".json,.html,.htm,application/json,text/html" hidden>
     </div>
+    <button id="sampleBtn" class="sample-link" type="button">Try a sample conversation (no API key needed)</button>
     <div id="roBanner"><b>Shared conversation · read-only</b>You can explore every branch here. To continue it, download the .json and import it in the Mindbough demo.<button id="roDownload"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Download .json</button></div>
     <div id="convList"></div>
     <div class="side-foot">Drag the canvas or scroll with <kbd>Shift</kbd>. Drag a column’s right edge to resize. <kbd>Alt</kbd>+<kbd>←</kbd> goes to the parent branch, <kbd>Alt</kbd>+<kbd>→</kbd> to the first child.<div class="ver" id="ver"></div></div>
@@ -399,7 +401,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main f3c7d70'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 6655af1'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1599,6 +1601,14 @@ function adoptConvo(src) {
   db.order.unshift(c.id);
   return c.id;
 }
+function finishImport(added, failed, sources) {
+  if (added.length) {
+    db.current = added[added.length - 1];
+    save(); renderAll(false);
+    $('#sidebar').classList.remove('open');
+    toast(`Imported ${added.length} conversation${added.length === 1 ? '' : 's'}${failed ? ` (${failed} skipped)` : ''}`);
+  } else if (failed && sources > 1) toast('Nothing could be imported');
+}
 $('#importBtn').onclick = () => $('#importFile').click();
 $('#importFile').addEventListener('change', async e => {
   const files = [...e.target.files]; e.target.value = '';
@@ -1607,13 +1617,16 @@ $('#importFile').addEventListener('change', async e => {
     try { parseImport(await f.text()).forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; }); }
     catch (err) { failed++; toast(err.message || 'Import failed'); }
   }
-  if (added.length) {
-    db.current = added[added.length - 1];
-    save(); renderAll(false);
-    $('#sidebar').classList.remove('open');
-    toast(`Imported ${added.length} conversation${added.length === 1 ? '' : 's'}${failed ? ` (${failed} skipped)` : ''}`);
-  } else if (failed && files.length > 1) toast('Nothing could be imported');
+  finishImport(added, failed, files.length);
 });
+// A ready-made conversation (branches, flags, rich answers), published next to the app: try the demo and Import without a key
+$('#sampleBtn').onclick = async () => {
+  try {
+    const r = await fetch('examples/sample-conversation.json', { cache: 'no-cache' });
+    if (!r.ok) throw new Error(r.status);
+    finishImport(parseImport(await r.text()).map(adoptConvo).filter(Boolean), 0, 1);
+  } catch (err) { toast('Couldn’t load the sample. Open the demo from its web address rather than as a file.'); }
+};
 $('#exportAllBtn').onclick = () => exportJSON(db.order.filter(id => db.convos[id]));
 $('#roDownload').onclick = () => exportJSON([db.current]);
 
