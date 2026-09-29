@@ -101,7 +101,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 #oFlagList{overflow:auto;padding:0 8px 10px}
 .frow{display:block;width:100%;text-align:left;border:0;background:none;border-radius:8px;padding:6px 8px}
 .frow:hover{background:var(--accent-soft)}
-.frow .ft{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow .ft{font-size:12.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .frow .fb{font-size:11px;color:var(--muted)}
 .topicon{border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:8px 9px;color:var(--muted);display:inline-flex}
 .topicon:hover{color:var(--accent);border-color:var(--accent)}
@@ -257,6 +257,14 @@ body.readonly .col-head .rename{display:none}
 .tag{font-weight:600;font-size:11px;border-radius:5px;padding:0 6px}
 .tag.f{background:var(--flag);color:#fff}
 .tag.h{border:1px dashed currentColor}
+.decision{display:flex;gap:8px;align-items:flex-start;width:100%;margin:6px 0 0;padding:8px 12px;border:1px solid var(--flag);border-radius:12px;background:var(--flag-soft);color:var(--ink);font:inherit;font-size:13.5px;line-height:1.45;text-align:left}
+button.decision:not(:disabled):hover{box-shadow:0 0 0 3px var(--flag-soft)}
+.decision .dlabel{display:inline-flex;gap:4px;align-items:center;flex:none;font-weight:700;color:var(--flag);font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;padding-top:2px}
+.decision .dlabel svg.i{width:12px;height:12px}
+.decision .dtext{flex:1;min-width:0;overflow-wrap:anywhere}
+.decision .dtext i{color:var(--muted)}
+.decision.editing{flex-direction:column;align-items:stretch}
+.dec-area{width:100%;min-height:46px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font:inherit;padding:6px 8px;resize:vertical}
 .msg.flagged .bubble{box-shadow:inset 3px 0 0 var(--flag);background:linear-gradient(var(--flag-soft),var(--flag-soft)),var(--ai)}
 .msg.user.flagged .bubble{box-shadow:0 0 0 2px var(--flag);background:var(--user)}
 .msg.hidden .bubble{opacity:.42;border-style:dashed;background:transparent;color:var(--ink)}
@@ -431,7 +439,7 @@ button.model-chip svg.i{width:11px;height:11px}
     </div>
     <input id="oFilter" type="search" placeholder="Filter branches and messages…" autocomplete="off">
     <div id="oTree"></div>
-    <details id="oFlag" open hidden><summary><svg class="i" viewBox="0 0 24 24" style="fill:currentColor"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>Flagged <span class="cnt" id="oFlagCount"></span></summary><div id="oFlagList"></div></details>
+    <details id="oFlag" open hidden><summary><svg class="i" viewBox="0 0 24 24" style="fill:currentColor"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>Decisions <span class="cnt" id="oFlagCount"></span></summary><div id="oFlagList"></div></details>
   </aside>
 </div>
 <div class="toast" id="toast"></div>
@@ -476,7 +484,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main a038a15'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 70e351a'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -522,6 +530,7 @@ if (!db.model) db.model = DEFAULT_MODELS[0];
 Object.values(db.convos).forEach(c => Object.values(c.messages).forEach(m => {
   if (m.streaming) { m.streaming = false; if (m.prev && !m.text) Object.assign(m, m.prev); else if (!m.text) m.text = '(response interrupted)'; }
   delete m.prev;
+  if (m.decision) delete m.decision.pending;
 }));
 Object.values(db.convos).forEach(c => { if (c.title === 'Нова розмова') c.title = 'New conversation'; Object.values(c.branches || {}).forEach(b => { delete b.regenOf; }); });
 const save = () => { if (RO) return; try { localStorage.setItem(LS, JSON.stringify(db)); } catch (e) { toast('Couldn’t save: browser storage is full'); } };
@@ -744,7 +753,7 @@ function msgHTML(c, m) {
   const isEdit = editing && editing.cid === c.id && editing.mid === m.id;
   const cls = ['msg', m.role, m.hidden && 'hidden', m.flagged && 'flagged', m.error && 'error', isSel && 'selected', isEdit && 'editing'].filter(Boolean).join(' ');
   const who = m.role === 'user' ? 'You' : 'Gemini';
-  const tags = (m.flagged ? '<span class="tag f">important</span>' : '') + (m.hidden ? '<span class="tag h">excluded from history</span>' : '') + (m.edited ? '<span class="tag e">edited</span>' : '');
+  const tags = (m.hidden ? '<span class="tag h">excluded from history</span>' : '') + (m.edited ? '<span class="tag e">edited</span>' : '');
   let chip = '';
   if (m.role === 'model' && !m.streaming) {
     const label = esc(m.model || 'unknown model');
@@ -766,6 +775,20 @@ function msgHTML(c, m) {
     ...kids.map(k => ({ k, t: `↳ ${branchName(k)}`, cls: 'kid', title: 'Branch that continues from here' })),
   ].sort((a, b) => a.k.created - b.k.created);
   const kidsHTML = badges.length ? `<div class="kids">${badges.map(x => `<button class="${x.cls}" data-act="goto" data-bid="${x.k.id}" title="${x.title}">${esc(x.t)}</button>`).join('')}</div>` : '';
+  let dec = '';
+  if (m.flagged) {
+    const d = m.decision || {};
+    if (decEdit && decEdit.cid === c.id && decEdit.mid === m.id) {
+      dec = `<div class="decision editing"><span class="dlabel">${ICON.flagOn}Decision</span>
+        <textarea class="dec-area" rows="2" maxlength="300" aria-label="Decision summary" placeholder="One sentence: what was decided, and why">${esc(decEdit.draft ?? d.summary ?? '')}</textarea>
+        <div class="edit-actions"><span class="hint">Enter — save · Esc — cancel</span>
+          ${keyInput.value.trim() ? '<button class="btn" data-act="dec-auto" title="Let the cheapest model write it">Write for me</button>' : ''}
+          <button class="btn" data-act="dec-cancel">Cancel</button><button class="btn primary" data-act="dec-save">Save</button></div></div>`;
+    } else {
+      const txt = d.summary ? esc(d.summary) : d.pending ? '<i>Writing a summary…</i>' : `<i>${RO ? 'No summary' : 'Tap to add a one-line summary'}</i>`;
+      dec = `<button class="decision" data-act="dec-edit" type="button"${RO ? ' disabled' : ' title="Edit the summary that goes into prompts"'}><span class="dlabel">${ICON.flagOn}Decision</span><span class="dtext">${txt}</span></button>`;
+    }
+  }
   let acts = '';
   if (isEdit) {
     acts = `<div class="edit-actions"><span class="hint">Ctrl+Enter — ${m.role === 'user' ? 'send as branch' : 'save'} · Esc — cancel</span>
@@ -787,7 +810,7 @@ function msgHTML(c, m) {
   }
   return `<div class="${cls}" data-mid="${m.id}">
     <div class="bubble"><div class="role">${who}${chip}${tags}</div><div class="content">${body}</div></div>
-    ${acts}${kidsHTML}</div>`;
+    ${dec}${acts}${kidsHTML}</div>`;
 }
 
 function renderCanvas() {
@@ -807,14 +830,14 @@ function renderCanvas() {
     const flagged = b.msgIds.map(id => c.messages[id]).filter(m => m && m.flagged);
     let head = `<button class="ib fold" data-act="fold" title="${b.collapsed ? 'Expand' : 'Collapse'}" aria-expanded="${!b.collapsed}">${ICON.chevron}</button>`;
     if (parent) head += `<button class="ib back" data-act="back" title="Back to ${esc(branchName(parent))}">${ICON.left}Back</button>`;
-    head += `<div class="name" title="${RO ? '' : 'Double-click to rename'}">${esc(branchName(b))}<small>${own} message${own === 1 ? '' : 's'}${flagged.length ? ` · ${flagged.length} flagged` : ''}</small></div>`;
+    head += `<div class="name" title="${RO ? '' : 'Double-click to rename'}">${esc(branchName(b))}<small>${own} message${own === 1 ? '' : 's'}${flagged.length ? ` · ${flagged.length} decision${flagged.length === 1 ? '' : 's'}` : ''}</small></div>`;
     head += `<button class="ib rename" data-act="rename" title="Rename branch">${ICON.pencil}</button>`;
     if (parent) head += `<button class="ib" data-act="delbranch" title="Delete branch">${ICON.x}</button>`;
     const lastM = c.messages[b.msgIds[b.msgIds.length - 1]];
     const sum = lastM ? `${lastM.role === 'user' ? 'You' : 'Gemini'}: ${(lastM.text || lastM.error || '').replace(/[#*`>_~]/g, '').replace(/\s+/g, ' ').slice(0, 90)}` : 'Empty';
     let body = '';
     if (b.collapsed) {
-      const flags = flagged.length ? `<div class="col-flags">${flagged.map(m => `<button class="cflag" data-act="gotomsg" data-mid="${m.id}" title="Go to this message">${ICON.flagOn}<span>${esc(plain(m.text || m.error).slice(0, 90))}</span></button>`).join('')}</div>` : '';
+      const flags = flagged.length ? `<div class="col-flags">${flagged.map(m => `<button class="cflag" data-act="gotomsg" data-mid="${m.id}" title="Go to this message">${ICON.flagOn}<span>${esc(m.decision && m.decision.summary ? m.decision.summary : plain(m.text || m.error).slice(0, 90))}</span></button>`).join('')}</div>` : '';
       col.innerHTML = `<div class="col-head">${head}</div><div class="col-sum">${esc(sum)}</div>${flags}<div class="col-resize" title="Drag to resize · double-click to reset"></div>`;
       canvas.appendChild(col); colEls[b.id] = col;
       continue;
@@ -997,7 +1020,15 @@ $('#canvas').addEventListener('click', async e => {
     return;
   }
   if (act === 'hide') { m.hidden = !m.hidden; toast(m.hidden ? 'Message excluded from Gemini’s history' : 'Message included in history again'); }
-  if (act === 'flag') { m.flagged = !m.flagged; }
+  if (act === 'flag') {
+    m.flagged = !m.flagged;
+    // a flag makes the message a decision; its one-line summary is what later prompts carry (unflag keeps the text)
+    if (m.flagged) { if (!m.decision) m.decision = { summary: '', at: Date.now() }; if (!m.decision.summary) summarize(c, m); }
+  }
+  if (act === 'dec-edit') { startDecisionEdit(c, m); return; }
+  if (act === 'dec-cancel') { decEdit = null; rerenderMsg(c.id, m.id); scheduleLayout(); return; }
+  if (act === 'dec-save') { saveDecision(c, m); return; }
+  if (act === 'dec-auto') { decEdit = null; if (m.decision) m.decision.summary = ''; summarize(c, m); return; }
   if (act === 'copy') { copyText(m.text || m.error || '', 'Text copied'); return; }
   if (act === 'prompt') { openPromptView(c, m); return; }
   if (act === 'delmsg') { removeMessages(c, new Set([m.id])); return; }
@@ -1206,6 +1237,69 @@ document.addEventListener('keydown', e => {
     if (m.role === 'user') editAsBranch(c, m, el); else saveEdit(c, m, el);
   }
 }, true);
+
+/* ---------------- decisions ---------------- */
+let decEdit = null; // { cid, mid, draft }
+function startDecisionEdit(c, m) {
+  if (RO) return;
+  decEdit = { cid: c.id, mid: m.id };
+  rerenderMsg(c.id, m.id); scheduleLayout();
+  const ta = document.querySelector(`.msg[data-mid="${m.id}"] .dec-area`);
+  if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); }
+}
+function saveDecision(c, m) {
+  const ta = document.querySelector(`.msg[data-mid="${m.id}"] .dec-area`);
+  const text = (ta ? ta.value : '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  if (!m.decision) m.decision = { summary: '', at: Date.now() };
+  Object.assign(m.decision, { summary: text, at: Date.now() });
+  delete m.decision.model; // written by hand now
+  decEdit = null; c.updated = Date.now(); save();
+  rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline();
+}
+document.addEventListener('input', e => { if (decEdit && e.target.classList && e.target.classList.contains('dec-area')) decEdit.draft = e.target.value; });
+document.addEventListener('keydown', e => {
+  if (!e.target.classList || !e.target.classList.contains('dec-area')) return;
+  const el = e.target.closest('.msg'), c = cur(), m = c && el && c.messages[el.dataset.mid];
+  if (!m) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); decEdit = null; rerenderMsg(c.id, m.id); scheduleLayout(); }
+  else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); saveDecision(c, m); }
+}, true);
+// Helper calls use the cheapest model the key can reach (a lite model, then a flash one), not the one picked for chatting
+function cheapModel() {
+  const list = [...modelSel.options].map(o => o.value);
+  const ver = n => parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [0, 0])[1]);
+  const stable = list.filter(n => !/preview|exp|tts|image|audio|live|embed/i.test(n));
+  const best = re => (stable.length ? stable : list).filter(n => re.test(n)).sort((a, b) => ver(b) - ver(a))[0];
+  return best(/flash-lite/) || best(/flash/) || modelSel.value || db.model;
+}
+async function summarize(c, m) {
+  const key = keyInput.value.trim();
+  if (!key || !m.decision || m.decision.pending) return;
+  const model = cheapModel();
+  const b = branchOf(c, m.id); if (!b) return;
+  const q = m.role === 'model' ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
+  const prompt = 'Write the decision or key point of the message below as one short sentence (at most 25 words), in the language of the message. Reply with the sentence only.\n\n'
+    + (q ? `Question it answers:\n${q.text.slice(0, 1500)}\n\n` : '') + `Message:\n${(m.text || '').slice(0, 6000)}`;
+  m.decision.pending = true;
+  rerenderMsg(c.id, m.id); scheduleLayout();
+  try {
+    const r = await fetch(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.2 } }),
+    });
+    if (!r.ok) throw new Error(`Error ${r.status}`);
+    const j = await r.json();
+    const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+    const text = parts.filter(p => p.text && !p.thought).map(p => p.text).join(' ').replace(/\s+/g, ' ').trim().replace(/^["“'«]+|["”'»]+$/g, '');
+    if (!text) throw new Error('empty');
+    if (m.decision && !m.decision.summary) Object.assign(m.decision, { summary: text.slice(0, 300), model, at: Date.now() });
+  } catch (err) { toast('Couldn’t write the summary. Tap the decision to write it yourself.'); }
+  finally {
+    if (m.decision) delete m.decision.pending;
+    save();
+    if (db.current === c.id) { rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline(); }
+  }
+}
 
 /* ---------------- path selection ---------------- */
 let sel = null; // { cid, anchor, ids:Set }
@@ -1461,7 +1555,17 @@ async function sendToBranch(c, bid, text, modelOverride) {
 // A request is a list of blocks: fixed system blocks first (harness, memory, decisions), then the conversation.
 // The prompt view shows these blocks, and every answer keeps a record of the ones it was generated from.
 const BLOCK_KINDS = ['harness', 'memory', 'decisions', 'history', 'message'];
-function systemBlocks(c) { return []; } // { kind, label, text } blocks sent as the system instruction
+// The harness explains the blocks that follow it, so it is sent only when there is at least one block
+const HARNESS = 'You are the assistant in Mindbough, a branching chat for thinking problems through. The user explores ideas in separate branches, and you see only the path of the current branch. The blocks below come from the whole conversation: treat them as settled, and don’t reopen them unless the user does.';
+function decisionsIn(c) { return Object.values(c.messages).filter(m => m.flagged && m.decision && m.decision.summary).sort((a, b) => a.ts - b.ts); }
+// { kind, label, text } blocks sent as the system instruction, in this order
+function systemBlocks(c) {
+  const blocks = [];
+  const decisions = decisionsIn(c);
+  if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions made in this conversation:\n' + decisions.map(m => `- ${m.decision.summary}`).join('\n') });
+  if (blocks.length) blocks.unshift({ kind: 'harness', label: 'Harness', text: HARNESS });
+  return blocks;
+}
 // Consecutive messages of one role become one turn; the model's turns can't come first
 function mergeTurns(msgs) {
   const turns = [];
@@ -1809,6 +1913,7 @@ function adoptConvo(src) {
       if (x.model) nm.model = str(x.model, 100);
       if (x.error) nm.error = str(x.error, 2000);
       if (x.flagged) nm.flagged = true;
+      if (isObj(x.decision)) nm.decision = { summary: str(x.decision.summary, 300).trim(), at: time(x.decision.at), ...(x.decision.model ? { model: str(x.decision.model, 100) } : {}) };
       if (x.hidden) nm.hidden = true;
       if (x.edited) nm.edited = true;
       mid.set(m, nm.id); c.messages[nm.id] = nm; msgIds.push(nm.id);
@@ -1976,7 +2081,7 @@ function renderOutline() {
   box.hidden = !flagged.length;
   $('#oFlagCount').textContent = flagged.length;
   $('#oFlagList').innerHTML = flagged.map(([m, b]) => `<button class="frow" data-fmid="${m.id}">
-      <div class="ft">${m.role === 'user' ? 'You' : 'Gemini'}: ${esc(plain(m.text || m.error).slice(0, 90))}</div>
+      <div class="ft">${m.decision && m.decision.summary ? esc(m.decision.summary) : `${m.role === 'user' ? 'You' : 'Gemini'}: ${esc(plain(m.text || m.error).slice(0, 90))}`}</div>
       <div class="fb">${esc(branchName(b))}</div></button>`).join('');
 
   const here = tree.querySelector('.orow.here');

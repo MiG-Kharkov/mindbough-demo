@@ -96,7 +96,11 @@
           "branchId": "bmain",
           "ts": 1790618640000,
           "model": "gemini-3.6-flash",
-          "flagged": true
+          "flagged": true,
+          "decision": {
+            "summary": "Use PostgreSQL with two tables, habits and check-ins, and one check-in per habit per day.",
+            "at": 1790618640000
+          }
         },
         "m5": {
           "id": "m5",
@@ -165,7 +169,11 @@
           "branchId": "bweekend",
           "ts": 1790619480000,
           "model": "gemini-3.6-flash",
-          "flagged": true
+          "flagged": true,
+          "decision": {
+            "summary": "Set it up this weekend: a managed Postgres, the two tables, a check-in endpoint, streaks and daily backups.",
+            "at": 1790619480000
+          }
         }
       }
     }
