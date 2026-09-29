@@ -487,6 +487,7 @@ button.model-chip svg.i{width:11px;height:11px}
         <p class="set-hint">Stored only in this browser and sent only to Google’s Gemini API. No key yet? <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Get one free in Google AI Studio</a>.</p>
         <h3 class="set-h">About</h3>
         <p class="set-hint" id="verSettings"></p>
+        <p class="set-hint" id="storageInfo"></p>
       </div>
       <div id="sheetDyn"></div>
     </div>
@@ -494,7 +495,7 @@ button.model-chip svg.i{width:11px;height:11px}
 </div>
 
 <script id="app">
-(() => {
+(async () => {
 // Clean copy of this page, captured before anything is rendered (used for read-only exports)
 const PRISTINE = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
 const RO = window.__GTC_READONLY__ || null;
@@ -507,7 +508,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main 82e7f37'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main ed9f886'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -540,14 +541,58 @@ const ICON = {
 // seeded from the main demo on first open and never written back to it
 const PREVIEW = (location.pathname.match(/\/pr-preview\/(pr-\d+)\//) || [])[1];
 const LS = 'gemini_tree_chat_v1' + (PREVIEW ? ':' + PREVIEW : '');
-if (PREVIEW) try { if (localStorage.getItem(LS) == null && localStorage.getItem('gemini_tree_chat_v1') != null) localStorage.setItem(LS, localStorage.getItem('gemini_tree_chat_v1')); } catch (e) {}
+
+/* ---------------- storage: IndexedDB, with localStorage as the fallback ---------------- */
+// The whole db is still one JSON record, but in IndexedDB, which has no ~5 MB cap like localStorage.
+// Each PR preview has its own database, seeded from the main demo's on first open.
+const IDB = { name: 'mindbough' + (PREVIEW ? ':' + PREVIEW : ''), store: 'state' };
+let storage = 'IndexedDB', savedChars = 0, idbConn = null;
+const tabs = 'BroadcastChannel' in window ? new BroadcastChannel(IDB.name) : null; // tells other tabs to reload
+function idbOpen(name) {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open(name, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(IDB.store);
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.onblocked = () => reject(new Error('IndexedDB is blocked'));
+  });
+}
+function idbDo(conn, mode, fn) {
+  return new Promise((resolve, reject) => {
+    const tx = conn.transaction(IDB.store, mode), req = fn(tx.objectStore(IDB.store));
+    tx.oncomplete = () => resolve(req && req.result);
+    tx.onerror = tx.onabort = () => reject(tx.error);
+  });
+}
+async function loadStored() {
+  try {
+    if (!window.indexedDB) throw new Error('no IndexedDB');
+    idbConn = await idbOpen(IDB.name);
+    let text = await idbDo(idbConn, 'readonly', st => st.get('db'));
+    if (text == null) {
+      // first run on IndexedDB: take over what the localStorage version saved; a preview copies the main demo
+      text = localStorage.getItem(LS);
+      if (text == null && PREVIEW) {
+        try { const main = await idbOpen('mindbough'); text = await idbDo(main, 'readonly', st => st.get('db')); main.close(); } catch (e) {}
+        if (text == null) text = localStorage.getItem('gemini_tree_chat_v1');
+      }
+      if (text != null) await idbDo(idbConn, 'readwrite', st => st.put(text, 'db'));
+    }
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); // ask the browser to keep it
+    savedChars = text ? text.length : 0;
+    return text ? JSON.parse(text) : null;
+  } catch (e) {
+    storage = 'localStorage'; // e.g. a private mode without IndexedDB: work as before
+    try { const text = localStorage.getItem(LS); savedChars = text ? text.length : 0; return JSON.parse(text); } catch (err) { return null; }
+  }
+}
 let db = null;
 if (RO) {
   db = { convos: { [RO.id]: RO }, order: [RO.id], current: RO.id, key: '', model: '' };
   document.body.classList.add('readonly');
   document.title = `${RO.title} — shared conversation`;
 } else {
-  try { db = JSON.parse(localStorage.getItem(LS)); } catch (e) {}
+  db = await loadStored();
 }
 if (!db || !db.convos) db = { convos: {}, order: [], current: null, key: '', model: DEFAULT_MODELS[0] };
 if (!db.model) db.model = DEFAULT_MODELS[0];
@@ -559,7 +604,16 @@ Object.values(db.convos).forEach(c => Object.values(c.messages).forEach(m => {
   if (m.decision) delete m.decision.pending;
 }));
 Object.values(db.convos).forEach(c => { if (c.title === 'Нова розмова') c.title = 'New conversation'; Object.values(c.branches || {}).forEach(b => { delete b.regenOf; }); });
-const save = () => { if (RO) return; try { localStorage.setItem(LS, JSON.stringify(db)); } catch (e) { toast('Couldn’t save: browser storage is full'); } };
+let saving = Promise.resolve();
+const save = () => {
+  if (RO) return;
+  const text = JSON.stringify(db);
+  savedChars = text.length;
+  if (storage === 'localStorage') { try { localStorage.setItem(LS, text); } catch (e) { toast('Couldn’t save: browser storage is full'); } return; }
+  // writes are queued so they land in order; then the other tabs reload
+  saving = saving.then(() => idbDo(idbConn, 'readwrite', st => st.put(text, 'db'))).then(() => { if (tabs) tabs.postMessage('saved'); })
+    .catch(err => toast(err && err.name === 'QuotaExceededError' ? 'Couldn’t save: browser storage is full' : 'Couldn’t save to browser storage'));
+};
 const cur = () => db.convos[db.current];
 
 let panX = 0;
@@ -1532,17 +1586,24 @@ $('#showKey').onclick = () => { keyInput.type = keyInput.type === 'password' ? '
 if (!RO) loadModels();
 
 // Another tab saved: take its data, otherwise our next save would silently overwrite it
-window.addEventListener('storage', e => {
-  if (RO || e.key !== LS || !e.newValue || busy) return;
-  let next; try { next = JSON.parse(e.newValue); } catch (err) { return; }
+function takeFrom(next) {
   if (!next || !next.convos || !Array.isArray(next.order)) return;
   db = next;
+  if (!Array.isArray(db.memory)) db.memory = [];
   if (!db.convos[db.current]) db.current = db.order[0] || null;
   keyInput.value = db.key || '';
   fillModels([...modelSel.options].map(o => o.value));
   editing = null; setSel(null);
   if (db.current) renderAll(false); else newConvo();
+}
+window.addEventListener('storage', e => {
+  if (RO || storage !== 'localStorage' || e.key !== LS || !e.newValue || busy) return;
+  try { takeFrom(JSON.parse(e.newValue)); } catch (err) {}
 });
+if (tabs) tabs.onmessage = async () => {
+  if (RO || busy || storage !== 'IndexedDB') return;
+  try { const text = await idbDo(idbConn, 'readonly', st => st.get('db')); if (text) { savedChars = text.length; takeFrom(JSON.parse(text)); } } catch (err) {}
+};
 // Phones kill background tabs without warning: save whatever is pending when the page is hidden
 window.addEventListener('pagehide', save);
 
@@ -1779,6 +1840,8 @@ document.addEventListener('keydown', e => {
 }, true);
 function openSettings(hint) {
   openSheet({ title: 'Settings', settings: true });
+  const mb = savedChars / 1048576;
+  $('#storageInfo').textContent = `Your data is saved only in this browser (${storage}), about ${mb < 0.1 ? mb.toFixed(2) : mb.toFixed(1)} MB.`;
   $('#settingsHint').textContent = hint || '';
   $('#settingsHint').hidden = !hint;
   if (!keyInput.value.trim()) keyInput.focus();
