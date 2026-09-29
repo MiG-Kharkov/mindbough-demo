@@ -208,6 +208,10 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 .dp-hist li{margin:8px 0}
 .dp-hist small{display:block;color:var(--muted);font-size:11.5px}
 .dp-hist .btn{margin-top:4px;padding:3px 8px;font-size:12px}
+.tabs{display:flex;gap:4px;margin:-4px 0 12px;border-bottom:1px solid var(--line)}
+.tab{border:0;background:none;padding:8px 12px;font:inherit;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+.dp-card.mem{border-left-color:var(--k-memory)}
 #crumbs{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--muted);flex:1 1 200px;overflow-x:auto;white-space:nowrap;justify-content:flex-end}
 #crumbs button{border:0;background:none;padding:3px 7px;border-radius:6px;color:var(--muted)}
 #crumbs button:hover{background:var(--accent-soft);color:var(--ink)}
@@ -501,7 +505,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main f38c51a'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 099b3fe'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -523,6 +527,7 @@ const ICON = {
   trash: '<svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   send: '<svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   stop: '<svg class="i" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+  bookmark: '<svg class="i" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
   layers: '<svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
   chevRight: '<svg class="i" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
 };
@@ -543,6 +548,7 @@ if (RO) {
 }
 if (!db || !db.convos) db = { convos: {}, order: [], current: null, key: '', model: DEFAULT_MODELS[0] };
 if (!db.model) db.model = DEFAULT_MODELS[0];
+if (!Array.isArray(db.memory)) db.memory = []; // facts shared by all conversations: [{ id, text, at, src?: { cid, mid }, from? }]
 // An answer still "streaming" was cut off by a reload or crash: restore the answer it was replacing, if any
 Object.values(db.convos).forEach(c => Object.values(c.messages).forEach(m => {
   if (m.streaming) { m.streaming = false; if (m.prev && !m.text) Object.assign(m, m.prev); else if (!m.text) m.text = '(response interrupted)'; }
@@ -819,7 +825,8 @@ function msgHTML(c, m) {
       <button class="ib ${sel && sel.cid === c.id && sel.anchor === m.id ? 'on-sel' : ''}" data-act="selpath" title="Select this branch path up to the root">${ICON.up}</button>
       ${m.error ? '' : `<button class="ib" data-act="edit" title="${m.role === 'user' ? 'Edit (sends as a new branch)' : 'Edit this answer'}">${ICON.pencil}</button>`}
       <button class="ib ${m.hidden ? 'on-hide' : ''}" data-act="hide" title="${m.hidden ? 'Include in history again' : 'Exclude from the AI’s history'}" aria-pressed="${!!m.hidden}">${ICON.eyeOff}</button>
-      <button class="ib ${m.flagged ? 'on-flag' : ''}" data-act="flag" title="${m.flagged ? 'Remove flag' : 'Flag as important'}" aria-pressed="${!!m.flagged}">${m.flagged ? ICON.flagOn : ICON.flag}</button>
+      <button class="ib ${m.flagged ? 'on-flag' : ''}" data-act="flag" title="${m.flagged ? 'Remove the flag (the decision leaves prompts)' : 'Flag as a decision'}" aria-pressed="${!!m.flagged}">${m.flagged ? ICON.flagOn : ICON.flag}</button>
+      <button class="ib" data-act="remember" title="Remember this in all conversations">${ICON.bookmark}</button>
       ${m.role === 'model' ? `<button class="ib" data-act="prompt" title="How the prompt for this answer was built">${ICON.layers}</button>` : ''}
       <button class="ib" data-act="copy" title="Copy text">${ICON.copy}</button>
       <button class="ib del-msg" data-act="delmsg" title="Delete this message">${ICON.trash}</button>
@@ -1049,6 +1056,7 @@ $('#canvas').addEventListener('click', async e => {
   if (act === 'dec-auto') { decEdit = null; summarize(c, m, true); return; }
   if (act === 'copy') { copyText(m.text || m.error || '', 'Text copied'); return; }
   if (act === 'prompt') { openPromptView(c, m); return; }
+  if (act === 'remember') { rememberFrom(c, m); return; }
   if (act === 'delmsg') { removeMessages(c, new Set([m.id])); return; }
   if (act === 'regen-menu') { openModelMenu(btn, c, m, 'regen'); return; }
   if (act === 'edit') { startEdit(c, m); return; }
@@ -1584,6 +1592,8 @@ function decisionsIn(c) { return Object.values(c.messages).filter(m => m.flagged
 // { kind, label, text } blocks sent as the system instruction, in this order
 function systemBlocks(c) {
   const blocks = [];
+  const memory = db.memory.filter(x => x.text);
+  if (memory.length) blocks.push({ kind: 'memory', label: `Memory · ${memory.length}`, text: 'Things to remember about the user and their work (shared by all conversations):\n' + memory.map(x => `- ${x.text}`).join('\n') });
   const decisions = decisionsIn(c);
   if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions made in this conversation:\n' + decisions.map(m => `- ${m.decision.summary}`).join('\n') });
   if (blocks.length) blocks.unshift({ kind: 'harness', label: 'Harness', text: HARNESS });
@@ -1812,7 +1822,7 @@ function pvRender(pv) {
       <div class="pv-actions"><button class="btn" data-copy>Copy the whole prompt</button></div>`;
   }
   const b = r.blocks[pv.block];
-  if (b.text != null) return `<pre class="pv-text">${esc(b.text)}</pre>`;
+  if (b.text != null) return b.omitted ? `<p class="pv-empty">Memory is personal, so its text is left out of exported and shared copies.</p>` : `<pre class="pv-text">${esc(b.text)}</pre>`;
   const turns = pvTurns(pv, b);
   if (pv.level === 'block') {
     const now = turns.reduce((n, t) => n + t.text.length, 0);
@@ -1862,8 +1872,59 @@ function renderDecisionsPanel() {
 }
 function refreshDecisions() {
   const c = cur(); if (!c) return;
-  if (sheetView && sheetView.decisions) $('#sheetDyn').innerHTML = renderDecisionsPanel();
+  if (sheetView && sheetView.context) $('#sheetDyn').innerHTML = renderContextPanel();
   renderCanvas(); renderChrome();
+}
+let ctxTab = 'decisions', memEdit = null; // memEdit: id of the memory item being edited
+function renderContextPanel() {
+  const c = cur(), dn = c ? flaggedIn(c).length : 0, mn = db.memory.length;
+  const tab = (id, label, n) => `<button role="tab" class="tab${ctxTab === id ? ' on' : ''}" data-tab="${id}" aria-selected="${ctxTab === id}">${label}${n ? ` · ${n}` : ''}</button>`;
+  return `<div class="tabs" role="tablist">${tab('decisions', 'Decisions', dn)}${tab('memory', 'Memory', mn)}</div>` + (ctxTab === 'memory' ? renderMemoryPanel() : renderDecisionsPanel());
+}
+function renderMemoryPanel() {
+  const note = `<p class="pv-note">Memory is shared by all your conversations: every request carries these facts. <button class="linkbtn" type="button" data-dp="preview">See the next prompt</button></p>`;
+  const add = memEdit ? '' : `<div class="dp-actions"><button class="btn primary" data-mem="add">+ Add a fact</button></div>`;
+  if (!db.memory.length) return note + `<p class="pv-empty">Nothing yet. Use <b>Remember</b> under a message, or add a fact here.</p>` + add;
+  return note + db.memory.map(x => {
+    const c = x.src && db.convos[x.src.cid], from = c ? `from “${c.title}”` : x.from ? `from “${x.from}”` : 'added by you';
+    if (memEdit === x.id) return `<article class="dp-card mem" data-id="${x.id}"><textarea class="dp-area" rows="2" maxlength="300" aria-label="Fact" placeholder="One fact the model should always know">${esc(x.text)}</textarea>
+      <div class="dp-actions"><button class="btn" data-mem="cancel">Cancel</button><button class="btn primary" data-mem="save">Save</button></div></article>`;
+    return `<article class="dp-card mem" data-id="${x.id}"><div class="dp-text">${esc(x.text)}</div><div class="dp-meta">${esc(from)} · ${esc(shortDate(x.at))}</div>
+      <div class="dp-actions">${c && c.messages[x.src.mid] ? '<button class="btn" data-mem="goto">Go to</button>' : ''}<button class="btn" data-mem="edit">Edit</button><button class="btn danger" data-mem="delete">Delete</button></div></article>`;
+  }).join('') + add;
+}
+function openContextPanel(tab) {
+  if (tab) ctxTab = tab;
+  openSheet({ title: 'Decisions and memory', context: true, render: renderContextPanel, onClick: contextPanelClick });
+  const ta = $('#sheetDyn .dp-area'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+}
+const firstSentence = t => { const m = t.match(/^(.{12,240}?[.!?])(\s|$)/); return (m ? m[1] : t.slice(0, 240)).trim(); };
+// Remember: a fact from the message (its decision summary, or its first sentence), opened for editing
+function rememberFrom(c, m) {
+  const text = (m.decision && m.decision.summary) || firstSentence(plain(m.text || ''));
+  const item = { id: uid(), text: text.slice(0, 300), at: Date.now(), src: { cid: c.id, mid: m.id }, from: c.title };
+  db.memory.unshift(item); save();
+  memEdit = item.id; panelEdit = panelHist = null;
+  openContextPanel('memory');
+}
+function contextPanelClick(e) {
+  const tabBtn = e.target.closest('[data-tab]');
+  if (tabBtn) { ctxTab = tabBtn.dataset.tab; memEdit = panelEdit = panelHist = null; $('#sheetDyn').innerHTML = renderContextPanel(); return; }
+  const mb = e.target.closest('[data-mem]');
+  if (!mb) { decisionsPanelClick(e); return; }
+  const card = mb.closest('.dp-card'), x = card && db.memory.find(y => y.id === card.dataset.id);
+  const drop = id => { db.memory = db.memory.filter(y => y.id !== id); };
+  switch (mb.dataset.mem) {
+    case 'add': { const n = { id: uid(), text: '', at: Date.now() }; db.memory.unshift(n); memEdit = n.id; break; }
+    case 'edit': memEdit = x.id; break;
+    case 'cancel': if (x && !x.text) drop(x.id); memEdit = null; break;
+    case 'save': { const text = card.querySelector('.dp-area').value.replace(/\s+/g, ' ').trim().slice(0, 300);
+      if (text) Object.assign(x, { text, at: Date.now() }); else drop(x.id); memEdit = null; save(); break; }
+    case 'delete': drop(x.id); save(); break;
+    case 'goto': { closeSheet(); if (db.current !== x.src.cid) { db.current = x.src.cid; save(); renderAll(false); } goToMessage(x.src.mid); return; }
+  }
+  $('#sheetDyn').innerHTML = renderContextPanel();
+  const ta = $('#sheetDyn .dp-area'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
 }
 function decisionsPanelClick(e) {
   const btn = e.target.closest('[data-dp]'); if (!btn) return;
@@ -1886,12 +1947,9 @@ function decisionsPanelClick(e) {
 }
 document.addEventListener('keydown', e => {
   if (!e.target.classList || !e.target.classList.contains('dp-area')) return;
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); e.target.closest('.dp-card').querySelector('[data-dp="save"]').click(); }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); e.target.closest('.dp-card').querySelector('[data-dp="save"], [data-mem="save"]').click(); }
 });
-$('#openDecisions').onclick = () => {
-  panelEdit = panelHist = null;
-  openSheet({ title: 'Decisions', decisions: true, render: renderDecisionsPanel, onClick: decisionsPanelClick });
-};
+$('#openDecisions').onclick = () => { panelEdit = panelHist = memEdit = null; openContextPanel(); };
 $('#keyHint').addEventListener('click', e => {
   const b = e.target.closest('[data-open]'); if (!b) return;
   if (b.dataset.open === 'settings') openSettings(); else $('#sampleBtn').click();
@@ -1927,12 +1985,17 @@ const slug = t => (t || 'conversation').toLowerCase().replace(/[^\p{L}\p{N}]+/gu
 const stamp = () => new Date().toISOString().slice(0, 10);
 function cleanConvo(c) {
   const x = JSON.parse(JSON.stringify(c));
-  Object.values(x.messages).forEach(m => { delete m.streaming; });
+  Object.values(x.messages).forEach(m => {
+    delete m.streaming;
+    // memory is personal and shared by all conversations: an exported or shared conversation leaves its text out
+    if (m.request) m.request.blocks.forEach(b => { if (b.kind === 'memory') { b.text = ''; b.omitted = true; } });
+  });
   return x;
 }
-function exportJSON(ids) {
+function exportJSON(ids, withMemory) {
   if (!ids.length) { toast('Nothing to export'); return; }
   const data = { app: 'gemini-tree-chat', version: 1, exported: new Date().toISOString(), conversations: ids.map(id => cleanConvo(db.convos[id])) };
+  if (withMemory && db.memory.length) data.memory = db.memory.map(x => ({ text: x.text, at: x.at, from: (x.src && db.convos[x.src.cid] && db.convos[x.src.cid].title) || x.from }));
   const name = ids.length === 1 ? `${slug(db.convos[ids[0]].title)}.json` : `gemini-tree-chat-${stamp()}.json`;
   download(name, JSON.stringify(data, null, 2), 'application/json');
   toast(ids.length === 1 ? 'Conversation exported' : `Exported ${ids.length} conversations`);
@@ -1961,7 +2024,19 @@ function parseImport(text) {
   }
   const list = Array.isArray(data.conversations) ? data.conversations : (data.branches && data.messages ? [data] : null);
   if (!list) throw new Error('Unrecognized file format');
+  list.memory = Array.isArray(data.memory) ? data.memory : []; // an "Export all" file also carries the memory
   return list;
+}
+// Adds the imported facts that memory doesn't have yet; returns how many were added
+function mergeMemory(items) {
+  let n = 0;
+  for (const x of items || []) {
+    const text = x && typeof x.text === 'string' ? x.text.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+    if (!text || db.memory.some(y => y.text === text)) continue;
+    db.memory.push({ id: uid(), text, at: Number.isFinite(x.at) ? x.at : Date.now(), ...(typeof x.from === 'string' && x.from ? { from: x.from.slice(0, 200) } : {}) });
+    n++;
+  }
+  return n;
 }
 // Imported files are untrusted. Rebuild the conversation from known fields only, with fresh ids, so nothing
 // from the file reaches HTML attributes or selectors, and keep only branches reachable from the root
@@ -2025,6 +2100,7 @@ function adoptConvo(src) {
     const blocks = (Array.isArray(r.blocks) ? r.blocks : []).filter(isObj).slice(0, 20).map(b => {
       const out = { kind: BLOCK_KINDS.includes(b.kind) ? b.kind : 'history', label: str(b.label, 80), chars: count(b.chars) };
       if (typeof b.text === 'string') out.text = str(b.text, 20000);
+      if (b.omitted) out.omitted = true;
       else out.ids = (Array.isArray(b.ids) ? b.ids : []).map(i => mid.get(i)).filter(Boolean);
       return out;
     });
@@ -2037,23 +2113,23 @@ function adoptConvo(src) {
   db.order.unshift(c.id);
   return c.id;
 }
-function finishImport(added, failed, sources) {
+function finishImport(added, failed, sources, facts = 0) {
   if (added.length) {
     db.current = added[added.length - 1];
     save(); renderAll(false);
     $('#sidebar').classList.remove('open');
-    toast(`Imported ${added.length} conversation${added.length === 1 ? '' : 's'}${failed ? ` (${failed} skipped)` : ''}`);
+    toast(`Imported ${added.length} conversation${added.length === 1 ? '' : 's'}${facts ? ` and ${facts} memory fact${facts === 1 ? '' : 's'}` : ''}${failed ? ` (${failed} skipped)` : ''}`);
   } else if (failed && sources > 1) toast('Nothing could be imported');
 }
 $('#importBtn').onclick = () => $('#importFile').click();
 $('#importFile').addEventListener('change', async e => {
   const files = [...e.target.files]; e.target.value = '';
-  let added = [], failed = 0;
+  let added = [], failed = 0, facts = 0;
   for (const f of files) {
-    try { parseImport(await f.text()).forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; }); }
+    try { const list = parseImport(await f.text()); list.forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; }); facts += mergeMemory(list.memory); }
     catch (err) { failed++; toast(err.message || 'Import failed'); }
   }
-  finishImport(added, failed, files.length);
+  finishImport(added, failed, files.length, facts);
 });
 // A ready-made conversation (branches, flags, rich answers), published next to the app: try the demo and Import without a key
 $('#sampleBtn').onclick = async () => {
@@ -2063,7 +2139,7 @@ $('#sampleBtn').onclick = async () => {
     finishImport(parseImport(await r.text()).map(adoptConvo).filter(Boolean), 0, 1);
   } catch (err) { toast('Couldn’t load the sample. Open the demo from its web address rather than as a file.'); }
 };
-$('#exportAllBtn').onclick = () => exportJSON(db.order.filter(id => db.convos[id]));
+$('#exportAllBtn').onclick = () => exportJSON(db.order.filter(id => db.convos[id]), true);
 $('#roDownload').onclick = () => exportJSON([db.current]);
 
 /* ---------------- panels & outline ---------------- */
