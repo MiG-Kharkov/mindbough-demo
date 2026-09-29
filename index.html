@@ -420,9 +420,9 @@ button.model-chip svg.i{width:11px;height:11px}
     <div class="brand"><span class="mark"><svg class="i" viewBox="0 0 24 24"><path d="M6.3 18.6C7.6 13.8 10.8 10.3 16.2 7.9M9.4 12.9C8.6 10.1 9.1 7.4 11 5.2"/><g fill="currentColor" stroke="none"><circle cx="5.9" cy="19.3" r="2.2"/><circle cx="17.6" cy="7.3" r="2.6"/><circle cx="11.8" cy="4.4" r="2.6"/></g></svg></span>Mindbough</div>
     <button id="newChat"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New conversation</button>
     <div class="side-tools">
-      <button id="importBtn" title="Import a .json export or a shared read-only .html"><svg class="i" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Import</button>
+      <button id="importBtn" title="Import a .json export, a shared read-only .html, or a Thinking State .zip"><svg class="i" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Import</button>
       <button id="exportAllBtn" title="Download every conversation as one .json file"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Export all</button>
-      <input type="file" id="importFile" accept=".json,.html,.htm,application/json,text/html" hidden>
+      <input type="file" id="importFile" accept=".json,.html,.htm,.zip,application/json,text/html,application/zip" hidden>
     </div>
     <button id="sampleBtn" class="sample-link" type="button">Try a sample conversation (no API key needed)</button>
     <div id="roBanner"><b>Shared conversation · read-only</b>You can explore every branch here. To continue it, download the .json and import it in the Mindbough demo.<button id="roDownload"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Download .json</button></div>
@@ -507,7 +507,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main 995aaf0'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 82e7f37'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2057,12 +2057,14 @@ function nodeId(t, taken) {
   do { const r = crypto.getRandomValues(new Uint8Array(6)); id = day + '-' + [...r].map(b => alphabet[b % 36]).join(''); } while (taken.has(id));
   taken.add(id); return id;
 }
-function nodeDoc(n) {
-  const out = ['---', `type: ${n.type}`, `title: ${yq(n.title)}`, `description: ${yq(n.description)}`];
+function nodeDoc(n, ids) {
+  const out = ['---', `type: ${/^[A-Za-z][A-Za-z0-9 _-]*$/.test(n.type) ? n.type : yq(n.type)}`, `title: ${yq(n.title)}`, `description: ${yq(n.description)}`];
+  if (n.status === 'rejected' || n.status === 'superseded') out.push('status: deprecated'); // OKF readers then skip it
   if (n.generated) out.push(`generated: { by: ${yq(n.generated.by)}, at: ${yq(n.generated.at)} }`);
   if (n.sources) { out.push('sources:'); n.sources.forEach(x => out.push(`  - { resource: ${yq(x.resource)}, title: ${yq(x.title)} }`)); }
   out.push('thinking:', `  status: ${n.status}`);
   if (n.parent) out.push(`  parent: ${n.parent}`);
+  for (const [k, v] of Object.entries(n.links || {})) { const to = v.filter(x => ids.has(x)); if (to.length) out.push(`  ${k}: [${to.join(', ')}]`); }
   return out.concat('---', '', n.body || '').join('\n').trimEnd() + '\n';
 }
 // One conversation → a Thinking State bundle: a Thought (or the root Question) per branch, a Decision per flagged message,
@@ -2075,16 +2077,16 @@ function thinkingStateFiles(c) {
   for (const b of dfs(c)) {
     const msgs = b.msgIds.map(id => c.messages[id]).filter(Boolean);
     const first = msgs.find(m => m.role === 'user');
-    const own = msgs.find(m => m.node && m.node.id); // a branch that came from a Thinking State keeps its node id
+    const own = msgs.find(m => m.node && m.node.id); // a branch that came from a Thinking State is that node again
     const id = own ? own.node.id : nodeId(b.created, taken); taken.add(id);
     byBranch[b.id] = id;
-    const isRoot = !b.parentId, eo = b.editOf && c.messages[b.editOf];
-    const title = isRoot ? c.title : (b.name && b.name.trim()) || (first ? sentenceOf(first.text, 80) : branchName(b));
-    nodes.push({ id, type: isRoot && first && /\?\s*$/.test(first.text.trim()) ? 'Question' : 'Thought', title: title.slice(0, 120),
-      description: eo ? `Edited version of: ${snippetOf(eo.text, 200)}` : first ? sentenceOf(first.text, 240) : 'An empty branch.',
-      status: 'open', parent: b.parentId ? byBranch[b.parentId] : null, sources: [{ resource: `/${session}#${b.id}`, title: 'Demo conversation' }],
+    const isRoot = !b.parentId, eo = b.editOf && c.messages[b.editOf], nd = own && own.node;
+    const title = nd ? nd.title : isRoot ? c.title : (b.name && b.name.trim()) || (first ? sentenceOf(first.text, 80) : branchName(b));
+    nodes.push({ id, type: nd ? nd.type : isRoot && first && /\?\s*$/.test(first.text.trim()) ? 'Question' : 'Thought', title: (title || id).slice(0, 120),
+      description: nd ? nd.description || nd.title : eo ? `Edited version of: ${snippetOf(eo.text, 200)}` : first ? sentenceOf(first.text, 240) : 'An empty branch.',
+      status: nd ? nd.status : 'open', links: nd ? nd.links : null, parent: b.parentId ? byBranch[b.parentId] : null, sources: [{ resource: `/${session}#${b.id}`, title: 'Demo conversation' }],
       body: msgs.length ? `## Conversation\n\n${transcript(b.msgIds)}` : '' });
-    for (const m of msgs.filter(x => x.flagged)) {
+    for (const m of msgs.filter(x => x.flagged && x !== own)) {
       const summary = (m.decision && m.decision.summary) || sentenceOf(m.text, 240);
       nodes.push({ id: m.node && m.node.id && m.node.id !== id ? m.node.id : nodeId(m.ts, taken), type: 'Decision', title: sentenceOf(summary, 120), description: summary, status: 'accepted', parent: id,
         generated: m.role === 'model' && m.model ? { by: `mindbough-demo/${m.model}`, at: new Date(m.ts).toISOString().replace(/\.\d+Z$/, 'Z') } : null,
@@ -2103,9 +2105,106 @@ function thinkingStateFiles(c) {
     { name: 'log.md', text: `# Thinking log\n\n## ${at.slice(0, 10)}\n* **Creation**: Exported from the Mindbough demo conversation “${c.title}”.\n` },
     { name: '.gitignore', text: '# raw interaction logs may hold private data\nsessions/\n.mindbough/\n' },
     { name: session, text: JSON.stringify({ app: 'gemini-tree-chat', version: 1, exported: at, conversations: [cleanConvo(c)] }, null, 2) },
-    ...nodes.map(n => ({ name: `nodes/${n.id}.md`, text: nodeDoc(n) })),
+    ...nodes.map(n => ({ name: `nodes/${n.id}.md`, text: nodeDoc(n, new Set(nodes.map(x => x.id))) })),
   ];
   return { folder, files: files.map(f => ({ name: `${folder}/${f.name}`, text: f.text })) };
+}
+/* ---------------- open a Thinking State (.zip) ---------------- */
+const TS_ID = /^[0-9]{8}-[0-9a-z]{6}$/, TS_LINKS = ['answers', 'supports', 'contradicts', 'depends_on', 'supersedes'];
+const TS_STATUSES = ['open', 'accepted', 'rejected', 'superseded', 'parked'];
+// Reads the text files of a .zip (stored or deflated entries) with the browser's own inflater
+async function unzipText(buf) {
+  const u8 = new Uint8Array(buf), dv = new DataView(buf), dec = new TextDecoder(), out = [];
+  let eocd = -1;
+  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw new Error('This is not a readable .zip file');
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  for (let n = 0; n < Math.min(count, 5000); n++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('This .zip file is damaged');
+    const method = dv.getUint16(p + 10, true), size = dv.getUint32(p + 20, true), full = dv.getUint32(p + 24, true), off = dv.getUint32(p + 42, true);
+    const nlen = dv.getUint16(p + 28, true), name = dec.decode(u8.subarray(p + 46, p + 46 + nlen));
+    p += 46 + nlen + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
+    // only Markdown matters; skip folders, macOS resource forks and anything suspiciously large
+    if (!/\.md$/i.test(name) || /(^|\/)(__MACOSX\/|\._)/.test(name) || full > 5e6) continue;
+    const start = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true), data = u8.subarray(start, start + size);
+    let bytes = null;
+    if (method === 0) bytes = data;
+    else if (method === 8) bytes = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+    if (bytes) out.push({ name, text: dec.decode(bytes) });
+  }
+  return out;
+}
+// YAML is needed only for Thinking States, so the reader is loaded (pinned by its hash) on the first zip import
+let yamlReady = null;
+function loadYaml() {
+  if (window.jsyaml) return Promise.resolve(window.jsyaml);
+  return yamlReady || (yamlReady = new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.1/js-yaml.min.js';
+    sc.integrity = 'sha512-Ccva9tZjPfyRDMMosATBaEnAKvX+eBbDfHMnr+0LhTa+NMqKRxUAoDGPotb8biwzQ6xnf4IYuDaPiXw10DYaNA==';
+    sc.crossOrigin = 'anonymous'; sc.referrerPolicy = 'no-referrer';
+    sc.onload = () => resolve(window.jsyaml);
+    sc.onerror = () => { yamlReady = null; reject(new Error('Couldn’t load the YAML reader. Check your internet connection.')); };
+    document.head.appendChild(sc);
+  }));
+}
+function frontmatter(text) {
+  const m = text.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n([\s\S]*))?$/);
+  if (!m) return null;
+  let meta; try { meta = window.jsyaml.load(m[1], { schema: window.jsyaml.CORE_SCHEMA }); } catch (e) { return null; }
+  return meta && typeof meta === 'object' && !Array.isArray(meta) ? { meta, body: (m[2] || '').trim() } : null;
+}
+async function openThinkingStates(buf) {
+  await loadYaml();
+  const files = await unzipText(buf);
+  return files.filter(f => /(^|\/)README\.md$/.test(f.name)).map(f => ({ dir: f.name.slice(0, -'README.md'.length), fm: frontmatter(f.text) }))
+    .filter(r => r.fm && r.fm.meta.type === 'Thinking State' && r.fm.meta.thinking && r.fm.meta.thinking.root)
+    .map(r => bundleToConvo(r, files)).filter(Boolean);
+}
+// A Thinking State becomes a conversation whose branches mirror the tree: each node is a branch holding the node's card,
+// so writing in a branch sends the path of cards from the root to that node (spec §13, as a conversation)
+function bundleToConvo(r, files) {
+  const nodes = new Map(), kids = new Map();
+  for (const f of files) {
+    const rel = f.name.slice(r.dir.length), m = f.name.startsWith(r.dir) && rel.match(/^nodes\/([^/]+)\.md$/);
+    if (!m || !TS_ID.test(m[1])) continue;
+    const fm = frontmatter(f.text);
+    if (fm) nodes.set(m[1], { id: m[1], meta: fm.meta, body: fm.body });
+  }
+  const rootId = String(r.fm.meta.thinking.root);
+  if (!nodes.has(rootId)) return null;
+  const th = n => n.meta.thinking && typeof n.meta.thinking === 'object' ? n.meta.thinking : {};
+  const title = n => String(n.meta.title || n.id);
+  for (const n of nodes.values()) {
+    const p = th(n).parent && String(th(n).parent);
+    if (p && n.id !== rootId) { if (!kids.has(p)) kids.set(p, []); kids.get(p).push(n); }
+  }
+  kids.forEach(list => list.sort((a, b) => (a.id < b.id ? -1 : 1)));
+  const mem = files.find(f => f.name === r.dir + 'memory/project.md');
+  const memory = mem ? (frontmatter(mem.text) || { body: mem.text }).body.replace(/<!--[\s\S]*?-->/g, '').trim() : '';
+  const now = Date.now(), convo = { title: String(r.fm.meta.title || 'Thinking State'), created: now, updated: now, root: 'b' + rootId, focus: 'b' + rootId, counter: 0, branches: {}, messages: {} };
+  let n = 0;
+  const visit = (node, parentBranch, parentMsg) => {
+    const bid = 'b' + node.id, mid = 'm' + node.id, t = th(node);
+    const type = String(node.meta.type || 'Thought'), status = TS_STATUSES.includes(t.status) ? t.status : 'open';
+    const desc = node.meta.description ? String(node.meta.description) : '', links = {};
+    for (const k of TS_LINKS) if (Array.isArray(t[k])) links[k] = t[k].map(String).filter(x => TS_ID.test(x));
+    const linkLine = Object.entries(links).filter(([, v]) => v.length).map(([k, v]) => `${k.replace('_', ' ')} → ${v.map(x => nodes.has(x) ? `“${title(nodes.get(x))}”` : x).join(', ')}`).join('; ');
+    const srcs = (Array.isArray(node.meta.sources) ? node.meta.sources : []).filter(x => x && /^https?:\/\//.test(String(x.resource))).map(x => `[${String(x.title || x.resource).replace(/[[\]]/g, '')}](${x.resource})`);
+    const text = [`**${type} · ${status}** — ${title(node)}`, desc && desc !== title(node) ? `_${desc}_` : '',
+      node.id === rootId && memory ? `**Project memory**\n\n${memory}` : '', node.body,
+      linkLine ? `Links: ${linkLine}` : '', srcs.length ? `Sources: ${srcs.join(', ')}` : ''].filter(Boolean).join('\n\n');
+    const accepted = type === 'Decision' && status === 'accepted';
+    convo.messages[mid] = { id: mid, role: 'user', text, branchId: bid, ts: now, node: { id: node.id, type, status, title: title(node), description: desc, links },
+      ...(accepted ? { flagged: true, decision: { summary: (desc || title(node)).slice(0, 300), at: now } } : {}) };
+    convo.branches[bid] = { id: bid, parentId: parentBranch, forkMsgId: parentMsg, msgIds: [mid], n: parentBranch ? ++n : 0, name: title(node).slice(0, 60), created: now,
+      ...(['rejected', 'superseded', 'parked'].includes(status) ? { collapsed: true } : {}) };
+    (kids.get(node.id) || []).forEach(k => visit(k, bid, mid));
+  };
+  visit(nodes.get(rootId), null, null);
+  convo.counter = n;
+  return convo;
 }
 function exportThinkingState(id) {
   const c = db.convos[id]; if (!c) return;
@@ -2184,6 +2283,11 @@ function adoptConvo(src) {
       if (x.model) nm.model = str(x.model, 100);
       if (x.error) nm.error = str(x.error, 2000);
       if (x.flagged) nm.flagged = true;
+      if (isObj(x.node) && TS_ID.test(x.node.id)) {
+        const links = {};
+        for (const k of TS_LINKS) if (isObj(x.node.links) && Array.isArray(x.node.links[k])) links[k] = x.node.links[k].filter(v => typeof v === 'string' && TS_ID.test(v)).slice(0, 50);
+        nm.node = { id: x.node.id, type: str(x.node.type, 40) || 'Thought', status: TS_STATUSES.includes(x.node.status) ? x.node.status : 'open', title: str(x.node.title, 200), description: str(x.node.description, 500), links };
+      }
       if (isObj(x.decision)) {
         const version = h => ({ summary: str(h.summary, 300).trim(), at: time(h.at), ...(h.model ? { model: str(h.model, 100) } : {}) });
         nm.decision = version(x.decision);
@@ -2239,7 +2343,16 @@ $('#importFile').addEventListener('change', async e => {
   const files = [...e.target.files]; e.target.value = '';
   let added = [], failed = 0, facts = 0;
   for (const f of files) {
-    try { const list = parseImport(await f.text()); list.forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; }); facts += mergeMemory(list.memory); }
+    try {
+      const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
+      if (head[0] === 0x50 && head[1] === 0x4b && head[2] === 3 && head[3] === 4) { // "PK\3\4": a zip, so Thinking States
+        const convos = await openThinkingStates(await f.arrayBuffer());
+        if (!convos.length) throw new Error('No Thinking State in this zip: it needs a README.md with type: Thinking State');
+        convos.forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; });
+        continue;
+      }
+      const list = parseImport(await f.text()); list.forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; }); facts += mergeMemory(list.memory);
+    }
     catch (err) { failed++; toast(err.message || 'Import failed'); }
   }
   finishImport(added, failed, files.length, facts);
