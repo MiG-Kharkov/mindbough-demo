@@ -134,7 +134,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 #roBanner b{display:block;color:var(--ink);font-size:14px;margin-bottom:4px}
 #roBanner button{margin-top:10px;width:100%;display:flex;gap:6px;align-items:center;justify-content:center;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:9px;padding:8px;font-weight:600}
 body.readonly #roBanner{display:block}
-body.readonly #newChat,body.readonly .side-tools,body.readonly .sample-link,body.readonly #openSettings,body.readonly #keyHint,body.readonly .conv .del,body.readonly .conv .rowbtn,
+body.readonly #newChat,body.readonly .side-tools,body.readonly .sample-link,body.readonly #openSettings,body.readonly #keyHint,body.readonly #openDecisions,body.readonly .conv .del,body.readonly .conv .rowbtn,
 body.readonly .keywrap,body.readonly #model,body.readonly .composer,body.readonly .side-foot .edit-only,
 body.readonly [data-act="delbranch"],body.readonly .actions .ib:not([data-act="copy"]):not([data-act="selpath"]):not([data-act="prompt"]),body.readonly #selBar .edit-only{display:none}
 .side-foot{padding:12px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);line-height:1.5}
@@ -192,6 +192,22 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 .pv-text{white-space:pre-wrap;overflow-wrap:anywhere;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12.5px;line-height:1.5;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0}
 .pv-empty{color:var(--muted);font-size:14px;padding:12px 0}
 .pv-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.topicon .cnt{font-size:11px;font-weight:700;margin-left:3px;line-height:16px}
+.topicon .cnt:empty{display:none}
+/* decisions panel */
+.linkbtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.dp-card{border:1px solid var(--line);border-left:3px solid var(--flag);border-radius:12px;padding:10px 12px;margin:0 0 10px;background:var(--panel)}
+.dp-text{font-size:14.5px;line-height:1.45;overflow-wrap:anywhere}
+.dp-text i{color:var(--muted)}
+.dp-meta{font-size:12px;color:var(--muted);margin-top:4px}
+.dp-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.dp-actions .btn{padding:5px 10px}
+.btn.danger:hover{border-color:var(--danger);color:var(--danger)}
+.dp-area{display:block;width:100%;border:1px solid var(--accent);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;padding:8px;resize:vertical}
+.dp-hist{margin:8px 0 0;padding-left:18px;font-size:13px}
+.dp-hist li{margin:8px 0}
+.dp-hist small{display:block;color:var(--muted);font-size:11.5px}
+.dp-hist .btn{margin-top:4px;padding:3px 8px;font-size:12px}
 #crumbs{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--muted);flex:1 1 200px;overflow-x:auto;white-space:nowrap;justify-content:flex-end}
 #crumbs button{border:0;background:none;padding:3px 7px;border-radius:6px;color:var(--muted)}
 #crumbs button:hover{background:var(--accent-soft);color:var(--ink)}
@@ -412,6 +428,7 @@ button.model-chip svg.i{width:11px;height:11px}
       <button id="toggleSide" title="Show / hide conversations" aria-label="Show or hide conversations"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
       <button id="foldAll" class="topicon" title="Collapse all branches" aria-label="Collapse all branches"></button>
       <nav id="crumbs"></nav>
+      <button id="openDecisions" class="topicon" title="Decisions of this conversation" aria-label="Decisions"><svg class="i" viewBox="0 0 24 24" style="fill:currentColor"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg><span class="cnt" id="decCount"></span></button>
       <button id="toggleOutline" class="topicon" title="Branch outline (Alt+O)" aria-label="Branch outline"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
       <button id="openSettings" class="topicon" title="Settings" aria-label="Settings"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
     </header>
@@ -484,7 +501,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main 70e351a'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main f38c51a'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -954,6 +971,7 @@ $('#foldAll').onclick = () => {
 function renderChrome() {
   const c = cur(); if (!c) return;
   updateFoldAll();
+  renderDecCount();
   const path = ancestry(c, c.focus);
   $('#crumbs').innerHTML = path.map((b, i) =>
     `${i ? '<span>›</span>' : ''}<button data-crumb="${b.id}" class="${b.id === c.focus ? 'here' : ''}">${esc(branchName(b))}</button>`).join('');
@@ -1028,7 +1046,7 @@ $('#canvas').addEventListener('click', async e => {
   if (act === 'dec-edit') { startDecisionEdit(c, m); return; }
   if (act === 'dec-cancel') { decEdit = null; rerenderMsg(c.id, m.id); scheduleLayout(); return; }
   if (act === 'dec-save') { saveDecision(c, m); return; }
-  if (act === 'dec-auto') { decEdit = null; if (m.decision) m.decision.summary = ''; summarize(c, m); return; }
+  if (act === 'dec-auto') { decEdit = null; summarize(c, m, true); return; }
   if (act === 'copy') { copyText(m.text || m.error || '', 'Text copied'); return; }
   if (act === 'prompt') { openPromptView(c, m); return; }
   if (act === 'delmsg') { removeMessages(c, new Set([m.id])); return; }
@@ -1046,6 +1064,7 @@ $('#canvas').addEventListener('click', async e => {
   msgEl.outerHTML = msgHTML(c, m);
   scheduleLayout();
   renderOutline();
+  renderDecCount();
 });
 
 /* ---------------- rename branches ---------------- */
@@ -1247,12 +1266,16 @@ function startDecisionEdit(c, m) {
   const ta = document.querySelector(`.msg[data-mid="${m.id}"] .dec-area`);
   if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); }
 }
+// Every change keeps the previous text (newest first, up to 10), so a decision can be rolled back
+function setDecision(m, summary, model) {
+  const d = m.decision || (m.decision = { summary: '', at: Date.now() });
+  if (d.summary && d.summary !== summary) d.history = [{ summary: d.summary, at: d.at, ...(d.model ? { model: d.model } : {}) }, ...(d.history || [])].slice(0, 10);
+  d.summary = summary; d.at = Date.now();
+  if (model) d.model = model; else delete d.model; // no model = written by hand
+}
 function saveDecision(c, m) {
   const ta = document.querySelector(`.msg[data-mid="${m.id}"] .dec-area`);
-  const text = (ta ? ta.value : '').replace(/\s+/g, ' ').trim().slice(0, 300);
-  if (!m.decision) m.decision = { summary: '', at: Date.now() };
-  Object.assign(m.decision, { summary: text, at: Date.now() });
-  delete m.decision.model; // written by hand now
+  setDecision(m, (ta ? ta.value : '').replace(/\s+/g, ' ').trim().slice(0, 300));
   decEdit = null; c.updated = Date.now(); save();
   rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline();
 }
@@ -1272,9 +1295,9 @@ function cheapModel() {
   const best = re => (stable.length ? stable : list).filter(n => re.test(n)).sort((a, b) => ver(b) - ver(a))[0];
   return best(/flash-lite/) || best(/flash/) || modelSel.value || db.model;
 }
-async function summarize(c, m) {
+async function summarize(c, m, force) {
   const key = keyInput.value.trim();
-  if (!key || !m.decision || m.decision.pending) return;
+  if (!key || !m.decision || m.decision.pending || (m.decision.summary && !force)) return;
   const model = cheapModel();
   const b = branchOf(c, m.id); if (!b) return;
   const q = m.role === 'model' ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
@@ -1292,7 +1315,7 @@ async function summarize(c, m) {
     const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
     const text = parts.filter(p => p.text && !p.thought).map(p => p.text).join(' ').replace(/\s+/g, ' ').trim().replace(/^["“'«]+|["”'»]+$/g, '');
     if (!text) throw new Error('empty');
-    if (m.decision && !m.decision.summary) Object.assign(m.decision, { summary: text.slice(0, 300), model, at: Date.now() });
+    if (m.decision && (force || !m.decision.summary)) setDecision(m, text.slice(0, 300), model);
   } catch (err) { toast('Couldn’t write the summary. Tap the decision to write it yourself.'); }
   finally {
     if (m.decision) delete m.decision.pending;
@@ -1809,6 +1832,66 @@ function pvClick(pv, e) {
   }
 }
 $('#promptPreview').onclick = previewPrompt;
+
+/* ---------------- decisions panel: read, edit, roll back ---------------- */
+let panelEdit = null, panelHist = null; // message ids
+function flaggedIn(c) { return Object.values(c.messages).filter(m => m.flagged).sort((a, b) => b.ts - a.ts); }
+function renderDecCount() { const c = cur(); $('#decCount').textContent = (c && flaggedIn(c).length) || ''; }
+const shortDate = t => new Date(t).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+function renderDecisionsPanel() {
+  const c = cur(); if (!c) return '';
+  const list = flaggedIn(c);
+  if (!list.length) return `<p class="pv-empty">No decisions yet. Flag an answer, or your own message, to make it a decision: its one-line summary then goes into every prompt of this conversation.</p>`;
+  const inPrompt = list.filter(m => m.decision && m.decision.summary).length;
+  return `<p class="pv-note">${inPrompt} of ${list.length} decision${list.length === 1 ? '' : 's'} go into every prompt of this conversation. <button class="linkbtn" type="button" data-dp="preview">See the next prompt</button></p>`
+    + list.map(m => {
+      const d = m.decision || {}, b = branchOf(c, m.id), hist = d.history || [];
+      const meta = [b && branchName(b), d.summary && (d.model ? `by ${d.model}` : 'by you'), d.at && shortDate(d.at)].filter(Boolean).join(' · ');
+      const body = panelEdit === m.id
+        ? `<textarea class="dp-area" rows="3" maxlength="300" aria-label="Decision summary">${esc(d.summary || '')}</textarea>
+           <div class="dp-actions"><button class="btn" data-dp="cancel">Cancel</button><button class="btn primary" data-dp="save">Save</button></div>`
+        : `<div class="dp-text">${d.summary ? esc(d.summary) : d.pending ? '<i>Writing a summary…</i>' : '<i>No summary yet, so it is not in prompts.</i>'}</div>
+           <div class="dp-meta">${esc(meta)}</div>
+           <div class="dp-actions"><button class="btn" data-dp="goto">Go to</button><button class="btn" data-dp="edit">Edit</button>
+             ${keyInput.value.trim() ? '<button class="btn" data-dp="auto">Write for me</button>' : ''}
+             ${hist.length ? `<button class="btn" data-dp="hist" aria-expanded="${panelHist === m.id}">History (${hist.length})</button>` : ''}
+             <button class="btn danger" data-dp="remove">Remove</button></div>`;
+      const versions = panelHist === m.id && hist.length ? `<ol class="dp-hist">${hist.map((h, i) => `<li><span>${esc(h.summary)}</span><small>${esc(shortDate(h.at))}${h.model ? ' · ' + esc(h.model) : ' · by you'}</small><button class="btn" data-dp="restore" data-i="${i}">Restore</button></li>`).join('')}</ol>` : '';
+      return `<article class="dp-card" data-mid="${m.id}">${body}${versions}</article>`;
+    }).join('');
+}
+function refreshDecisions() {
+  const c = cur(); if (!c) return;
+  if (sheetView && sheetView.decisions) $('#sheetDyn').innerHTML = renderDecisionsPanel();
+  renderCanvas(); renderChrome();
+}
+function decisionsPanelClick(e) {
+  const btn = e.target.closest('[data-dp]'); if (!btn) return;
+  const c = cur(); if (!c) return;
+  if (btn.dataset.dp === 'preview') { previewPrompt(); return; }
+  const card = btn.closest('.dp-card'), m = card && c.messages[card.dataset.mid];
+  if (!m) return;
+  switch (btn.dataset.dp) {
+    case 'goto': closeSheet(); goToMessage(m.id); return;
+    case 'edit': panelEdit = m.id; panelHist = null; break;
+    case 'cancel': panelEdit = null; break;
+    case 'save': setDecision(m, card.querySelector('.dp-area').value.replace(/\s+/g, ' ').trim().slice(0, 300)); panelEdit = null; c.updated = Date.now(); save(); break;
+    case 'auto': summarize(c, m, true).then(refreshDecisions); break;
+    case 'hist': panelHist = panelHist === m.id ? null : m.id; break;
+    case 'restore': { const i = +btn.dataset.i, h = m.decision.history[i]; m.decision.history.splice(i, 1); setDecision(m, h.summary, h.model); c.updated = Date.now(); save(); break; }
+    case 'remove': m.flagged = false; panelEdit = panelHist = null; c.updated = Date.now(); save(); break;
+  }
+  refreshDecisions();
+  if (panelEdit) { const ta = $('.dp-area'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
+}
+document.addEventListener('keydown', e => {
+  if (!e.target.classList || !e.target.classList.contains('dp-area')) return;
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); e.target.closest('.dp-card').querySelector('[data-dp="save"]').click(); }
+});
+$('#openDecisions').onclick = () => {
+  panelEdit = panelHist = null;
+  openSheet({ title: 'Decisions', decisions: true, render: renderDecisionsPanel, onClick: decisionsPanelClick });
+};
 $('#keyHint').addEventListener('click', e => {
   const b = e.target.closest('[data-open]'); if (!b) return;
   if (b.dataset.open === 'settings') openSettings(); else $('#sampleBtn').click();
@@ -1913,7 +1996,11 @@ function adoptConvo(src) {
       if (x.model) nm.model = str(x.model, 100);
       if (x.error) nm.error = str(x.error, 2000);
       if (x.flagged) nm.flagged = true;
-      if (isObj(x.decision)) nm.decision = { summary: str(x.decision.summary, 300).trim(), at: time(x.decision.at), ...(x.decision.model ? { model: str(x.decision.model, 100) } : {}) };
+      if (isObj(x.decision)) {
+        const version = h => ({ summary: str(h.summary, 300).trim(), at: time(h.at), ...(h.model ? { model: str(h.model, 100) } : {}) });
+        nm.decision = version(x.decision);
+        if (Array.isArray(x.decision.history)) nm.decision.history = x.decision.history.filter(isObj).slice(0, 10).map(version);
+      }
       if (x.hidden) nm.hidden = true;
       if (x.edited) nm.edited = true;
       mid.set(m, nm.id); c.messages[nm.id] = nm; msgIds.push(nm.id);
