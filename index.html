@@ -138,6 +138,8 @@ body.readonly #newChat,body.readonly .side-tools,body.readonly .sample-link,body
 body.readonly .keywrap,body.readonly #model,body.readonly .composer,body.readonly .side-foot .edit-only,
 body.readonly [data-act="delbranch"],body.readonly .actions .ib:not([data-act="copy"]):not([data-act="selpath"]):not([data-act="prompt"]),body.readonly #selBar .edit-only{display:none}
 .side-foot{padding:12px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);line-height:1.5}
+.hint-touch{display:none}
+@media (hover:none) and (pointer:coarse){.hint-touch{display:inline}.hint-desk{display:none}}
 kbd{font-family:"IBM Plex Mono",monospace;font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--panel)}
 
 /* ---------- main ---------- */
@@ -425,7 +427,7 @@ button.model-chip svg.i{width:11px;height:11px}
     <button id="sampleBtn" class="sample-link" type="button">Try a sample conversation (no API key needed)</button>
     <div id="roBanner"><b>Shared conversation · read-only</b>You can explore every branch here. To continue it, download the .json and import it in the Mindbough demo.<button id="roDownload"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Download .json</button></div>
     <div id="convList"></div>
-    <div class="side-foot">Drag the canvas or scroll with <kbd>Shift</kbd>. Drag a column’s right edge to resize. <kbd>Alt</kbd>+<kbd>←</kbd> goes to the parent branch, <kbd>Alt</kbd>+<kbd>→</kbd> to the first child.<div class="ver" id="ver"></div></div>
+    <div class="side-foot"><span class="hint-desk">Drag the canvas or scroll with <kbd>Shift</kbd>. Drag a column’s right edge to resize. <kbd>Alt</kbd>+<kbd>←</kbd> goes to the parent branch, <kbd>Alt</kbd>+<kbd>→</kbd> to the first child.</span><span class="hint-touch">Swipe left on the canvas to open the first branch that continues from here, and right to go back to its parent. <b>Back</b> and the ↳ badges jump between branches too.</span><div class="ver" id="ver"></div></div>
   </aside>
   <main>
     <header class="topbar">
@@ -505,7 +507,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main 099b3fe'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 34a85bb'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1442,7 +1444,7 @@ vp.addEventListener('wheel', e => {
 }, { passive: false });
 let drag = null;
 vp.addEventListener('pointerdown', e => {
-  if (e.target.closest('.col') || e.button !== 0) return;
+  if (e.pointerType === 'touch' || e.target.closest('.col') || e.button !== 0) return; // touch moves by swipes (below)
   drag = { x: e.clientX, y: e.clientY, px: panX, st: vp.scrollTop, id: e.pointerId };
   vp.setPointerCapture(e.pointerId); vp.classList.add('dragging');
 });
@@ -1454,6 +1456,22 @@ vp.addEventListener('pointermove', e => {
 });
 const endDrag = () => { if (drag) { drag = null; vp.classList.remove('dragging'); } };
 vp.addEventListener('pointerup', endDrag); vp.addEventListener('pointercancel', endDrag);
+// Phones: a sideways swipe moves along the tree, like Alt+→ / Alt+← (left: into the first child, right: to the parent)
+let swipe = null;
+vp.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  swipe = e.touches.length === 1 && !typing(e) ? { x: t.clientX, y: t.clientY, at: Date.now(), el: e.target } : null;
+}, { passive: true });
+vp.addEventListener('touchend', e => {
+  const s = swipe; swipe = null;
+  if (!s) return;
+  const t = e.changedTouches[0], dx = t.clientX - s.x, dy = t.clientY - s.y;
+  if (Date.now() - s.at > 800 || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  if (scrollsX(s.el, -dx) || String(window.getSelection() || '')) return; // a wide code block scrolls, or text is being selected
+  const c = cur(); if (!c) return;
+  if (dx < 0) { const k = childrenOf(c, c.focus)[0]; if (k) goTo(k.id, 'top'); else toast('No branch continues from here'); }
+  else { const p = c.branches[c.focus].parentId; if (p) goTo(p); else toast('This is the main branch'); }
+}, { passive: true });
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && sel) { setSel(null); return; }
