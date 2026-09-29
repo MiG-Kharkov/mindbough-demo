@@ -204,6 +204,14 @@ body.readonly .col-head .rename{display:none}
 .col.collapsed .col-head{border-bottom:0;border-radius:18px 18px 0 0}
 .col-sum{display:none;padding:0 14px 12px;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .col.collapsed .col-sum{display:block}
+/* folded columns keep their flagged messages in view */
+.col-flags{display:none;flex-direction:column;gap:2px;padding:0 10px 10px;margin-top:-4px}
+.col.collapsed .col-flags{display:flex}
+.cflag{display:flex;gap:6px;align-items:center;border:0;background:none;text-align:left;padding:5px 6px;border-radius:8px;color:var(--flag);font-size:12.5px;min-width:0}
+.cflag span{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.cflag svg.i{width:12px;height:12px}
+.cflag:hover{background:var(--flag-soft)}
+@media (pointer:coarse){.cflag{padding:9px 6px}}
 .col.collapsed{cursor:pointer}
 .ib.fold svg{transition:transform .2s}
 .col.collapsed .ib.fold svg{transform:rotate(-90deg)}
@@ -444,7 +452,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main 9eabc62'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 9bea772'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -769,16 +777,18 @@ function renderCanvas() {
     col.style.width = W + 'px';
     const parent = c.branches[b.parentId];
     const own = b.msgIds.length;
+    const flagged = b.msgIds.map(id => c.messages[id]).filter(m => m && m.flagged);
     let head = `<button class="ib fold" data-act="fold" title="${b.collapsed ? 'Expand' : 'Collapse'}" aria-expanded="${!b.collapsed}">${ICON.chevron}</button>`;
     if (parent) head += `<button class="ib back" data-act="back" title="Back to ${esc(branchName(parent))}">${ICON.left}Back</button>`;
-    head += `<div class="name" title="${RO ? '' : 'Double-click to rename'}">${esc(branchName(b))}<small>${own} message${own === 1 ? '' : 's'}</small></div>`;
+    head += `<div class="name" title="${RO ? '' : 'Double-click to rename'}">${esc(branchName(b))}<small>${own} message${own === 1 ? '' : 's'}${flagged.length ? ` · ${flagged.length} flagged` : ''}</small></div>`;
     head += `<button class="ib rename" data-act="rename" title="Rename branch">${ICON.pencil}</button>`;
     if (parent) head += `<button class="ib" data-act="delbranch" title="Delete branch">${ICON.x}</button>`;
     const lastM = c.messages[b.msgIds[b.msgIds.length - 1]];
     const sum = lastM ? `${lastM.role === 'user' ? 'You' : 'Gemini'}: ${(lastM.text || lastM.error || '').replace(/[#*`>_~]/g, '').replace(/\s+/g, ' ').slice(0, 90)}` : 'Empty';
     let body = '';
     if (b.collapsed) {
-      col.innerHTML = `<div class="col-head">${head}</div><div class="col-sum">${esc(sum)}</div><div class="col-resize" title="Drag to resize · double-click to reset"></div>`;
+      const flags = flagged.length ? `<div class="col-flags">${flagged.map(m => `<button class="cflag" data-act="gotomsg" data-mid="${m.id}" title="Go to this message">${ICON.flagOn}<span>${esc(plain(m.text || m.error).slice(0, 90))}</span></button>`).join('')}</div>` : '';
+      col.innerHTML = `<div class="col-head">${head}</div><div class="col-sum">${esc(sum)}</div>${flags}<div class="col-resize" title="Drag to resize · double-click to reset"></div>`;
       canvas.appendChild(col); colEls[b.id] = col;
       continue;
     }
@@ -930,6 +940,7 @@ $('#canvas').addEventListener('click', async e => {
   if (act === 'rename') { startRename(bid); return; }
   if (act === 'back') { goTo(c.branches[bid].parentId); return; }
   if (act === 'goto') { goTo(btn.dataset.bid, 'top'); return; }
+  if (act === 'gotomsg') { goToMessage(btn.dataset.mid); return; }
   if (act === 'fold') {
     const b = c.branches[bid];
     b.collapsed = !b.collapsed;
