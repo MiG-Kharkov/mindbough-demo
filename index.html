@@ -394,6 +394,10 @@ button.decision:not(:disabled):hover{box-shadow:0 0 0 3px var(--flag-soft)}
 .btn.primary:hover{filter:brightness(1.07)}
 .tag.e{opacity:.75;font-weight:500;font-style:italic}
 .kid.edit{border-style:dashed}
+.reask{display:flex;align-items:center;gap:8px;margin-top:6px;padding:6px 6px 6px 10px;border:1px dashed var(--flag);border-radius:10px;font-size:12.5px;color:var(--muted)}
+.reask>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.reask .i{width:13px;height:13px;color:var(--flag);vertical-align:-2px;margin-right:4px}
+.reask .btn{flex:none}
 .kid.cmp{display:inline-flex;align-items:center;gap:4px;background:none;font-weight:600}
 .kid.cmp .i{width:13px;height:13px}
 .model-chip{border:1px solid var(--line);background:none;color:var(--muted);border-radius:6px;padding:0 6px;font-size:11px;font-weight:500;font-family:"IBM Plex Mono",ui-monospace,monospace;display:inline-flex;align-items:center;gap:4px;line-height:18px}
@@ -403,6 +407,7 @@ button.model-chip svg.i{width:11px;height:11px}
 #modelMenu{position:fixed;z-index:60;min-width:230px;max-width:320px;max-height:320px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:6px;display:none}
 #modelMenu.show{display:block}
 #modelMenu .mh{font-size:11.5px;color:var(--muted);padding:6px 10px 4px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+#modelMenu .mnote{font-size:12px;color:var(--muted);padding:0 10px 6px}
 #modelMenu button{display:flex;width:100%;align-items:center;gap:8px;border:0;background:none;text-align:left;padding:7px 10px;border-radius:8px;font-size:13px;font-family:"IBM Plex Mono",ui-monospace,monospace}
 #modelMenu button:hover,#modelMenu button:focus-visible{background:var(--accent-soft);outline:none}
 #modelMenu button .same{margin-left:auto;font-family:"Onest",system-ui,sans-serif;font-size:11px;color:var(--accent);font-weight:600}
@@ -544,7 +549,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main ca56b72'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 54c6034'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -940,7 +945,7 @@ function msgHTML(c, m) {
   }
   return `<div class="${cls}" data-mid="${m.id}">
     <div class="bubble"><div class="role">${who}${chip}${tags}</div><div class="content">${body}</div></div>
-    ${dec}${acts}${kidsHTML}</div>`;
+    ${dec}${isEdit ? '' : reaskHTML(c, m)}${acts}${kidsHTML}</div>`;
 }
 
 function renderCanvas() {
@@ -1165,6 +1170,7 @@ $('#canvas').addEventListener('click', async e => {
   if (act === 'remember') { rememberFrom(c, m); return; }
   if (act === 'options') { openOptions(c, m); return; }
   if (act === 'compare') { openCompare(c, m); return; }
+  if (act === 'reask') { reask(c, m, [...modelSel.options].some(o => o.value === m.model) ? m.model : modelSel.value || db.model); return; }
   if (act === 'delmsg') { removeMessages(c, new Set([m.id])); return; }
   if (act === 'regen-menu') { openModelMenu(btn, c, m, 'regen'); return; }
   if (act === 'edit') { startEdit(c, m); return; }
@@ -1237,7 +1243,7 @@ function openModelMenu(anchor, c, m, mode = 'regen') {
   const others = opts.filter(x => x !== top);
   menu.innerHTML = (mode === 'branch'
       ? `<div class="mh">New branch</div><button role="menuitem" class="plain" data-empty="1">${ICON.plus}Empty branch<span class="same">no answer</span></button><hr><div class="mh">Answer with</div>`
-      : `<div class="mh">Regenerate with</div>`)
+      : answerTail(c, m) ? `<div class="mh">Answer again in a new branch</div><div class="mnote">The rest of this branch stays as it is</div>` : `<div class="mh">Regenerate with</div>`)
     + (top ? `<button role="menuitem" data-model="${esc(top)}">${mode === 'regen' ? ICON.regen : ICON.branch}${esc(top)}<span class="same">${tag}</span></button>${others.length ? '<hr>' : ''}` : '')
     + others.map(x => `<button role="menuitem" data-model="${esc(x)}">${esc(x)}</button>`).join('');
   menu.classList.add('show');
@@ -1257,7 +1263,7 @@ $('#modelMenu').addEventListener('click', e => {
   closeModelMenu();
   if (!c || !m) return;
   if (btn.dataset.empty) answerInNewBranch(c, m, null);
-  else if (mode === 'regen') regenerateInPlace(c, m, btn.dataset.model);
+  else if (mode === 'regen') reask(c, m, btn.dataset.model);
   else answerInNewBranch(c, m, btn.dataset.model);
 });
 document.addEventListener('pointerdown', e => {
@@ -1296,6 +1302,48 @@ function regenerateInPlace(c, m, model) {
   save(); renderCanvas();
   if (c.focus !== b.id) focusBranch(b.id, true, 'none'); else layout();
   streamInto(c, m, req, keyInput.value.trim(), modelSel.value || db.model, backup);
+}
+// Decisions that came after an answer was written, from its request record (F-20): not its own, nor those downstream of it
+function laterDecisions(c, m) {
+  if (!m.request || !Array.isArray(m.request.blocks)) return [];
+  const rec = m.request.blocks.find(k => k.kind === 'decisions');
+  const had = new Set(rec && rec.text ? rec.text.split('\n').filter(l => l.startsWith('- ')).map(l => l.slice(2)) : []);
+  return decisionsIn(c).filter(d => d !== m && !had.has(d.decision.summary) && !pathIds(c, d.id).includes(m.id));
+}
+// Shown under the last answer of an open branch when later decisions could change it
+function reaskHTML(c, m) {
+  const b = c.branches[m.branchId];
+  if (RO || m.role !== 'model' || m.streaming || m.error || !b || b.collapsed || b.msgIds[b.msgIds.length - 1] !== m.id) return '';
+  const later = laterDecisions(c, m);
+  if (!later.length) return '';
+  const last = later[later.length - 1], n = later.length;
+  return `<div class="reask" data-sig="${esc(later.map(d => d.id + d.decision.summary.length).join())}"><span>${ICON.flagOn}Made before ${n} decision${n === 1 ? '' : 's'}: “${esc(snippetOf(last.decision.summary, 80))}”${n > 1 ? ` and ${n - 1} more` : ''}</span><button class="btn" data-act="reask" title="Ask again: the new answer gets every current decision">Re-ask</button></div>`;
+}
+// Decisions changed: update those lines, leaving alone a message you are working in
+function refreshReask() {
+  const c = cur(); if (!c || RO) return;
+  let changed = false;
+  Object.values(c.branches).forEach(b => {
+    const m = c.messages[b.msgIds[b.msgIds.length - 1]], el = m && document.querySelector(`.msg[data-mid="${m.id}"]`);
+    if (!el || el.contains(document.activeElement) || (editing && editing.mid === m.id)) return;
+    const want = (reaskHTML(c, m).match(/data-sig="([^"]*)"/) || [])[1] || '', has = el.querySelector(':scope > .reask');
+    if (want !== (has ? has.dataset.sig : '')) { rerenderMsg(c.id, m.id); changed = true; }
+  });
+  if (changed) scheduleLayout();
+}
+// An answer the conversation continues from: messages after it, or branches from it
+function answerTail(c, m) {
+  const b = branchOf(c, m.id);
+  return !!b && (b.msgIds[b.msgIds.length - 1] !== m.id || Object.values(c.branches).some(k => k.forkMsgId === m.id));
+}
+// Asking again in the middle of a chain would leave the rest answering a text that is gone, so the new answer gets its own branch
+function reask(c, m, model) {
+  const ids = pathIds(c, m.id), prev = c.messages[ids[ids.length - 2]];
+  if (!answerTail(c, m) || !prev) { regenerateInPlace(c, m, model); return; }
+  if (!canGenerate()) return;
+  const was = branchOf(c, m.id);
+  answerInNewBranch(c, prev, model);
+  toast(`Answered in a new branch. “${branchName(was, c)}” stays as it was`);
 }
 // Branch out from your own message: new branch that starts with Gemini's answer
 function answerInNewBranch(c, m, model) {
@@ -1393,7 +1441,7 @@ function saveDecision(c, m) {
   const ta = document.querySelector(`.msg[data-mid="${m.id}"] .dec-area`);
   setDecision(m, (ta ? ta.value : '').replace(/\s+/g, ' ').trim().slice(0, 300));
   decEdit = null; c.updated = Date.now(); save();
-  rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline();
+  rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline(); renderDecCount();
 }
 document.addEventListener('input', e => { if (decEdit && e.target.classList && e.target.classList.contains('dec-area')) decEdit.draft = e.target.value; });
 document.addEventListener('keydown', e => {
@@ -1463,7 +1511,7 @@ async function summarize(c, m, force) {
   finally {
     if (m.decision) delete m.decision.pending;
     save();
-    if (db.current === c.id) { rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline(); }
+    if (db.current === c.id) { rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline(); renderDecCount(); }
   }
 }
 
@@ -2300,7 +2348,7 @@ $('#promptPreview').onclick = previewPrompt;
 /* ---------------- decisions panel: read, edit, roll back ---------------- */
 let panelEdit = null, panelHist = null; // message ids
 function flaggedIn(c) { return Object.values(c.messages).filter(m => m.flagged).sort((a, b) => b.ts - a.ts); }
-function renderDecCount() { const c = cur(); $('#decCount').textContent = (c && flaggedIn(c).length) || ''; }
+function renderDecCount() { const c = cur(); $('#decCount').textContent = (c && flaggedIn(c).length) || ''; refreshReask(); }
 const shortDate = t => new Date(t).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 function renderDecisionsPanel() {
   const c = cur(); if (!c) return '';
