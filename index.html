@@ -34,6 +34,7 @@
   --flag:#B86E00; --flag-soft:rgba(199,119,0,.10);
   --wire:#93A9B0; --dot:rgba(19,33,43,.10); --danger:#B3261E;
   --shadow:0 1px 1px rgba(19,33,43,.04),0 6px 18px rgba(19,33,43,.06);
+  --k-harness:#8FA3A9; --k-memory:#8E6CCB; --k-decisions:#C77700; --k-history:#4F86B8; --k-message:#0F7B74;
   --colW:460px;
 }
 @media (prefers-color-scheme:dark){:root{
@@ -43,6 +44,7 @@
   --flag:#F0A640; --flag-soft:rgba(240,166,64,.12);
   --wire:#355157; --dot:rgba(220,231,232,.07); --danger:#F2847C;
   --shadow:0 1px 2px rgba(0,0,0,.35);
+  --k-harness:#5F777D; --k-memory:#B39DDB; --k-decisions:#F0A640; --k-history:#7FB2E0; --k-message:#3CC3B6;
 }}
 *{box-sizing:border-box}
 [hidden]{display:none!important} /* keep the hidden attribute stronger than display rules like .ib */
@@ -134,7 +136,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 body.readonly #roBanner{display:block}
 body.readonly #newChat,body.readonly .side-tools,body.readonly .sample-link,body.readonly #openSettings,body.readonly #keyHint,body.readonly .conv .del,body.readonly .conv .rowbtn,
 body.readonly .keywrap,body.readonly #model,body.readonly .composer,body.readonly .side-foot .edit-only,
-body.readonly [data-act="delbranch"],body.readonly .actions .ib:not([data-act="copy"]):not([data-act="selpath"]),body.readonly #selBar .edit-only{display:none}
+body.readonly [data-act="delbranch"],body.readonly .actions .ib:not([data-act="copy"]):not([data-act="selpath"]):not([data-act="prompt"]),body.readonly #selBar .edit-only{display:none}
 .side-foot{padding:12px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);line-height:1.5}
 kbd{font-family:"IBM Plex Mono",monospace;font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--panel)}
 
@@ -149,7 +151,8 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 #apiKey{flex:1;min-width:0;border:0;background:none;padding:9px 8px;color:var(--ink);font:inherit;outline:none}
 .keywrap button{border:0;background:none;padding:8px 10px;color:var(--muted)}
 #model{border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);padding:3px 6px;font:inherit;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px;max-width:100%;min-width:0}
-.modelpick{margin-left:auto;display:inline-flex;min-width:0;max-width:230px}
+#promptPreview{margin-left:auto}
+.modelpick{display:inline-flex;min-width:0;max-width:230px}
 #toLabel{display:inline-flex;gap:6px;align-items:center;min-width:0;white-space:nowrap;overflow:hidden}
 .keyhint{max-width:820px;margin:0 auto 8px;padding:8px 12px;border-radius:10px;background:var(--flag-soft);font-size:13px}
 .keyhint button{border:0;background:none;padding:0;color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:3px}
@@ -168,6 +171,27 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 .set-hint{font-size:13px;color:var(--muted);margin:8px 0}
 .set-hint.warn{color:var(--ink);background:var(--flag-soft);padding:8px 12px;border-radius:10px;margin-top:0}
 .set-hint a{color:var(--accent)}
+/* prompt view */
+.pv-meta{font-size:13px;color:var(--muted);margin:0 0 10px;display:flex;gap:6px 12px;flex-wrap:wrap}
+.pv-meta b{color:var(--ink);font-weight:600}
+.pv-note{font-size:12.5px;background:var(--accent-soft);border-radius:10px;padding:8px 12px;margin:0 0 12px}
+.pbar{display:flex;gap:2px;height:30px;border-radius:9px;overflow:hidden;margin:2px 0 8px}
+.pbar-seg{border:0;padding:0;min-width:8px;cursor:pointer}
+.pbar-seg:hover{filter:brightness(1.1)}
+.k-harness{background:var(--k-harness)} .k-memory{background:var(--k-memory)} .k-decisions{background:var(--k-decisions)}
+.k-history{background:var(--k-history)} .k-message{background:var(--k-message)}
+.pb-row{display:flex;align-items:center;gap:10px;width:100%;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;padding:11px 4px;font-size:14px;min-height:44px}
+.pb-row:hover{background:var(--accent-soft)}
+.pb-row:last-child{border-bottom:0}
+.pb-dot{width:11px;height:11px;border-radius:3px;flex:none}
+.pb-name{flex:1;min-width:0;font-weight:600}
+.pb-role{font-weight:600;flex:none;min-width:56px}
+.pb-snip{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.pb-size{color:var(--muted);font-size:12.5px;white-space:nowrap}
+.pb-row svg.i{color:var(--muted)}
+.pv-text{white-space:pre-wrap;overflow-wrap:anywhere;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12.5px;line-height:1.5;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0}
+.pv-empty{color:var(--muted);font-size:14px;padding:12px 0}
+.pv-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 #crumbs{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--muted);flex:1 1 200px;overflow-x:auto;white-space:nowrap;justify-content:flex-end}
 #crumbs button{border:0;background:none;padding:3px 7px;border-radius:6px;color:var(--muted)}
 #crumbs button:hover{background:var(--accent-soft);color:var(--ink)}
@@ -394,7 +418,7 @@ button.model-chip svg.i{width:11px;height:11px}
     </div>
     <div class="composer">
       <div id="keyHint" class="keyhint" hidden>To chat, add a Gemini API key in <button type="button" data-open="settings">Settings</button>, or <button type="button" data-open="sample">try a sample conversation</button>.</div>
-      <div class="to"><span id="toLabel"></span><label class="modelpick" title="Model for the next request"><select id="model" aria-label="Model for the next request"></select></label></div>
+      <div class="to"><span id="toLabel"></span><button id="promptPreview" class="ib" type="button" title="Preview the prompt your next message would send" aria-label="Preview the next prompt"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button><label class="modelpick" title="Model for the next request"><select id="model" aria-label="Model for the next request"></select></label></div>
       <div class="box">
         <textarea id="input" rows="1" placeholder="Write a message…  (Enter to send, Shift+Enter for a new line)"></textarea>
         <button id="send"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>Send</span></button>
@@ -452,7 +476,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main 9bea772'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main a038a15'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -474,6 +498,8 @@ const ICON = {
   trash: '<svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   send: '<svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   stop: '<svg class="i" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+  layers: '<svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
+  chevRight: '<svg class="i" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
 };
 
 /* ---------------- state ---------------- */
@@ -754,6 +780,7 @@ function msgHTML(c, m) {
       ${m.error ? '' : `<button class="ib" data-act="edit" title="${m.role === 'user' ? 'Edit (sends as a new branch)' : 'Edit this answer'}">${ICON.pencil}</button>`}
       <button class="ib ${m.hidden ? 'on-hide' : ''}" data-act="hide" title="${m.hidden ? 'Include in history again' : 'Exclude from the AI’s history'}" aria-pressed="${!!m.hidden}">${ICON.eyeOff}</button>
       <button class="ib ${m.flagged ? 'on-flag' : ''}" data-act="flag" title="${m.flagged ? 'Remove flag' : 'Flag as important'}" aria-pressed="${!!m.flagged}">${m.flagged ? ICON.flagOn : ICON.flag}</button>
+      ${m.role === 'model' ? `<button class="ib" data-act="prompt" title="How the prompt for this answer was built">${ICON.layers}</button>` : ''}
       <button class="ib" data-act="copy" title="Copy text">${ICON.copy}</button>
       <button class="ib del-msg" data-act="delmsg" title="Delete this message">${ICON.trash}</button>
     </div>`;
@@ -972,6 +999,7 @@ $('#canvas').addEventListener('click', async e => {
   if (act === 'hide') { m.hidden = !m.hidden; toast(m.hidden ? 'Message excluded from Gemini’s history' : 'Message included in history again'); }
   if (act === 'flag') { m.flagged = !m.flagged; }
   if (act === 'copy') { copyText(m.text || m.error || '', 'Text copied'); return; }
+  if (act === 'prompt') { openPromptView(c, m); return; }
   if (act === 'delmsg') { removeMessages(c, new Set([m.id])); return; }
   if (act === 'regen-menu') { openModelMenu(btn, c, m, 'regen'); return; }
   if (act === 'edit') { startEdit(c, m); return; }
@@ -1091,16 +1119,17 @@ function regenerateInPlace(c, m, model) {
   if (!canGenerate()) return;
   const b = branchOf(c, m.id); if (!b) return;
   const ids = pathIds(c, m.id);
-  const contents = buildContents(ids.slice(0, -1).map(id => c.messages[id]));
-  const backup = { text: m.text, model: m.model, edited: m.edited, ts: m.ts };
+  const req = buildRequest(c, ids.slice(0, -1).map(id => c.messages[id]));
+  const backup = { text: m.text, model: m.model, edited: m.edited, ts: m.ts, request: m.request };
   if (editing && editing.mid === m.id) editing = null;
   m.prev = backup; // saved with the message until the new answer is complete, so a reload or crash can't lose the original
   m.text = ''; delete m.error; m.edited = false; m.model = model; m.ts = Date.now(); m.streaming = true;
+  m.request = requestRecord(req, model);
   c.updated = Date.now();
   b.collapsed = false;
   save(); renderCanvas();
   if (c.focus !== b.id) focusBranch(b.id, true, 'none'); else layout();
-  streamInto(c, m, contents, keyInput.value.trim(), modelSel.value || db.model, backup);
+  streamInto(c, m, req, keyInput.value.trim(), modelSel.value || db.model, backup);
 }
 // Branch out from your own message: new branch that starts with Gemini's answer
 function answerInNewBranch(c, m, model) {
@@ -1421,30 +1450,55 @@ async function sendToBranch(c, bid, text, modelOverride) {
   const picked = modelSel.value || db.model;
   let model = modelOverride || picked;
 
-  const contents = buildContents(historyFor(c, bid));
-  const am = { id: uid(), role: 'model', text: '', branchId: bid, ts: Date.now(), streaming: true, model };
+  const req = buildRequest(c, historyFor(c, bid));
+  const am = { id: uid(), role: 'model', text: '', branchId: bid, ts: Date.now(), streaming: true, model, request: requestRecord(req, model) };
   c.messages[am.id] = am; b.msgIds.push(am.id);
   save(); renderSidebar(); renderCanvas(); focusBranch(bid, true);
-  return streamInto(c, am, contents, key, picked, null);
+  return streamInto(c, am, req, key, picked, null);
 }
 
-function buildContents(msgs) {
-  const contents = [];
+/* ---------------- building a request ---------------- */
+// A request is a list of blocks: fixed system blocks first (harness, memory, decisions), then the conversation.
+// The prompt view shows these blocks, and every answer keeps a record of the ones it was generated from.
+const BLOCK_KINDS = ['harness', 'memory', 'decisions', 'history', 'message'];
+function systemBlocks(c) { return []; } // { kind, label, text } blocks sent as the system instruction
+// Consecutive messages of one role become one turn; the model's turns can't come first
+function mergeTurns(msgs) {
+  const turns = [];
   for (const m of msgs) {
-    if (m.hidden || m.error || !m.text || m.streaming) continue;
+    if (!m || m.hidden || m.error || !m.text || m.streaming) continue;
     const role = m.role === 'user' ? 'user' : 'model';
-    const last = contents[contents.length - 1];
-    if (last && last.role === role) last.parts[0].text += '\n\n' + m.text;
-    else contents.push({ role, parts: [{ text: m.text }] });
+    const last = turns[turns.length - 1];
+    if (last && last.role === role) { last.text += '\n\n' + m.text; last.ids.push(m.id); }
+    else turns.push({ role, text: m.text, ids: [m.id] });
   }
-  while (contents.length && contents[0].role !== 'user') contents.shift();
-  return contents;
+  while (turns.length && turns[0].role !== 'user') turns.shift();
+  return turns;
+}
+function buildRequest(c, msgs) {
+  const turns = mergeTurns(msgs);
+  const system = systemBlocks(c).filter(b => b.text);
+  const current = turns.length && turns[turns.length - 1].role === 'user' ? turns[turns.length - 1] : null;
+  const past = current ? turns.slice(0, -1) : turns;
+  const size = ts => ts.reduce((n, t) => n + t.text.length, 0);
+  const blocks = system.map(b => ({ ...b, chars: b.text.length }));
+  if (past.length) blocks.push({ kind: 'history', label: `History · ${past.length} turn${past.length === 1 ? '' : 's'}`, ids: past.flatMap(t => t.ids), chars: size(past) });
+  if (current) blocks.push({ kind: 'message', label: 'Your message', ids: current.ids, chars: current.text.length });
+  const body = { contents: turns.map(t => ({ role: t.role, parts: [{ text: t.text }] })) };
+  if (system.length) body.systemInstruction = { parts: [{ text: system.map(b => b.text).join('\n\n') }] };
+  return { turns, blocks, body, chars: blocks.reduce((n, b) => n + b.chars, 0) };
+}
+// What an answer keeps: system blocks verbatim (they change over time), conversation blocks as message ids (no copies)
+function requestRecord(req, model) {
+  return { model, at: Date.now(), chars: req.chars, blocks: req.blocks.map(b => b.text != null
+    ? { kind: b.kind, label: b.label, chars: b.chars, text: b.text }
+    : { kind: b.kind, label: b.label, chars: b.chars, ids: b.ids }) };
 }
 
 // Streams a Gemini answer into message `am`. `backup` = previous version (in-place regeneration)
-async function streamInto(c, am, contents, key, picked, backup) {
+async function streamInto(c, am, req, key, picked, backup) {
   let model = am.model;
-  if (!contents.length) {
+  if (!req.turns.length) {
     am.streaming = false;
     const msg = 'All your messages on this path are excluded, so Gemini would receive nothing. Include at least one in history again.';
     if (backup) { Object.assign(am, backup); toast(msg); } else am.error = msg;
@@ -1460,7 +1514,7 @@ async function streamInto(c, am, contents, key, picked, backup) {
       res = await fetch(`${API}/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({ contents }),
+        body: JSON.stringify(req.body),
         signal: controller.signal,
       });
       if (res.ok) break;
@@ -1472,6 +1526,7 @@ async function streamInto(c, am, contents, key, picked, backup) {
         const wasPicked = model === picked;
         model = sug[1].replace(/\.$/, '');
         am.model = model;
+        if (am.request) am.request.model = model;
         if (wasPicked) setModel(model);
         toast(`Switched model to ${model}`);
         continue;
@@ -1479,13 +1534,14 @@ async function streamInto(c, am, contents, key, picked, backup) {
       throw new Error(`Error ${res.status}${apiMsg ? ': ' + apiMsg : ''}`);
     }
     const reader = res.body.getReader(); const dec = new TextDecoder();
-    let buf = '', lastPaint = 0, lastSave = performance.now(), finish = '';
+    let buf = '', lastPaint = 0, lastSave = performance.now(), finish = '', usage = null;
     const onLine = line => {
       if (!line.startsWith('data:')) return;
       const payload = line.slice(5).trim(); if (!payload) return;
       try {
         const j = JSON.parse(payload);
         if (j.error) throw new Error(j.error.message || 'Stream error');
+        if (j.usageMetadata) usage = j.usageMetadata;
         const cand = j.candidates && j.candidates[0];
         if (cand) {
           const parts = (cand.content && cand.content.parts) || [];
@@ -1508,6 +1564,7 @@ async function streamInto(c, am, contents, key, picked, backup) {
       if (now - lastSave > 1500) { lastSave = now; save(); }
     }
     (buf + dec.decode()).split('\n').forEach(onLine); // a stream cut off without a final newline
+    if (usage && am.request) am.request.usage = { prompt: usage.promptTokenCount | 0, answer: usage.candidatesTokenCount | 0, thoughts: usage.thoughtsTokenCount | 0 };
     if (!am.text) {
       if (finish.startsWith('BLOCKED')) am.error = `Gemini blocked the request (${finish.split(':')[1]}).`;
       else if (finish && finish !== 'STOP') am.error = `Empty response (reason: ${finish}).`;
@@ -1574,6 +1631,80 @@ function needKey() {
   return true;
 }
 $('#openSettings').onclick = () => openSettings();
+
+/* ---------------- prompt view: overview → block → part ---------------- */
+// Shows what one request is made of, at three levels: the blocks by size, the parts of a block, the full text of a part
+function openPromptView(c, m) {
+  let rec = m.request, note = '';
+  if (!rec) {
+    rec = requestRecord(buildRequest(c, historyFor(c, branchOf(c, m.id).id, m.id).slice(0, -1)), m.model);
+    note = 'Reconstructed: this answer was made before prompts were recorded, so this is what the demo would send for it now.';
+  }
+  showPrompt({ c, rec, note, title: 'Prompt of this answer', lookup: id => c.messages[id] });
+}
+function previewPrompt() {
+  const c = cur(); if (!c) return;
+  const draft = input.value.trim();
+  const msgs = historyFor(c, c.focus).concat(draft ? [{ id: '__draft', role: 'user', text: draft }] : []);
+  const rec = requestRecord(buildRequest(c, msgs), modelSel.value || db.model);
+  showPrompt({ c, rec, title: 'Next prompt', lookup: id => id === '__draft' ? { id, role: 'user', text: draft } : c.messages[id],
+    note: 'Preview: what your next message would send right now' + (draft ? ', including what you have typed.' : '. Type a message to see it added.') });
+}
+function showPrompt(pv) {
+  pv.level = 'overview';
+  openSheet({ title: pv.title, render: () => pvRender(pv), onClick: e => pvClick(pv, e), back: null });
+  pvSync(pv);
+}
+function pvSync(pv) {
+  sheetView.back = pv.level === 'overview' ? null : () => { pv.level = pv.level === 'part' ? 'block' : 'overview'; pvSync(pv); };
+  $('#sheetBack').hidden = !sheetView.back;
+  $('#sheetTitle').textContent = pv.level === 'overview' ? pv.title : pv.rec.blocks[pv.block].label;
+  $('#sheetDyn').innerHTML = pvRender(pv);
+  $('.sheet-body').scrollTop = 0;
+}
+const fmtChars = n => `${n.toLocaleString('en-US')} char${n === 1 ? '' : 's'}`;
+const roleName = r => r === 'user' ? 'You' : 'Gemini';
+// The turns of a conversation block, rebuilt from the messages it points at
+function pvTurns(pv, b) {
+  const msgs = b.ids.map(id => pv.lookup(id) || { id, role: 'user', text: '(deleted since this request)' });
+  return mergeTurns(msgs);
+}
+function pvRender(pv) {
+  const r = pv.rec;
+  if (pv.level === 'overview') {
+    if (!r.blocks.length) return `<p class="pv-empty">Nothing would be sent yet: write a message first.</p>`;
+    const total = r.blocks.reduce((n, b) => n + b.chars, 0) || 1;
+    const u = r.usage;
+    const tokens = u ? `<span><b>${u.prompt.toLocaleString('en-US')}</b> tokens in · <b>${u.answer.toLocaleString('en-US')}</b> out${u.thoughts ? ` (+${u.thoughts.toLocaleString('en-US')} thinking)` : ''}</span>`
+                     : `<span>≈ ${Math.max(1, Math.round(total / 4)).toLocaleString('en-US')} tokens (estimate)</span>`;
+    const when = new Date(r.at).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return `${pv.note ? `<p class="pv-note">${esc(pv.note)}</p>` : ''}
+      <p class="pv-meta"><span><b>${esc(r.model || 'unknown model')}</b> · ${esc(when)}</span><span>${fmtChars(total)}</span>${tokens}</p>
+      <div class="pbar" role="list">${r.blocks.map((b, i) => `<button class="pbar-seg k-${b.kind}" style="flex-grow:${Math.max(b.chars, 1)}" data-block="${i}" title="${esc(b.label)} · ${fmtChars(b.chars)}" aria-label="${esc(b.label)}"></button>`).join('')}</div>
+      <div>${r.blocks.map((b, i) => `<button class="pb-row" data-block="${i}"><span class="pb-dot k-${b.kind}"></span><span class="pb-name">${esc(b.label)}</span><span class="pb-size">${fmtChars(b.chars)} · ${Math.round(b.chars * 100 / total)}%</span>${ICON.chevRight}</button>`).join('')}</div>
+      <div class="pv-actions"><button class="btn" data-copy>Copy the whole prompt</button></div>`;
+  }
+  const b = r.blocks[pv.block];
+  if (b.text != null) return `<pre class="pv-text">${esc(b.text)}</pre>`;
+  const turns = pvTurns(pv, b);
+  if (pv.level === 'block') {
+    const now = turns.reduce((n, t) => n + t.text.length, 0);
+    return `${now !== b.chars ? `<p class="pv-note">Edited since this request: sizes show the current text.</p>` : ''}
+      <div>${turns.map((t, j) => `<button class="pb-row" data-part="${j}"><span class="pb-role">${roleName(t.role)}</span><span class="pb-snip">${esc(plain(t.text).slice(0, 140))}</span><span class="pb-size">${fmtChars(t.text.length)}</span>${ICON.chevRight}</button>`).join('')}</div>`;
+  }
+  const t = turns[pv.part];
+  return `<p class="pv-meta"><span><b>${roleName(t.role)}</b></span><span>${fmtChars(t.text.length)}</span></p><pre class="pv-text">${esc(t.text)}</pre>`;
+}
+function pvClick(pv, e) {
+  const blk = e.target.closest('[data-block]'), part = e.target.closest('[data-part]');
+  if (blk) { pv.block = +blk.dataset.block; pv.level = 'block'; pvSync(pv); return; }
+  if (part) { pv.part = +part.dataset.part; pv.level = 'part'; pvSync(pv); return; }
+  if (e.target.closest('[data-copy]')) {
+    const text = pv.rec.blocks.map(b => `## ${b.label}\n\n` + (b.text != null ? b.text : pvTurns(pv, b).map(t => `[${roleName(t.role)}]\n${t.text}`).join('\n\n'))).join('\n\n');
+    copyText(text, 'Prompt copied');
+  }
+}
+$('#promptPreview').onclick = previewPrompt;
 $('#keyHint').addEventListener('click', e => {
   const b = e.target.closest('[data-open]'); if (!b) return;
   if (b.dataset.open === 'settings') openSettings(); else $('#sampleBtn').click();
@@ -1693,6 +1824,21 @@ function adoptConvo(src) {
     const fork = mid.get(b.forkMsgId);
     if (nb.parentId && fork && c.branches[nb.parentId].msgIds.includes(fork)) nb.forkMsgId = fork;
     if (mid.has(b.editOf)) nb.editOf = mid.get(b.editOf);
+  }
+  // an answer's prompt record points at other messages, so its ids are remapped as well
+  const count = v => Math.max(0, Math.floor(Number(v)) || 0);
+  for (const [k, x] of Object.entries(src.messages)) {
+    if (!mid.has(k) || !isObj(x) || !isObj(x.request)) continue;
+    const r = x.request;
+    const blocks = (Array.isArray(r.blocks) ? r.blocks : []).filter(isObj).slice(0, 20).map(b => {
+      const out = { kind: BLOCK_KINDS.includes(b.kind) ? b.kind : 'history', label: str(b.label, 80), chars: count(b.chars) };
+      if (typeof b.text === 'string') out.text = str(b.text, 20000);
+      else out.ids = (Array.isArray(b.ids) ? b.ids : []).map(i => mid.get(i)).filter(Boolean);
+      return out;
+    });
+    const rec = { model: str(r.model, 100), at: time(r.at), chars: count(r.chars), blocks };
+    if (isObj(r.usage)) rec.usage = { prompt: count(r.usage.prompt), answer: count(r.usage.answer), thoughts: count(r.usage.thoughts) };
+    c.messages[mid.get(k)].request = rec;
   }
   c.counter = Math.max(0, ...Object.values(c.branches).map(b => b.n));
   db.convos[c.id] = c;
