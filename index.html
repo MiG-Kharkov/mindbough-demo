@@ -554,6 +554,7 @@ button.model-chip svg.i{width:11px;height:11px}
         <p class="set-hint">Stored only in this browser and sent only to Google’s Gemini API. No key yet? <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Get one free in Google AI Studio</a>.</p>
         <h3 class="set-h">Models for helper tasks</h3>
         <div id="helperModels"></div>
+        <p class="set-hint" id="helperUse" hidden></p>
         <p class="set-hint">Automatic uses the cheapest model your key can reach. You pick the model for chatting next to “Writing in …”.</p>
         <h3 class="set-h">About</h3>
         <p class="set-hint">This is the MVP of the Thinking State format, an open format for the state of your thinking with AI. Every prompt is built from where you are, what you decided and what you remember. Export a conversation as a Thinking State (the bough button in the menu), and any app or agent can read it.</p>
@@ -581,7 +582,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.2.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 9ac715f'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 040c272'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1584,7 +1585,29 @@ function helperModel(task) {
   if (v === 'off') return HELPER_TASKS.find(t => t.id === task).off ? null : cheapModel();
   return v && [...modelSel.options].some(o => o.value === v) ? v : cheapModel();
 }
+// Each helper call is kept on its conversation (F-30), and becomes a call entry of its session (spec §10.3, §14.8):
+// the task, the model, the prompt template it used, its tokens and a short text of what came back
+const PROMPT_IDS = { summary: 'summary@1', name: 'name@1', options: 'options@1', compare: 'compare@2' };
+const usageOf = j => j && j.usageMetadata ? { prompt: j.usageMetadata.promptTokenCount | 0, answer: j.usageMetadata.candidatesTokenCount | 0, thoughts: j.usageMetadata.thoughtsTokenCount | 0 } : null;
+function recordCall(c, { task, model, prompt, mid, usage, output, error }) {
+  if (!c || db.convos[c.id] !== c) return null;
+  const id = 'c' + uid();
+  c.calls = (c.calls || []).concat({ id, task, at: Date.now(), model, chars: prompt.length, ...(mid ? { mid } : {}), ...(usage ? { usage } : {}),
+    ...(output ? { output: clean(output, 300) } : {}), ...(error ? { error: clean(error, 200) } : {}) }).slice(-300);
+  return id;
+}
+const tok = n => (n | 0).toLocaleString('en-US');
+function callsLine(calls) {
+  const u = calls.reduce((t, x) => ({ in: t.in + (x.usage ? x.usage.prompt : 0), out: t.out + (x.usage ? x.usage.answer + x.usage.thoughts : 0) }), { in: 0, out: 0 });
+  return u.in || u.out ? `${tok(u.in)} tokens in · ${tok(u.out)} out` : 'no token counts';
+}
+function fillHelperUse() {
+  const c = cur(), calls = (c && c.calls) || [], use = $('#helperUse');
+  use.hidden = !calls.length;
+  if (calls.length) use.textContent = `In this conversation: ${HELPER_TASKS.map(t => [t, calls.filter(x => x.task === t.id).length]).filter(([, n]) => n).map(([t, n]) => `${t.label.toLowerCase()} ${n}`).join(', ')} · ${callsLine(calls)}.`;
+}
 function fillHelpers() {
+  fillHelperUse();
   const list = [...modelSel.options].map(o => o.value);
   $('#helperModels').innerHTML = HELPER_TASKS.map(t => {
     const v = db.helpers[t.id] || '';
@@ -1618,9 +1641,13 @@ async function summarize(c, m, force) {
     const j = await r.json();
     const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
     const text = parts.filter(p => p.text && !p.thought).map(p => p.text).join(' ').replace(/\s+/g, ' ').trim().replace(/^["“'«]+|["”'»]+$/g, '');
+    recordCall(c, { task: 'summary', model, prompt, mid: m.id, usage: usageOf(j), output: text, ...(text ? {} : { error: 'empty reply' }) });
     if (!text) throw new Error('empty');
     if (m.decision && (force || !m.decision.summary)) setDecision(m, text.slice(0, 300), model);
-  } catch (err) { toast('Couldn’t write the summary. Tap the decision to write it yourself.'); }
+  } catch (err) {
+    if (!/^empty$/.test(err.message)) recordCall(c, { task: 'summary', model, prompt, mid: m.id, error: err.message });
+    toast('Couldn’t write the summary. Tap the decision to write it yourself.');
+  }
   finally {
     if (m.decision) delete m.decision.pending;
     save();
@@ -1630,18 +1657,29 @@ async function summarize(c, m, force) {
 
 /* ---------------- branch into options ---------------- */
 // A helper call to the cheapest model that must answer as JSON matching `schema` (Gemini structured output)
-async function helperJSON(prompt, schema, task) {
+// `at` ({ c, mid, output }) records the call on the conversation, with `output(data)` as its short result
+async function helperJSON(prompt, schema, task, at) {
   const model = helperModel(task);
-  const r = await fetch(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': keyInput.value.trim() },
-    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.4, responseMimeType: 'application/json', responseSchema: schema } }),
-  });
-  if (!r.ok) { let msg = ''; try { msg = (await r.json()).error.message || ''; } catch (e) {} throw new Error(msg ? msg.slice(0, 140) : `error ${r.status}`); }
-  const j = await r.json();
-  const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
-  const found = parts.filter(p => p.text && !p.thought).map(p => p.text).join('').match(/\{[\s\S]*\}/);
-  if (!found) throw new Error('the reply had no JSON');
-  return { data: JSON.parse(found[0]), model };
+  let usage = null;
+  try {
+    const r = await fetch(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': keyInput.value.trim() },
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.4, responseMimeType: 'application/json', responseSchema: schema } }),
+    });
+    if (!r.ok) { let msg = ''; try { msg = (await r.json()).error.message || ''; } catch (e) {} throw new Error(msg ? msg.slice(0, 140) : `error ${r.status}`); }
+    const j = await r.json();
+    usage = usageOf(j);
+    const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+    const found = parts.filter(p => p.text && !p.thought).map(p => p.text).join('').match(/\{[\s\S]*\}/);
+    if (!found) throw new Error('the reply had no JSON');
+    const data = JSON.parse(found[0]);
+    let output = ''; try { output = at && at.output ? String(at.output(data) || '') : ''; } catch (e) {}
+    const call = at ? recordCall(at.c, { task, model, prompt, mid: at.mid, usage, output }) : null;
+    return { data, model, call };
+  } catch (err) {
+    if (at) recordCall(at.c, { task, model, prompt, mid: at.mid, usage, error: err.message });
+    throw err;
+  }
 }
 let opt = null, fanOut = null; // the options sheet; the queue answering new branches one by one ({ cancel })
 const clean = (v, max) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, max);
@@ -1666,7 +1704,7 @@ async function findOptions() {
   const mine = opt;
   mine.loading = true; mine.error = ''; renderOptionsIfOpen();
   try {
-    const { data } = await helperJSON(prompt, schema, 'options');
+    const { data } = await helperJSON(prompt, schema, 'options', { c, mid: m.id, output: d => (d.options || []).map(o => o && o.title).filter(Boolean).join('; ') });
     const found = (Array.isArray(data.options) ? data.options : []).map(o => ({ title: clean(o && o.title, 80), why: clean(o && o.why, 200), on: true })).filter(o => o.title).slice(0, 6);
     mine.items = found.concat(mine.items.filter(x => x.manual && x.title.trim()));
     if (found.length < 2) mine.error = 'No distinct options found here. Add your own below.';
@@ -1879,7 +1917,7 @@ async function compareWithAI(c, m) {
     next: { type: 'STRING' } } };
   v.loading = true; v.error = ''; renderCompareIfOpen();
   try {
-    const { data, model } = await helperJSON(prompt, schema, 'compare');
+    const { data, model, call } = await helperJSON(prompt, schema, 'compare', { c, mid: m.id, output: d => [d.question, d.relation].filter(Boolean).join(' · ') });
     const relation = RELATIONS[data.relation] ? data.relation : 'alternatives', alt = relation === 'alternatives';
     const criteria = alt ? (Array.isArray(data.criteria) ? data.criteria : []).map(x => ({ name: clean(x && (x.name || x), 60), why: clean(x && x.why, 140) })).filter(x => x.name).slice(0, 5) : [];
     if (alt && !criteria.length) throw new Error('no criteria in the reply');
@@ -1893,7 +1931,7 @@ async function compareWithAI(c, m) {
     const request = { chars: prompt.length, blocks: [{ kind: 'task', label: 'Task', text: COMPARE_TASK, chars: COMPARE_TASK.length }, ...blocks] };
     m.compare = { at: Date.now(), model, question: clean(data.question, 200), relation, relationWhy: clean(data.relation_why, 240), criteria, cols,
       ...(pick ? { pick } : {}), ...(!alt && data.next ? { next: clean(data.next, 300) } : {}), ...(focus ? { focus } : {}), request, sig: compareSig(c, kids),
-      ...(m.compare && m.compare.chosen ? { chosen: m.compare.chosen } : {}) };
+      ...(m.compare && m.compare.chosen ? { chosen: m.compare.chosen } : {}), ...(call ? { call } : {}) };
     v.focus = null;
     save();
   } catch (err) { v.error = `Couldn’t compare (${err.message}). Try again, or choose from the list.`; }
@@ -1941,7 +1979,7 @@ async function nameBranch(c, am) {
   const prompt = 'Give this branch of a conversation a short title of 2 to 5 words, in the language of the conversation, like a heading. No quotes and no final period.'
     + `\n\nQuestion:\n${(q ? q.text : '').slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
   try {
-    const { data } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name');
+    const { data } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, output: d => d.title });
     const name = clean(data && data.title, 60).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim();
     if (!name || b.name || !c.branches[b.id] || !db.convos[c.id]) return;
     b.name = name;
@@ -2438,6 +2476,7 @@ function openSettings(hint) {
     : `Your data is saved only in this browser (${storage}), about ${fmtMB(mb)} MB.`;
   $('#settingsHint').textContent = hint || '';
   $('#settingsHint').hidden = !hint;
+  fillHelperUse();
   if (!keyInput.value.trim()) keyInput.focus();
 }
 // Sending needs a key: open Settings with a hint rather than pointing at a field that isn't on screen
@@ -2456,7 +2495,7 @@ function openPromptView(c, m) {
     rec = requestRecord(buildRequest(c, historyFor(c, branchOf(c, m.id).id, m.id).slice(0, -1)), m.model);
     note = 'Reconstructed: this answer was made before prompts were recorded, so this is what the demo would send for it now.';
   }
-  showPrompt({ c, rec, note, title: 'Prompt of this answer', lookup: id => c.messages[id], search: m.search });
+  showPrompt({ c, rec, note, title: 'Prompt of this answer', lookup: id => c.messages[id], search: m.search, calls: (c.calls || []).filter(x => x.mid === m.id) });
 }
 function previewPrompt() {
   const c = cur(); if (!c) return;
@@ -2500,6 +2539,8 @@ function pvRender(pv) {
       <div>${r.blocks.map((b, i) => `<button class="pb-row" data-block="${i}"><span class="pb-dot k-${b.kind}"></span><span class="pb-name">${esc(b.label)}</span><span class="pb-size">${fmtChars(b.chars)} · ${Math.round(b.chars * 100 / total)}%</span>${ICON.chevRight}</button>`).join('')}</div>
       ${pv.search ? `<div class="pv-search"><b>The model searched the web</b>${(pv.search.queries || []).length ? `<ul>${pv.search.queries.map(q => `<li>“${esc(q)}”</li>`).join('')}</ul>` : ''}
         ${(pv.search.sources || []).length ? `<p class="pv-meta" style="margin-top:8px"><span>${pv.search.sources.length} source${pv.search.sources.length === 1 ? '' : 's'}</span></p><ul>${pv.search.sources.map(x => `<li><a href="${esc(x.uri)}" target="_blank" rel="noopener noreferrer">${esc(x.title)}</a></li>`).join('')}</ul>` : ''}</div>` : ''}
+      ${(pv.calls || []).length ? `<div class="pv-search pv-calls"><b>Helper calls on this answer</b><ul>${pv.calls.map(x => `<li>${esc((HELPER_TASKS.find(t => t.id === x.task) || { label: x.task }).label)} · <b>${esc(x.model || 'unknown model')}</b> · ${x.usage ? `${tok(x.usage.prompt)} in · ${tok(x.usage.answer + x.usage.thoughts)} out` : 'no token counts'}${x.error ? ` · failed: ${esc(x.error)}` : ''}</li>`).join('')}</ul>
+        <p class="pv-meta" style="margin-top:8px"><span>${pv.calls.length} call${pv.calls.length === 1 ? '' : 's'} · ${callsLine(pv.calls)}</span></p></div>` : ''}
       <div class="pv-actions"><button class="btn" data-copy>Copy the whole prompt</button></div>`;
   }
   const b = r.blocks[pv.block];
@@ -2664,7 +2705,8 @@ const HELP = [
     <li>An answer made before later decisions says so: <b>Re-ask</b> writes it again with them. Re-asking in the middle of a chain opens a new branch.</li></ul>` },
   { id: 'models', title: 'Models as compute', cards: ['F-30', 'F-33'], body: `
     <ul><li>Pick the model for the next request next to "Writing in …". Each answer shows the model that wrote it, and its prompt view shows the token counts.</li>
-    <li>Settings → <b>Models for helper tasks</b>: which model writes summaries, names, options and comparisons (the cheapest by default), or turn summaries and names off.</li>
+    <li>Settings → <b>Models for helper tasks</b>: which model writes summaries, names, options and comparisons (the cheapest by default), or turn summaries and names off. It also says how many helper calls this conversation made, and their tokens.</li>
+    <li>An answer's prompt view lists the <b>helper calls</b> made on it, each with its model and tokens. They are saved in the Thinking State too.</li>
     <li><b>Web</b> lets the model search the web (inside the Gemini API). The answer lists its sources, and the prompt view shows what was searched.</li></ul>` },
   { id: 'data', title: 'Your data and the format', cards: ['F-13', 'F-14', 'F-17', 'F-25', 'F-26'], body: `
     <ul><li>Everything is saved in this browser only (IndexedDB), as Thinking State bundles: the same files an export holds. It survives reloads, closed tabs and crashes.</li>
@@ -2676,7 +2718,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.', 'Importing a Thinking State brings back the whole conversation, and an export, import and export again gives the same files.', 'Your conversations are now stored as Thinking State bundles, the same files an export holds.', '<b>Export all</b> saves a .zip of Thinking States and your memory, and a shared page downloads its Thinking State.', 'Fixed: a comparison no longer carries your memory into exported and shared copies, and your prompts keep showing their memory after a reload.'] },
+  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.', 'Importing a Thinking State brings back the whole conversation, and an export, import and export again gives the same files.', 'Your conversations are now stored as Thinking State bundles, the same files an export holds.', '<b>Export all</b> saves a .zip of Thinking States and your memory, and a shared page downloads its Thinking State.', 'Fixed: a comparison no longer carries your memory into exported and shared copies, and your prompts keep showing their memory after a reload.', 'Helper calls (summaries, names, options, comparisons) are saved with their model and tokens, and shown in the prompt view and Settings.'] },
   { version: '0.2.0', items: ['Decisions and memory reach every prompt, and the prompt view shows how each request is built.', 'Branch into options, compare the branches and choose one; branches name themselves.',
     'A model per request and per helper task, and web search with its sources.', 'Export and open a conversation as a Thinking State (profile 0.2), with the model, prompt and tokens of every answer.'] },
 ];
@@ -2957,6 +2999,13 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       after = m.id;
     });
   }
+  for (const x of (c.calls || []).slice().sort((a, b) => a.at - b.at)) {
+    const m = x.mid && c.messages[x.mid], chars = x.chars | 0;
+    lines.push({ id: x.id, kind: 'call', task: x.task, node: byBranch[m ? m.branchId : c.root], by: `mindbough-demo/${x.model || 'unknown'}`, at: iso(x.at),
+      request: { at: iso(x.at), chars, ...(PROMPT_IDS[x.task] ? { prompt: PROMPT_IDS[x.task] } : {}), blocks: [{ kind: 'prompt', chars }] },
+      ...(x.usage ? { usage: { input: x.usage.prompt | 0, output: x.usage.answer | 0, ...(x.usage.thoughts ? { reasoning: x.usage.thoughts | 0 } : {}) } } : {}),
+      ...(x.output ? { output: x.output } : {}), ...(x.error ? { error: x.error } : {}), ...(m ? { ext: { 'mindbough-demo': { message: m.id } } } : {}) });
+  }
   return lines.map(x => JSON.stringify(x)).join('\n') + '\n';
 }
 /* ---------------- open a Thinking State (.zip) ---------------- */
@@ -3219,6 +3268,12 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     convo.branches[id] = b;
   }
   convo.root = bidOf(rootId); convo.focus = convo.root;
+  convo.calls = entries.filter(e => e.kind === 'call' && typeof e.task === 'string').map(e => {
+    const ext = isObj(e.ext) && isObj(e.ext['mindbough-demo']) ? e.ext['mindbough-demo'] : {}, mid = ext.message && toMsg.get(String(ext.message));
+    return { id: e.id, task: e.task.slice(0, 40), at: time(e.at, now), model: modelOf(e.by), chars: isObj(e.request) ? Math.max(0, e.request.chars | 0) : 0, ...(mid ? { mid } : {}),
+      ...(isObj(e.usage) ? { usage: { prompt: e.usage.input | 0, answer: e.usage.output | 0, thoughts: e.usage.reasoning | 0 } } : {}),
+      ...(typeof e.output === 'string' && e.output ? { output: e.output.slice(0, 300) } : {}), ...(typeof e.error === 'string' && e.error ? { error: e.error.slice(0, 200) } : {}) };
+  });
   // decisions anchored at entries (spec §7.1, §10.6)
   const used = new Set(withEntries);
   for (const [nid, node] of nodes) {
@@ -3440,6 +3495,11 @@ function adoptConvo(src) {
     if (isObj(r.usage)) rec.usage = { prompt: count(r.usage.prompt), answer: count(r.usage.answer), thoughts: count(r.usage.thoughts) };
     c.messages[mid.get(k)].request = rec;
   }
+  // helper calls (F-30), anchored at their messages
+  const calls = (Array.isArray(src.calls) ? src.calls : []).filter(x => isObj(x) && typeof x.task === 'string').slice(-300).map(x => ({ id: keepId(x.id), task: str(x.task, 40), at: time(x.at), model: str(x.model, 100), chars: count(x.chars),
+    ...(mid.has(x.mid) ? { mid: mid.get(x.mid) } : {}), ...(isObj(x.usage) ? { usage: { prompt: count(x.usage.prompt), answer: count(x.usage.answer), thoughts: count(x.usage.thoughts) } } : {}),
+    ...(x.output ? { output: str(x.output, 300) } : {}), ...(x.error ? { error: str(x.error, 200) } : {}) }));
+  if (calls.length) c.calls = calls;
   c.counter = Math.max(0, ...Object.values(c.branches).map(b => b.n));
   db.convos[c.id] = c;
   db.order.unshift(c.id);
