@@ -533,6 +533,7 @@ button.model-chip svg.i{width:11px;height:11px}
         <div id="helperModels"></div>
         <p class="set-hint">Automatic uses the cheapest model your key can reach. You pick the model for chatting next to “Writing in …”.</p>
         <h3 class="set-h">About</h3>
+        <p class="set-hint">This is the MVP of the Thinking State format, an open format for the state of your thinking with AI. Every prompt is built from where you are, what you decided and what you remember. Export a conversation as a Thinking State (the bough button in the menu), and any app or agent can read it.</p>
         <p class="set-hint" id="verSettings"></p>
         <p class="set-hint" id="storageInfo"></p>
       </div>
@@ -555,7 +556,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main f089969'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main e37c84e'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1001,7 +1002,7 @@ function renderCanvas() {
                  : `<div class="fork-note">${ICON.branch}<span>Continues from the start of ${esc(branchName(parent))}</span></div>`;
     }
     body += own ? b.msgIds.map(id => msgHTML(c, c.messages[id])).join('')
-      : `<div class="empty">${parent ? 'New branch. Write a message below — Gemini will only see this path of the conversation.' : 'Start the conversation by writing a message below.'}</div>`;
+      : `<div class="empty">${parent ? 'New branch. Write a message below — Gemini will only see this path of the conversation.' : '<b>Start by writing a message below.</b><br>This is the MVP of the Thinking State format: each branch sends the model only its own path, plus the decisions in force and your memory. The layers button shows how every prompt is built.'}</div>`;
     col.innerHTML = `<div class="col-head">${head}</div><div class="col-body">${body}</div><div class="col-resize" title="Drag to resize · double-click to reset"></div>`;
     canvas.appendChild(col);
     colEls[b.id] = col;
