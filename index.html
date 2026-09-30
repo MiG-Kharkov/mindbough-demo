@@ -320,6 +320,15 @@ body.readonly .col-head .rename{display:none}
 .ib.fold svg{transition:transform .2s}
 .col.collapsed .ib.fold svg{transform:rotate(-90deg)}
 .col-head .name small{font-weight:400;color:var(--muted);margin-left:6px}
+.bstat{flex:none;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;line-height:18px}
+@media (max-width:400px){.bstat{font-size:11px;padding:1px 6px}}
+.bstat.s-accepted,.ostat.s-accepted{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.bstat.s-rejected,.ostat.s-rejected{text-decoration:line-through}
+.col.dropped .msg{opacity:.62}
+.ostat{font-size:11px;font-weight:600;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 6px}
+.st-row{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;padding:12px;margin-bottom:8px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink)}
+.st-row span{font-size:13px;color:var(--muted)}
+.st-row.on{border-color:var(--accent);background:var(--accent-soft)}
 .ib{border:1px solid transparent;background:none;border-radius:8px;padding:5px;display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:12.5px}
 .ib:hover{background:var(--accent-soft);color:var(--ink)}
 .ib.back{border-color:var(--line);color:var(--ink);padding:5px 9px}
@@ -516,7 +525,7 @@ button.model-chip svg.i{width:11px;height:11px}
     </div>
     <div class="composer">
       <div id="keyHint" class="keyhint" hidden>To chat, add a Gemini API key in <button type="button" data-open="settings">Settings</button>, or <button type="button" data-open="sample">try a sample conversation</button>.</div>
-      <div class="to"><span id="toLabel"></span><button id="promptPreview" class="ib" type="button" title="Preview the prompt your next message would send" aria-label="Preview the next prompt"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button><button id="webSearch" class="ib" type="button" aria-pressed="false" aria-label="Web search" title="Let the model search the web (Google Search) for the next requests"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg><span class="lbl">Web</span></button><label class="modelpick" title="Model for the next request"><select id="model" aria-label="Model for the next request"></select></label></div>
+      <div class="to"><span id="toLabel"></span><button id="promptPreview" class="ib" type="button" title="Preview the prompt your next message would send" aria-label="Preview the next prompt"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button><button id="webSearch" class="ib" type="button" aria-pressed="false" aria-label="Web search" title="Web search: the model may search Google when it needs fresh facts. Tap to turn it off or on"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg><span class="lbl">Web</span></button><label class="modelpick" title="Model for the next request"><select id="model" aria-label="Model for the next request"></select></label></div>
       <div class="box">
         <textarea id="input" rows="1" placeholder="Write a message…  (Enter to send, Shift+Enter for a new line)"></textarea>
         <button id="send"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>Send</span></button>
@@ -582,7 +591,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.2.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main c55bdef'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 5994352'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -681,12 +690,15 @@ const NATIVE = stored.v2 && (!stored.v1 || (typeof stored.v1.rev === 'number' &&
 if (NATIVE) {
   const st = NATIVE.settings || {}, ws = NATIVE.workspace || {};
   db = { convos: {}, order: Array.isArray(ws.order) ? ws.order.slice() : [], current: ws.current || null, key: st.key || '', model: st.model || '',
-    helpers: st.helpers || {}, web: !!st.web, memory: Array.isArray(NATIVE.memory) ? NATIVE.memory : [], rev: NATIVE.rev | 0 };
+    helpers: st.helpers || {}, ...(st.webOff ? { webOff: true } : {}), memory: Array.isArray(NATIVE.memory) ? NATIVE.memory : [], rev: NATIVE.rev | 0 };
 }
 if (!db || !db.convos) db = { convos: {}, order: [], current: null, key: '', model: DEFAULT_MODELS[0] };
 if (!db.model) db.model = DEFAULT_MODELS[0];
 if (!Array.isArray(db.memory)) db.memory = []; // facts shared by all conversations: [{ id, text, at, src?: { cid, mid }, from? }]
 if (!db.helpers || typeof db.helpers !== 'object') db.helpers = {}; // the model per helper task (F-30): { summary?, name?, options?, compare? }
+// Web search is on unless you turned it off (F-33): the model decides itself when it needs to search. Only "off" is stored,
+// so the off-by-default of earlier versions doesn't count as a choice
+db.web = !db.webOff;
 // An answer still "streaming" was cut off by a reload or crash: restore the answer it was replacing, if any
 let repaired = false; // saved at start, so the repair is stored at once
 function repairConvo(c) {
@@ -725,7 +737,7 @@ function nativeRecord() {
     const bs = Object.values(c.branches);
     view[c.id] = { focus: c.focus, collapsed: bs.filter(b => b.collapsed).map(b => b.id), ofold: bs.filter(b => b.ofold).map(b => b.id) };
   }
-  return { v: 2, rev: db.rev | 0, savedAt: Date.now(), settings: { key: db.key || '', model: db.model || '', helpers: db.helpers || {}, web: !!db.web },
+  return { v: 2, rev: db.rev | 0, savedAt: Date.now(), settings: { key: db.key || '', model: db.model || '', helpers: db.helpers || {}, web: !!db.web, ...(db.webOff ? { webOff: true } : {}) },
     workspace: { order: db.order, current: db.current }, view, memory: db.memory || [], bundles };
 }
 function writeNative() {
@@ -1079,7 +1091,9 @@ function renderCanvas() {
     const flagged = b.msgIds.map(id => c.messages[id]).filter(m => m && m.flagged);
     let head = `<button class="ib fold" data-act="fold" title="${b.collapsed ? 'Expand' : 'Collapse'}" aria-expanded="${!b.collapsed}">${ICON.chevron}</button>`;
     if (parent) head += `<button class="ib back" data-act="back" title="Back to ${esc(branchName(parent))}">${ICON.left}Back</button>`;
+    if (droppedAt(c, b.id)) col.classList.add('dropped');
     head += `<div class="name" title="${RO ? '' : 'Double-click to rename'}">${esc(branchName(b))}<small>${own} message${own === 1 ? '' : 's'}${flagged.length ? ` · ${flagged.length} decision${flagged.length === 1 ? '' : 's'}` : ''}</small></div>`;
+    if (parent) head += `<button class="bstat s-${statusOf(b)}" data-act="status" title="Status of this branch${RO ? '' : ': tap to change'}"${RO ? ' disabled' : ''}>${esc(statusLabel(b))}</button>`;
     head += `<button class="ib rename" data-act="rename" title="Rename branch">${ICON.pencil}</button>`;
     if (parent) head += `<button class="ib" data-act="delbranch" title="Delete branch">${ICON.x}</button>`;
     const lastM = c.messages[b.msgIds[b.msgIds.length - 1]];
@@ -1238,6 +1252,7 @@ $('#canvas').addEventListener('click', async e => {
     copyText(code, 'Code copied'); return;
   }
   if (act === 'rename') { startRename(bid); return; }
+  if (act === 'status') { if (!RO) openStatus(c, bid); return; }
   if (act === 'back') { goTo(c.branches[bid].parentId); return; }
   if (act === 'goto') { goTo(btn.dataset.bid, 'top'); return; }
   if (act === 'gotomsg') { goToMessage(btn.dataset.mid); return; }
@@ -1955,12 +1970,13 @@ function chooseBranch(c, m, bid) {
   const why = cmp.pick && cmp.pick.bid === bid && cmp.pick.why ? cmp.pick.why : col && col.summary ? col.summary : '';
   const names = others.map(b => branchName(b, c));
   const over = names.length > 3 ? ` over ${names.length} other options` : names.length ? ` over ${names.join(', ')}` : '';
-  const undo = { flagged: !!target.flagged, decision: target.decision ? JSON.parse(JSON.stringify(target.decision)) : null, folds: others.concat(win).map(b => [b, !!b.collapsed]), chosen: cmp.chosen };
+  const undo = { flagged: !!target.flagged, decision: target.decision ? JSON.parse(JSON.stringify(target.decision)) : null, folds: others.concat(win).map(b => [b, !!b.collapsed]), chosen: cmp.chosen,
+    status: others.concat(win).map(b => [b, b.status]) };
   target.flagged = true;
   setDecision(target, clean(`Chose ${branchName(win, c)}${over}${why ? `: ${why}` : '.'}`, 300));
   target.decision.choice = m.id; // the choice at this fork (spec §14.4)
-  others.forEach(b => { b.collapsed = true; });
-  win.collapsed = false;
+  others.forEach(b => { b.collapsed = true; if (!cmp.relation || cmp.relation === 'alternatives') b.status = 'rejected'; });
+  win.collapsed = false; win.status = 'accepted';
   m.compare = { ...cmp, chosen: bid };
   c.updated = Date.now(); save();
   cmpView = null; closeSheet();
@@ -1970,10 +1986,56 @@ function chooseBranch(c, m, bid) {
     target.flagged = undo.flagged;
     if (undo.decision) target.decision = undo.decision; else delete target.decision;
     undo.folds.forEach(([b, was]) => { b.collapsed = was; });
+    undo.status.forEach(([b, was]) => { if (was) b.status = was; else delete b.status; });
     if (undo.chosen) m.compare.chosen = undo.chosen; else delete m.compare.chosen;
     c.updated = Date.now(); save();
     renderCanvas(); renderSidebar(); renderDecCount();
   } });
+}
+
+/* ---------------- branch status (F-32) ---------------- */
+// A branch's status is its node's (spec §7). Decisions in a parked or rejected branch, or in one under it, are not in force,
+// so they leave the prompts (spec §7.1); open the branch again and they come back
+const BRANCH_STATUS = [
+  { id: 'open', label: 'Open', hint: 'Still being explored.' },
+  { id: 'accepted', label: 'Accepted', hint: 'The way to go. Its decisions stay in force.' },
+  { id: 'parked', label: 'Parked', hint: 'Set aside for now. Its decisions leave the prompts until you open it again.' },
+  { id: 'rejected', label: 'Rejected', hint: 'Ruled out. Its decisions leave the prompts, and an agent reading the Thinking State sees it as ruled out.' },
+];
+const statusOf = b => (b && BRANCH_STATUS.some(x => x.id === b.status) && b.status) || 'open';
+const statusLabel = b => BRANCH_STATUS.find(x => x.id === statusOf(b)).label;
+// the parked or rejected branch this one is in or under, if any
+function droppedAt(c, bid) {
+  let b = c.branches[bid]; const seen = new Set();
+  while (b && !seen.has(b.id)) { seen.add(b.id); if (b.status === 'parked' || b.status === 'rejected') return b; b = c.branches[b.parentId]; }
+  return null;
+}
+let statusFor = null;
+function openStatus(c, bid) {
+  if (!c.branches[bid]) return;
+  statusFor = { cid: c.id, bid };
+  openSheet({ title: 'Branch status', render: renderStatus, onClick: statusClick });
+}
+function renderStatus() {
+  const c = db.convos[statusFor.cid], b = c && c.branches[statusFor.bid];
+  if (!b) return '';
+  const under = Object.values(c.messages).filter(m => m.flagged && m.decision && m.decision.summary && (m.branchId === b.id || isUnder(c, m.branchId, b.id))).length;
+  return `<p class="pv-note">“${esc(branchName(b, c))}” ${under ? `and the branches under it hold ${under} decision${under === 1 ? '' : 's'}. Parked or rejected, they leave the prompts.` : 'holds no decisions yet.'}</p>
+    <div>${BRANCH_STATUS.map(x => `<button class="st-row${x.id === statusOf(b) ? ' on' : ''}" data-status="${x.id}" aria-pressed="${x.id === statusOf(b)}"><b>${x.label}</b><span>${x.hint}</span></button>`).join('')}</div>`;
+}
+function isUnder(c, bid, top) { let b = c.branches[bid]; const seen = new Set(); while (b && !seen.has(b.id)) { seen.add(b.id); if (b.parentId === top) return true; b = c.branches[b.parentId]; } return false; }
+function statusClick(e) {
+  const x = e.target.closest('[data-status]'); if (!x || !statusFor) return;
+  const c = db.convos[statusFor.cid], b = c && c.branches[statusFor.bid]; if (!b) return;
+  const was = statusOf(b);
+  setStatus(c, b, x.dataset.status);
+  closeSheet();
+  if (was !== statusOf(b)) toast(`“${branchName(b, c)}” is ${statusLabel(b).toLowerCase()}`, { label: 'Undo', fn: () => setStatus(c, b, was) });
+}
+function setStatus(c, b, st) {
+  if (st === 'open' || !BRANCH_STATUS.some(x => x.id === st)) delete b.status; else b.status = st;
+  c.updated = Date.now(); save();
+  if (db.current === c.id) { renderCanvas(); renderSidebar(); renderDecCount(); }
 }
 
 /* ---------------- branch names ---------------- */
@@ -2196,7 +2258,11 @@ let kT;
 keyInput.addEventListener('input', () => { db.key = keyInput.value.trim(); save(); renderKeyState(); clearTimeout(kT); kT = setTimeout(loadModels, 600); });
 modelSel.addEventListener('change', () => { db.model = modelSel.value; save(); });
 const renderWeb = () => { $('#webSearch').setAttribute('aria-pressed', String(!!db.web)); };
-$('#webSearch').onclick = () => { db.web = !db.web; save(); renderWeb(); toast(db.web ? 'Web search on' : 'Web search off'); };
+$('#webSearch').onclick = () => {
+  if (db.web) db.webOff = true; else delete db.webOff;
+  db.web = !db.webOff; save(); renderWeb();
+  toast(db.web ? 'Web search on: the model searches when it needs fresh facts' : 'Web search off');
+};
 renderWeb();
 $('#showKey').onclick = () => { keyInput.type = keyInput.type === 'password' ? 'text' : 'password'; };
 if (!RO) loadModels();
@@ -2290,7 +2356,7 @@ const BLOCK_KINDS = ['harness', 'memory', 'decisions', 'history', 'message', 'to
 const WEB_NOTE = 'The model may search the web with Google Search and ground its answer in what it finds. The searches and the sources come back with the answer.';
 // The harness explains the blocks that follow it, so it is sent only when there is at least one block
 const HARNESS = 'You are the assistant in Mindbough, a branching chat for thinking problems through. The user explores ideas in separate branches, and you see only the path of the current branch. The blocks below come from the whole conversation: treat them as settled, and don’t reopen them unless the user does.';
-function decisionsIn(c) { return Object.values(c.messages).filter(m => m.flagged && m.decision && m.decision.summary).sort((a, b) => a.ts - b.ts); }
+function decisionsIn(c) { return Object.values(c.messages).filter(m => m.flagged && m.decision && m.decision.summary && !droppedAt(c, m.branchId)).sort((a, b) => a.ts - b.ts); }
 // { kind, label, text } blocks sent as the system instruction, in this order
 function systemBlocks(c) {
   const blocks = [];
@@ -2416,7 +2482,7 @@ async function streamInto(c, am, req, key, picked, backup) {
       if (now - lastSave > 1500) { lastSave = now; save(); }
     }
     (buf + dec.decode()).split('\n').forEach(onLine); // a stream cut off without a final newline
-    if (usage && am.request) am.request.usage = { prompt: usage.promptTokenCount | 0, answer: usage.candidatesTokenCount | 0, thoughts: usage.thoughtsTokenCount | 0 };
+    if (usage && am.request) am.request.usage = { prompt: usage.promptTokenCount | 0, answer: usage.candidatesTokenCount | 0, thoughts: usage.thoughtsTokenCount | 0, ...(usage.toolUsePromptTokenCount ? { tools: usage.toolUsePromptTokenCount | 0 } : {}) };
     const search = grounding && webSearchOf(grounding);
     if (search) am.search = search; else delete am.search;
     if (!am.text) {
@@ -2509,7 +2575,7 @@ function previewPrompt() {
   const draft = input.value.trim();
   const msgs = historyFor(c, c.focus).concat(draft ? [{ id: '__draft', role: 'user', text: draft }] : []);
   const rec = requestRecord(buildRequest(c, msgs), modelSel.value || db.model);
-  showPrompt({ c, rec, title: 'Next prompt', lookup: id => id === '__draft' ? { id, role: 'user', text: draft } : c.messages[id],
+  showPrompt({ c, rec, title: 'Next prompt', preview: true, lookup: id => id === '__draft' ? { id, role: 'user', text: draft } : c.messages[id],
     note: 'Preview: what your next message would send right now' + (draft ? ', including what you have typed.' : '. Type a message to see it added.') });
 }
 function showPrompt(pv) {
@@ -2535,16 +2601,21 @@ function pvRender(pv) {
   const r = pv.rec;
   if (pv.level === 'overview') {
     if (!r.blocks.length) return `<p class="pv-empty">Nothing would be sent yet: write a message first.</p>`;
-    const total = r.blocks.reduce((n, b) => n + b.chars, 0) || 1;
+    // a tools block says what the model could use; what a tool finds is added inside the Gemini API, so it has no size here
+    const sized = r.blocks.map((b, i) => [b, i]).filter(([b]) => b.kind !== 'tools'), web = r.blocks.some(b => b.kind === 'tools');
+    const total = sized.reduce((n, [b]) => n + b.chars, 0) || 1;
     const u = r.usage;
-    const tokens = u ? `<span><b>${u.prompt.toLocaleString('en-US')}</b> tokens in · <b>${u.answer.toLocaleString('en-US')}</b> out${u.thoughts ? ` (+${u.thoughts.toLocaleString('en-US')} thinking)` : ''}</span>`
+    const tokens = u ? `<span><b>${u.prompt.toLocaleString('en-US')}</b> tokens in · <b>${u.answer.toLocaleString('en-US')}</b> out${u.thoughts ? ` (+${u.thoughts.toLocaleString('en-US')} thinking)` : ''}${u.tools ? ` · ${tok(u.tools)} from the search` : ''}</span>`
                      : `<span>≈ ${Math.max(1, Math.round(total / 4)).toLocaleString('en-US')} tokens (estimate)</span>`;
     const when = new Date(r.at).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     return `${pv.note ? `<p class="pv-note">${esc(pv.note)}</p>` : ''}
       <p class="pv-meta"><span><b>${esc(r.model || 'unknown model')}</b> · ${esc(when)}</span><span>${fmtChars(total)}</span>${tokens}</p>
-      <div class="pbar" role="list">${r.blocks.map((b, i) => `<button class="pbar-seg k-${b.kind}" style="flex-grow:${Math.max(b.chars, 1)}" data-block="${i}" title="${esc(b.label)} · ${fmtChars(b.chars)}" aria-label="${esc(b.label)}"></button>`).join('')}</div>
-      <div>${r.blocks.map((b, i) => `<button class="pb-row" data-block="${i}"><span class="pb-dot k-${b.kind}"></span><span class="pb-name">${esc(b.label)}</span><span class="pb-size">${fmtChars(b.chars)} · ${Math.round(b.chars * 100 / total)}%</span>${ICON.chevRight}</button>`).join('')}</div>
-      ${pv.search ? `<div class="pv-search"><b>The model searched the web</b>${(pv.search.queries || []).length ? `<ul>${pv.search.queries.map(q => `<li>“${esc(q)}”</li>`).join('')}</ul>` : ''}
+      <div class="pbar" role="list">${sized.map(([b, i]) => `<button class="pbar-seg k-${b.kind}" style="flex-grow:${Math.max(b.chars, 1)}" data-block="${i}" title="${esc(b.label)} · ${fmtChars(b.chars)}" aria-label="${esc(b.label)}"></button>`).join('')}</div>
+      <div>${sized.map(([b, i]) => `<button class="pb-row" data-block="${i}"><span class="pb-dot k-${b.kind}"></span><span class="pb-name">${esc(b.label)}</span><span class="pb-size">${fmtChars(b.chars)} · ${Math.round(b.chars * 100 / total)}%</span>${ICON.chevRight}</button>`).join('')}</div>
+      ${web && !pv.search ? `<div class="pv-search pv-web"><b>${pv.preview ? 'Web search is on' : 'Web search was available'}</b><p class="set-hint">${pv.preview
+        ? 'The model may search the web for the next answer. It decides itself whether it needs fresh facts, and what it finds is added inside the Gemini API.'
+        : 'The model didn’t search for this answer: it decides itself when it needs fresh facts.'}</p></div>` : ''}
+      ${pv.search ? `<div class="pv-search pv-web"><b>The model searched the web</b><p class="set-hint">What it found was added inside the Gemini API, so it isn’t one of the blocks above${u && u.tools ? `: ${tok(u.tools)} tokens` : ''}.</p>${(pv.search.queries || []).length ? `<ul>${pv.search.queries.map(q => `<li>“${esc(q)}”</li>`).join('')}</ul>` : ''}
         ${(pv.search.sources || []).length ? `<p class="pv-meta" style="margin-top:8px"><span>${pv.search.sources.length} source${pv.search.sources.length === 1 ? '' : 's'}</span></p><ul>${pv.search.sources.map(x => `<li><a href="${esc(x.uri)}" target="_blank" rel="noopener noreferrer">${esc(x.title)}</a></li>`).join('')}</ul>` : ''}</div>` : ''}
       ${(pv.calls || []).length ? `<div class="pv-search pv-calls"><b>Helper calls on this answer</b><ul>${pv.calls.map(x => `<li>${esc((HELPER_TASKS.find(t => t.id === x.task) || { label: x.task }).label)} · <b>${esc(x.model || 'unknown model')}</b> · ${x.usage ? `${tok(x.usage.prompt)} in · ${tok(x.usage.answer + x.usage.thoughts)} out` : 'no token counts'}${x.error ? ` · failed: ${esc(x.error)}` : ''}</li>`).join('')}</ul>
         <p class="pv-meta" style="margin-top:8px"><span>${pv.calls.length} call${pv.calls.length === 1 ? '' : 's'} · ${callsLine(pv.calls)}</span></p></div>` : ''}
@@ -2581,11 +2652,12 @@ function renderDecisionsPanel() {
   const c = cur(); if (!c) return '';
   const list = flaggedIn(c);
   if (!list.length) return `<p class="pv-empty">No decisions yet. Flag an answer, or your own message, to make it a decision: its one-line summary then goes into every prompt of this conversation.</p>`;
-  const inPrompt = list.filter(m => m.decision && m.decision.summary).length;
+  const inPrompt = decisionsIn(c).length;
   return `<p class="pv-note">${inPrompt} of ${list.length} decision${list.length === 1 ? '' : 's'} go into every prompt of this conversation. <button class="linkbtn" type="button" data-dp="preview">See the next prompt</button></p>`
     + list.map(m => {
       const d = m.decision || {}, b = branchOf(c, m.id), hist = d.history || [];
-      const meta = [b && branchName(b), d.summary && (d.model ? `by ${d.model}` : 'by you'), d.at && shortDate(d.at)].filter(Boolean).join(' · ');
+      const out = b && droppedAt(c, b.id);
+      const meta = [b && branchName(b), d.summary && (d.model ? `by ${d.model}` : 'by you'), d.at && shortDate(d.at), out && `not in prompts: “${branchName(out, c)}” is ${statusLabel(out).toLowerCase()}`].filter(Boolean).join(' · ');
       const body = panelEdit === m.id
         ? `<textarea class="dp-area" rows="3" maxlength="300" aria-label="Decision summary">${esc(d.summary || '')}</textarea>
            <div class="dp-actions"><button class="btn" data-dp="cancel">Cancel</button><button class="btn primary" data-dp="save">Save</button></div>`
@@ -2697,10 +2769,11 @@ const HELP = [
     <ul><li><b>Settings</b> (gear, top right): paste a Gemini API key. It stays in this browser and goes only to Google's Gemini API.</li>
     <li>No key yet? Menu → <b>Try a sample conversation</b>: a ready-made conversation with branches, decisions and a prompt view.</li>
     <li>On a phone, add it to the home screen: iPhone Safari → Share → <b>Add to Home Screen</b>; Android Chrome → ⋮ → <b>Add to Home screen</b>.</li></ul>` },
-  { id: 'branches', title: 'Think in branches', cards: ['F-03', 'F-04', 'F-05', 'F-06', 'F-07', 'F-10', 'F-11', 'F-12', 'F-19', 'F-24', 'F-27', 'F-28', 'F-29'], body: `
+  { id: 'branches', title: 'Think in branches', cards: ['F-03', 'F-04', 'F-05', 'F-06', 'F-07', 'F-10', 'F-11', 'F-12', 'F-19', 'F-24', 'F-27', 'F-28', 'F-29', 'F-32'], body: `
     <ul><li><b>Branch out</b> under any message: a new column that continues from there. The model sees only that branch's path, so dead ends don't pollute the context.</li>
     <li>The <b>options</b> button (fork icon): the model proposes options, you tick the ones to explore, and each becomes a branch.</li>
     <li><b>Compare N</b> next to the branch badges: see the branches side by side (with AI: criteria, or a note that they aren't alternatives), then <b>Choose</b> one.</li>
+    <li>The <b>status</b> chip on a branch: Open, Accepted, Parked or Rejected. The decisions of a parked or rejected branch, and of the branches under it, leave the prompts. Choose sets the statuses for you.</li>
     <li>In the Thinking State, options, comparisons and choices are data: the fork is a question, each option answers it, a comparison is a finding, and choosing accepts one option and rejects the other alternatives.</li>
     <li>Edit a message (sends a new branch), regenerate an answer with another model (tap its model chip), select a path (↑) to copy, mute or delete it.</li>
     <li>Branches name themselves; tap the pencil on a column to rename. The Branches panel (right) shows the tree and a filter.</li>
@@ -2715,7 +2788,7 @@ const HELP = [
     <ul><li>Pick the model for the next request next to "Writing in …". Each answer shows the model that wrote it, and its prompt view shows the token counts.</li>
     <li>Settings → <b>Models for helper tasks</b>: which model writes summaries, names, options and comparisons (the cheapest by default), or turn summaries and names off. It also says how many helper calls this conversation made, and their tokens.</li>
     <li>An answer's prompt view lists the <b>helper calls</b> made on it, each with its model and tokens. They are saved in the Thinking State too.</li>
-    <li><b>Web</b> lets the model search the web (inside the Gemini API). The answer lists its sources, and the prompt view shows what was searched.</li></ul>` },
+    <li><b>Web</b> is on from the start: the model may search the web with Google Search, inside the Gemini API, and decides itself when it needs fresh facts. The answer lists its sources, and the prompt view says whether it searched and what. Turn it off for private topics, or to avoid search costs.</li></ul>` },
   { id: 'data', title: 'Your data and the format', cards: ['F-13', 'F-14', 'F-17', 'F-25', 'F-26'], body: `
     <ul><li>Everything is saved in this browser only (IndexedDB), as Thinking State bundles: the same files an export holds. It survives reloads, closed tabs and crashes.</li>
     <li>The <b>bough</b> button on a conversation exports it as a <b>Thinking State</b> (.zip): nodes, decisions, memory, and the session with the model, prompt and tokens of every answer. Any tool or agent that reads the format can continue from it.</li>
@@ -2726,7 +2799,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.', 'Importing a Thinking State brings back the whole conversation, and an export, import and export again gives the same files.', 'Your conversations are now stored as Thinking State bundles, the same files an export holds.', '<b>Export all</b> saves a .zip of Thinking States and your memory, and a shared page downloads its Thinking State.', 'Fixed: a comparison no longer carries your memory into exported and shared copies, and your prompts keep showing their memory after a reload.', 'Helper calls (summaries, names, options, comparisons) are saved with their model and tokens, and shown in the prompt view and Settings.', 'Options, comparisons and choices are saved as data: a question, its options, a finding, and the statuses a choice sets. Comparisons come back with an import.'] },
+  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.', 'Importing a Thinking State brings back the whole conversation, and an export, import and export again gives the same files.', 'Your conversations are now stored as Thinking State bundles, the same files an export holds.', '<b>Export all</b> saves a .zip of Thinking States and your memory, and a shared page downloads its Thinking State.', 'Fixed: a comparison no longer carries your memory into exported and shared copies, and your prompts keep showing their memory after a reload.', 'Helper calls (summaries, names, options, comparisons) are saved with their model and tokens, and shown in the prompt view and Settings.', 'Options, comparisons and choices are saved as data: a question, its options, a finding, and the statuses a choice sets. Comparisons come back with an import.', '<b>Branch status</b>: mark a branch accepted, parked or rejected; the decisions of dropped branches leave the prompts.', '<b>Web</b> search is on from the start, and the model decides when to search. The prompt view says whether it searched.'] },
   { version: '0.2.0', items: ['Decisions and memory reach every prompt, and the prompt view shows how each request is built.', 'Branch into options, compare the branches and choose one; branches name themselves.',
     'A model per request and per helper task, and web search with its sources.', 'Export and open a conversation as a Thinking State (profile 0.2), with the model, prompt and tokens of every answer.'] },
 ];
@@ -2910,7 +2983,7 @@ function thinkingStateFiles(c, quiet, mine) {
     const title = nd ? nd.title : isRoot ? c.title : (b.name && b.name.trim()) || (first ? sentenceOf(first.text, 80) : branchName(b));
     nodes.push({ id, type: nd ? nd.type : isRoot && first && /\?\s*$/.test(first.text.trim()) ? 'Question' : 'Thought', title: (title || id).slice(0, 120),
       description: nd ? nd.description || nd.title : eo ? `Edited version of: ${snippetOf(eo.text, 200)}` : first ? sentenceOf(first.text, 240) : 'An empty branch.',
-      status: nd ? nd.status : 'open', links: nd ? nd.links : null, parent: b.parentId ? byBranch[b.parentId] : null, sources: [{ resource: `/${session}#${b.parentId ? 'br' + b.id : (b.msgIds[0] || 'br' + b.id)}`, title: 'Where this branch starts in the session' }],
+      status: nd ? nd.status : b.parentId ? statusOf(b) : 'open', links: nd ? nd.links : null, parent: b.parentId ? byBranch[b.parentId] : null, sources: [{ resource: `/${session}#${b.parentId ? 'br' + b.id : (b.msgIds[0] || 'br' + b.id)}`, title: 'Where this branch starts in the session' }],
       body: msgs.length ? `## Conversation\n\n${transcript(b.msgIds)}` : '' });
     // a flag is an open Decision, a summary accepts it, and an unflagged one keeps its summary as a parked Decision (spec §7.1)
     for (const m of msgs.filter(x => x !== own && (x.flagged || (x.decision && x.decision.summary)))) {
@@ -2951,10 +3024,9 @@ function thinkingStateFiles(c, quiet, mine) {
         n.generated = { by: call ? `mindbough-demo/${call.model || 'unknown'}` : 'human:me', at: iso(k.created) };
         if (call) n.sources.push({ resource: `/${session}#${call.id}`, title: 'The helper call that proposed it' });
       }
-      if (dm && k.id === cmp.chosen) n.status = 'accepted';
-      else if (dm && alt) {
+      if (dm && alt && k.id !== cmp.chosen && n.status === 'rejected') {
         n.revisions = [{ title: n.title, description: n.description, generated: n.generated || { by: 'human:me', at: iso(k.created) } }];
-        n.status = 'rejected'; n.description = `Not chosen: ${n.description}`;
+        n.description = `Not chosen: ${n.description}`;
       }
     }
     let fid = null;
@@ -3052,7 +3124,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       // and a card of a node that came from an opened Thinking State
       // a saved comparison, in a fixed key order so the same comparison always writes the same line
       const cmp = m.compare && JSON.parse(JSON.stringify(Object.fromEntries(CMP_KEYS.filter(k => m.compare[k] !== undefined).map(k => [k, m.compare[k]])))); if (cmp && !mine) omitMemory(cmp.request);
-      const own = { ...(m.edited ? { edited: true } : {}), ...(m.streaming && m.prev ? { prev: m.prev } : {}), ...(cmp ? { compare: cmp } : {}),
+      const own = { ...(m.request && m.request.usage && m.request.usage.tools ? { toolTokens: m.request.usage.tools } : {}), ...(m.edited ? { edited: true } : {}), ...(m.streaming && m.prev ? { prev: m.prev } : {}), ...(cmp ? { compare: cmp } : {}),
         ...(m.node ? { card: { node: m.node, ...(m.flagged ? { flagged: true } : {}), ...(m.decision ? { decision: m.decision } : {}) } } : {}) };
       if (Object.keys(own).length) e.ext = { 'mindbough-demo': own };
       if (m.search) {
@@ -3305,6 +3377,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     const b = { id, parentId: parentNode ? bidOf(parentNode) : null, forkMsgId: be && be.after && toMsg.has(be.after) ? toMsg.get(be.after) : null, msgIds: [],
       n: nid === rootId ? 0 : Number.isInteger(bext.n) && bext.n > 0 ? bext.n : ++n, created: time(be ? be.at : mine[0] && mine[0].at, convo.created), nodeId: nid };
     n = Math.max(n, b.n);
+    if (nid !== rootId && ['accepted', 'parked', 'rejected'].includes(th(node).status)) b.status = th(node).status;
     if (isObj(bext.option)) b.option = { ...(typeof bext.option.why === 'string' ? { why: bext.option.why.slice(0, 200) } : {}), ...(typeof bext.option.call === 'string' ? { call: bext.option.call } : {}) };
     for (const slot of mine) {
       const v = latest(slot), role = slot.role === 'user' ? 'user' : 'model';
@@ -3323,7 +3396,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
         const rq = v.request, blocks = (Array.isArray(rq.blocks) ? rq.blocks : []).filter(isObj).map(blockBack);
         if (Array.isArray(rq.tools) && rq.tools.includes('web_search')) blocks.push({ kind: 'tools', label: 'Tools · web search', chars: 0, text: WEB_NOTE });
         m.request = { model: model || '', at: time(rq.at, m.ts), chars: Math.max(0, rq.chars | 0), blocks };
-        if (isObj(v.usage)) m.request.usage = { prompt: v.usage.input | 0, answer: v.usage.output | 0, thoughts: v.usage.reasoning | 0 };
+        if (isObj(v.usage)) m.request.usage = { prompt: v.usage.input | 0, answer: v.usage.output | 0, thoughts: v.usage.reasoning | 0, ...(ext.toolTokens > 0 ? { tools: ext.toolTokens | 0 } : {}) };
       }
       const ws = WEB.get(String(slot.after));
       if (role === 'model' && (ws || Array.isArray(v.sources))) {
@@ -3553,6 +3626,7 @@ function adoptConvo(src) {
     if (typeof b.name === 'string' && b.name.trim()) c.branches[id].name = b.name.trim().slice(0, 60);
     if (b.collapsed) c.branches[id].collapsed = true;
     if (tsIdOk(b.nodeId)) c.branches[id].nodeId = b.nodeId;
+    if (k !== src.root && ['accepted', 'parked', 'rejected'].includes(b.status)) c.branches[id].status = b.status;
     if (isObj(b.option)) c.branches[id].option = { ...(b.option.why ? { why: str(b.option.why, 200) } : {}), ...(typeof b.option.call === 'string' ? { call: b.option.call } : {}) };
   }
   // fork points and edit origins may point into branches mapped later, so resolve them in a second pass
@@ -3592,7 +3666,7 @@ function adoptConvo(src) {
       return out;
     });
     const rec = { model: str(r.model, 100), at: time(r.at), chars: count(r.chars), blocks };
-    if (isObj(r.usage)) rec.usage = { prompt: count(r.usage.prompt), answer: count(r.usage.answer), thoughts: count(r.usage.thoughts) };
+    if (isObj(r.usage)) rec.usage = { prompt: count(r.usage.prompt), answer: count(r.usage.answer), thoughts: count(r.usage.thoughts), ...(count(r.usage.tools) ? { tools: count(r.usage.tools) } : {}) };
     c.messages[mid.get(k)].request = rec;
   }
   // helper calls (F-30), anchored at their messages
@@ -3749,7 +3823,7 @@ function renderOutline() {
     return `<li><div class="${cls}" data-obid="${b.id}">
       <button class="otog${kids.length ? '' : ' none'}${shut ? ' shut' : ''}" data-otog title="${shut ? 'Show' : 'Hide'} sub-branches" aria-expanded="${!shut}">${ICON.chevron}</button>
       <div class="omain">
-        <div class="oname"><span class="t" title="${esc(branchName(b))}${RO ? '' : ' — double-click to rename'}">${esc(branchName(b))}</span><span class="ocount">${msgs.length}</span>${flags ? `<span class="oflag">${ICON.flagOn}${flags}</span>` : ''}${shut ? `<span class="ocount">· +${countDesc(c, b.id)} hidden</span>` : ''}</div>
+        <div class="oname"><span class="t" title="${esc(branchName(b))}${RO ? '' : ' — double-click to rename'}">${esc(branchName(b))}</span><span class="ocount">${msgs.length}</span>${statusOf(b) !== 'open' ? `<span class="ostat s-${statusOf(b)}">${esc(statusLabel(b))}</span>` : ''}${flags ? `<span class="oflag">${ICON.flagOn}${flags}</span>` : ''}${shut ? `<span class="ocount">· +${countDesc(c, b.id)} hidden</span>` : ''}</div>
         <div class="osnip">${esc(snip)}</div>
       </div>
       <button class="ib oact" data-ofold title="${b.collapsed ? 'Expand on canvas' : 'Collapse on canvas'}">${b.collapsed ? ICON.unfoldAll : ICON.foldAll}</button>
