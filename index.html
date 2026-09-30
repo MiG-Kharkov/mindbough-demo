@@ -557,7 +557,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.2.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main efa0c74'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main edfbae2'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2591,7 +2591,7 @@ function nodeDoc(n, ids) {
   const out = ['---', `type: ${/^[A-Za-z][A-Za-z0-9 _-]*$/.test(n.type) ? n.type : yq(n.type)}`, `title: ${yq(n.title)}`, `description: ${yq(n.description)}`];
   if (n.status === 'rejected' || n.status === 'superseded') out.push('status: deprecated'); // OKF readers then skip it
   if (n.generated) out.push(`generated: { by: ${yq(n.generated.by)}, at: ${yq(n.generated.at)} }`);
-  if (n.sources) { out.push('sources:'); n.sources.forEach(x => out.push(`  - { resource: ${yq(x.resource)}, title: ${yq(x.title)} }`)); }
+  if (n.sources) { out.push('sources:'); n.sources.forEach(x => out.push(`  - { resource: ${yq(x.resource)}, title: ${yq(x.title)}${x.author ? `, author: ${yq(x.author)}` : ''} }`)); }
   out.push('thinking:', `  status: ${n.status}`);
   if (n.parent) out.push(`  parent: ${n.parent}`);
   for (const [k, v] of Object.entries(n.links || {})) { const to = v.filter(x => ids.has(x)); if (to.length) out.push(`  ${k}: [${to.join(', ')}]`); }
@@ -2602,11 +2602,13 @@ function nodeDoc(n, ids) {
 // Ids are kept on the conversation once given (c.tsId, b.nodeId, m.nodeId), and times come from the conversation, not the clock,
 // so exporting the same conversation twice gives the same files (spec W3)
 function thinkingStateFiles(c) {
-  const folder = slug(c.title), session = `sessions/${folder}.json`, at = new Date(c.updated || c.created || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z');
   const taken = new Set(), nodes = [], byBranch = {};
   const keep = (v, t) => { const id = typeof v === 'string' && TS_ID.test(v) && !taken.has(v) ? v : nodeId(t, taken); taken.add(id); return id; };
   let given = false;
   if (!(typeof c.tsId === 'string' && TS_ID.test(c.tsId))) { c.tsId = nodeId(c.created, new Set()); given = true; }
+  if (!(typeof c.sessionId === 'string' && TS_ID.test(c.sessionId))) { c.sessionId = nodeId(c.created, new Set([c.tsId])); given = true; }
+  taken.add(c.sessionId);
+  const folder = slug(c.title), session = `sessions/${c.sessionId}.jsonl`, at = new Date(c.updated || c.created || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z');
   const who = m => m.role === 'user' ? '**You:**' : `**Gemini**${m.model ? ` (\`${m.model}\`)` : ''}:`;
   const transcript = ids => ids.map(id => c.messages[id]).filter(Boolean).map(m => `${who(m)}${m.hidden ? ' _(excluded from history)_' : ''}\n\n${(m.text || m.error || '').trim()}`).join('\n\n');
   for (const b of dfs(c)) {
@@ -2620,15 +2622,16 @@ function thinkingStateFiles(c) {
     const title = nd ? nd.title : isRoot ? c.title : (b.name && b.name.trim()) || (first ? sentenceOf(first.text, 80) : branchName(b));
     nodes.push({ id, type: nd ? nd.type : isRoot && first && /\?\s*$/.test(first.text.trim()) ? 'Question' : 'Thought', title: (title || id).slice(0, 120),
       description: nd ? nd.description || nd.title : eo ? `Edited version of: ${snippetOf(eo.text, 200)}` : first ? sentenceOf(first.text, 240) : 'An empty branch.',
-      status: nd ? nd.status : 'open', links: nd ? nd.links : null, parent: b.parentId ? byBranch[b.parentId] : null, sources: [{ resource: `/${session}#${b.id}`, title: 'Demo conversation' }],
+      status: nd ? nd.status : 'open', links: nd ? nd.links : null, parent: b.parentId ? byBranch[b.parentId] : null, sources: [{ resource: `/${session}#${b.parentId ? 'br' + b.id : (b.msgIds[0] || 'br' + b.id)}`, title: 'Where this branch starts in the session' }],
       body: msgs.length ? `## Conversation\n\n${transcript(b.msgIds)}` : '' });
     for (const m of msgs.filter(x => x.flagged && x !== own)) {
       const summary = (m.decision && m.decision.summary) || sentenceOf(m.text, 240);
       const did = m.node && m.node.id && m.node.id !== id ? m.node.id : keep(m.nodeId, m.ts);
       if (!(m.node && m.node.id === did) && m.nodeId !== did) { m.nodeId = did; given = true; }
       nodes.push({ id: did, type: 'Decision', title: sentenceOf(summary, 120), description: summary, status: 'accepted', parent: id,
-        generated: m.role === 'model' && m.model ? { by: `mindbough-demo/${m.model}`, at: new Date(m.ts).toISOString().replace(/\.\d+Z$/, 'Z') } : null,
-        sources: [{ resource: `/${session}#${m.id}`, title: 'The flagged message' }], body: (m.text || '').trim() });
+        generated: { by: m.decision && m.decision.summary ? (m.decision.model ? `mindbough-demo/${m.decision.model}` : 'human:me') : (m.role === 'model' && m.model ? `mindbough-demo/${m.model}` : 'human:me'),
+          at: new Date((m.decision && m.decision.at) || m.ts).toISOString().replace(/\.\d+Z$/, 'Z') },
+        sources: [{ resource: `/${session}#${m.id}`, title: 'The flagged message', author: m.role === 'model' ? `mindbough-demo/${m.model || 'unknown'}` : 'human:me' }], body: (m.text || '').trim() });
     }
   }
   const root = nodes[0];
@@ -2654,11 +2657,53 @@ function thinkingStateFiles(c) {
       ...(x.sources.length ? ['sources:', ...x.sources.map(y => `  - { resource: ${yq(y.resource)}, title: ${yq(y.title)} }`)] : []), '---', ''].join('\n') })),
     { name: 'log.md', text: `# Thinking log\n\n## ${at.slice(0, 10)}\n* **Creation**: Exported from the Mindbough demo conversation “${c.title}”.\n` },
     { name: '.gitignore', text: '# raw interaction logs may hold private data\nsessions/\n.mindbough/\n' },
-    { name: session, text: JSON.stringify({ app: 'gemini-tree-chat', version: 1, exported: at, conversations: [cleanConvo(c)] }, null, 2) },
+    { name: session, text: sessionLines(c, byBranch, nodes, iso) },
     ...nodes.map(n => ({ name: `nodes/${n.id}.md`, text: nodeDoc(n, new Set(nodes.map(x => x.id))) })),
   ];
   if (given) save(); // the new ids are kept for the next export
   return { folder, at, files: files.map(f => ({ name: `${folder}/${f.name}`, text: f.text })) };
+}
+// The conversation as a profile 0.2 session (spec §10): one entry per message and branch point, each answer with its request
+function sessionLines(c, byBranch, nodes, iso) {
+  const lines = [{ type: 'Session', profile: '0.2', id: c.sessionId, node: byBranch[c.root], title: c.title, by: `mindbough-demo/${APP_VERSION}`, at: iso(c.created) }];
+  const decisionOf = {}; nodes.filter(n => n.type === 'Decision').forEach(n => { decisionOf[n.description] = n.id; });
+  const who = m => m.role === 'user' ? 'human:me' : `mindbough-demo/${m.model || 'unknown'}`;
+  const block = b => {
+    const out = { kind: b.kind, chars: b.chars | 0, ...(b.label ? { label: b.label } : {}) };
+    if (b.kind === 'memory') return { ...out, omitted: true }; // memory is personal and spans conversations: its text stays out
+    if (b.kind === 'decisions') {
+      const ids = (b.text || '').split('\n').filter(l => l.startsWith('- ')).map(l => decisionOf[l.slice(2)]).filter(Boolean);
+      return { ...out, ...(ids.length ? { nodes: [...new Set(ids)] } : {}), ...(b.text ? { text: b.text } : {}) };
+    }
+    if (Array.isArray(b.ids)) return { ...out, entries: b.ids.filter(id => c.messages[id]) };
+    return { ...out, ...(b.text ? { text: b.text } : {}) };
+  };
+  for (const b of dfs(c)) {
+    const node = byBranch[b.id];
+    let after = null;
+    if (b.parentId) {
+      const fork = b.forkMsgId && c.messages[b.forkMsgId] ? b.forkMsgId : null;
+      lines.push({ id: 'br' + b.id, kind: 'branch', node, after: fork, by: 'human:me', at: iso(b.created) });
+      after = 'br' + b.id;
+    }
+    b.msgIds.map(id => c.messages[id]).filter(m => m && !m.streaming).forEach((m, i) => {
+      const e = { id: m.id, kind: 'message', node, after, role: m.role === 'user' ? 'user' : 'assistant', by: who(m), at: iso(m.ts) };
+      if (m.text) e.text = m.text;
+      if (m.error) e.error = m.error;
+      if (!m.text && !m.error) e.text = '';
+      if (m.hidden) e.excluded = true;
+      if (i === 0 && b.editOf && c.messages[b.editOf]) e.variant_of = b.editOf;
+      if (m.request) {
+        const r = m.request;
+        e.request = { at: iso(r.at), chars: r.chars | 0, blocks: (r.blocks || []).map(block) };
+        if (r.usage) e.usage = { input: r.usage.prompt | 0, output: r.usage.answer | 0, ...(r.usage.thoughts ? { reasoning: r.usage.thoughts | 0 } : {}) };
+      }
+      if (m.edited) e.ext = { 'mindbough-demo': { edited: true } }; // edited in place: the earlier text wasn't kept
+      lines.push(e);
+      after = m.id;
+    });
+  }
+  return lines.map(x => JSON.stringify(x)).join('\n') + '\n';
 }
 /* ---------------- open a Thinking State (.zip) ---------------- */
 const TS_ID = /^[0-9]{8}-[0-9a-z]{6}$/, TS_LINKS = ['answers', 'supports', 'contradicts', 'depends_on', 'supersedes'];
@@ -2832,7 +2877,7 @@ function adoptConvo(src) {
     root: bid.get(src.root), focus: bid.get(src.focus) || bid.get(src.root), counter: 0, branches: {}, messages: {} };
   // the ids a Thinking State export gave (spec W3); a bundle id already in use here is left for the next export to replace
   const tsIdOk = v => typeof v === 'string' && TS_ID.test(v);
-  if (tsIdOk(src.tsId) && !Object.values(db.convos).some(o => o.tsId === src.tsId)) c.tsId = src.tsId;
+  if (tsIdOk(src.tsId) && !Object.values(db.convos).some(o => o.tsId === src.tsId)) { c.tsId = src.tsId; if (tsIdOk(src.sessionId)) c.sessionId = src.sessionId; }
   for (const k of order) {
     const b = src.branches[k], id = bid.get(k), msgIds = [];
     for (const m of Array.isArray(b.msgIds) ? b.msgIds : []) {
