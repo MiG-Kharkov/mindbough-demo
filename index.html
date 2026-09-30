@@ -232,6 +232,12 @@ table.cmp tr.cmp-sum td{font-weight:600}
 table.cmp tr.cmp-act td,table.cmp tr.cmp-act th{border-bottom:0}
 .cmp-go{border:0;background:none;padding:0;font:inherit;font-weight:700;color:var(--accent);text-align:left}
 .cmp-pick{font-size:14px;margin:12px 0 0}
+.cmp-q{font-size:14px;margin:0 0 10px}
+.cmp-why{display:block;font-weight:400;font-size:12px;margin-top:2px}
+.cmp-focus{display:block;width:100%;margin:12px 0 0;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;font-size:14px;padding:7px 9px}
+.cmp-built{margin-top:10px;font-size:12.5px;color:var(--muted)}
+.cmp-built summary{cursor:pointer;padding:4px 0}
+.cmp-built pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;margin:4px 0 8px;font-size:12px;max-height:220px;overflow:auto}
 /* branch into options */
 .op-row{display:flex;gap:10px;align-items:flex-start;padding:10px 2px;border-bottom:1px solid var(--line)}
 .op-row input[type=checkbox]{width:18px;height:18px;margin-top:9px;accent-color:var(--accent);flex:none}
@@ -549,7 +555,7 @@ const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.1.0';
-const BUILD = 'main f322f98'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main f089969'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1664,7 +1670,12 @@ function branchDigest(c, b) {
   const t = branchMsgs(c, b).map(x => `${x.role === 'user' ? 'User' : 'Assistant'}: ${x.text}${x.flagged && x.decision && x.decision.summary ? `\n[Decision: ${x.decision.summary}]` : ''}`).join('\n\n');
   return t.length > 6000 ? `${t.slice(0, 1500)}\n…\n${t.slice(-4500)}` : t;
 }
-let cmpView = null; // { cid, mid, loading, error }
+let cmpView = null; // { cid, mid, loading, error, focus }
+document.addEventListener('input', e => { if (cmpView && e.target.dataset && e.target.dataset.cmpFocus != null) cmpView.focus = e.target.value; });
+document.addEventListener('keydown', e => {
+  if (!cmpView || !e.target.dataset || e.target.dataset.cmpFocus == null || e.key !== 'Enter' || e.isComposing) return;
+  e.preventDefault(); const b = $('#sheetDyn [data-cmp="ai"]'); if (b && !b.disabled) b.click();
+});
 function openCompare(c, m) {
   cmpView = { cid: c.id, mid: m.id, loading: false, error: '' };
   openSheet({ title: `Compare ${compareKids(c, m).length} branches`, compare: true, render: renderCompare, onClick: compareClick });
@@ -1676,32 +1687,40 @@ function renderCompare() {
   const kids = compareKids(c, m), cmp = m.compare || {}, hasKey = !!keyInput.value.trim();
   const byId = Object.fromEntries(kids.map(b => [b.id, b]));
   const cols = (cmp.cols || []).filter(x => byId[x.bid]);
-  const table = cmp.criteria && cols.length > 1;
-  const stale = table && cmp.sig !== compareSig(c, kids);
+  const done = !!cmp.at && cols.length > 1, alt = !cmp.relation || cmp.relation === 'alternatives';
+  const table = done && alt && cmp.criteria && cmp.criteria.length > 0;
+  const stale = done && cmp.sig !== compareSig(c, kids);
   const tags = bid => `${table && cmp.pick && cmp.pick.bid === bid ? '<span class="cmp-tag">Suggested</span>' : ''}${cmp.chosen === bid ? '<span class="cmp-tag on">Chosen</span>' : ''}`;
   const choose = bid => RO ? '' : `<button class="btn" data-cmp="choose" data-bid="${bid}">Choose</button>`;
+  const colOf = bid => cols.find(x => x.bid === bid);
   let html = `<p class="pv-note">Branches that continue from “${esc(snippetOf(m.text, 90))}”</p>`;
+  if (done && cmp.question) html += `<p class="cmp-q"><b>Deciding:</b> ${esc(cmp.question)}</p>`;
+  if (done && !alt) html += `<p class="set-hint warn">${esc(RELATIONS[cmp.relation] || 'These branches aren’t alternatives')}${cmp.relationWhy ? `: ${esc(cmp.relationWhy)}` : ''}. So there is no table and no pick.</p>`;
   if (table) {
     const pk = x => cmp.pick && cmp.pick.bid === x.bid ? ' class="pick"' : '';
     html += `<div class="cmp-wrap"><table class="cmp"><thead><tr><th></th>${cols.map(x => `<th${pk(x)}><button class="cmp-go" data-cmp="goto" data-bid="${x.bid}">${esc(branchName(byId[x.bid], c))}</button>${tags(x.bid)}</th>`).join('')}</tr></thead><tbody>
-      ${cmp.criteria.map((cr, i) => `<tr><th>${esc(cr)}</th>${cols.map(x => `<td${pk(x)}>${esc(x.cells[i] || '')}</td>`).join('')}</tr>`).join('')}
+      ${cmp.criteria.map((cr, i) => `<tr><th>${esc(typeof cr === 'string' ? cr : cr.name)}${cr.why ? `<span class="cmp-why">${esc(cr.why)}</span>` : ''}</th>${cols.map(x => `<td${pk(x)}>${esc(x.cells[i] || '')}</td>`).join('')}</tr>`).join('')}
       <tr class="cmp-sum"><th>In short</th>${cols.map(x => `<td${pk(x)}>${esc(x.summary || '')}</td>`).join('')}</tr>
       ${RO ? '' : `<tr class="cmp-act"><th></th>${cols.map(x => `<td${pk(x)}>${choose(x.bid)}</td>`).join('')}</tr>`}</tbody></table></div>
-      ${cmp.pick && byId[cmp.pick.bid] ? `<p class="cmp-pick"><b>${esc(cmp.model)} suggests ${esc(branchName(byId[cmp.pick.bid], c))}</b>${cmp.pick.why ? `: ${esc(cmp.pick.why)}` : ''} It is only a suggestion: you choose.</p>` : ''}
-      <p class="set-hint${stale ? ' warn' : ''}">${stale ? 'The branches have changed since this comparison. ' : ''}Compared ${esc(shortDate(cmp.at))} by ${esc(cmp.model)}.</p>`;
+      ${cmp.pick && byId[cmp.pick.bid] ? `<p class="cmp-pick"><b>${esc(cmp.model)} suggests ${esc(branchName(byId[cmp.pick.bid], c))}</b>${cmp.pick.why ? `: ${esc(cmp.pick.why)}` : ''} It is only a suggestion: you choose.</p>` : ''}`;
   } else {
     html += kids.map(b => {
-      const n = b.msgIds.length, d = branchMsgs(c, b).filter(x => x.flagged).length, gist = branchGist(c, b);
+      const n = b.msgIds.length, d = branchMsgs(c, b).filter(x => x.flagged).length, col = done && colOf(b.id), gist = col && col.summary ? col.summary : branchGist(c, b);
       return `<div class="dp-card cmp-card${cmp.chosen === b.id ? ' chosen' : ''}"><div class="cmp-name">${esc(branchName(b, c))}${tags(b.id)}</div>
         <div class="dp-meta">${n} message${n === 1 ? '' : 's'}${d ? ` · ${d} decision${d === 1 ? '' : 's'}` : ''}</div>
         <div class="dp-text">${gist ? esc(gist) : '<i>Not answered yet</i>'}</div>
         <div class="dp-actions"><button class="btn" data-cmp="goto" data-bid="${b.id}">Go to</button>${choose(b.id)}</div></div>`;
     }).join('');
   }
+  if (done && cmp.next) html += `<p class="cmp-pick"><b>Next:</b> ${esc(cmp.next)}</p>`;
+  if (done) html += `<p class="set-hint${stale ? ' warn' : ''}">${stale ? 'The branches have changed since this comparison. ' : ''}Compared ${esc(shortDate(cmp.at))} by ${esc(cmp.model)}.</p>`;
+  if (done && cmp.request && Array.isArray(cmp.request.blocks)) html += `<details class="cmp-built"><summary>What the comparison was built from · ${esc(fmtChars(cmp.request.chars || 0))}</summary>
+    ${cmp.request.blocks.map(k => `<div>${esc(k.label)} · ${esc(fmtChars(k.chars || 0))}</div><pre>${esc(k.text || '')}</pre>`).join('')}</details>`;
+  if (!RO && hasKey) html += `<input class="cmp-focus" data-cmp-focus maxlength="300" placeholder="Compare by… your question or criteria (optional)" value="${esc(cmpView.focus != null ? cmpView.focus : cmp.focus || '')}" aria-label="Compare by">`;
   if (cmpView.loading) html += `<p class="pv-empty">Comparing ${kids.length} branches…</p>`;
   if (cmpView.error) html += `<p class="set-hint warn">${esc(cmpView.error)}</p>`;
   if (!RO && !cmpView.loading) html += `<div class="pv-actions"><span class="set-hint">${hasKey ? `One request with ${esc(helperModel('compare'))}` : 'Needs an API key'}</span>
-    <button class="btn${!table || stale ? ' primary' : ''}" data-cmp="ai"${hasKey ? '' : ' disabled'}>${table ? 'Refresh' : 'Compare with AI'}</button></div>`;
+    <button class="btn${!done || stale ? ' primary' : ''}" data-cmp="ai"${hasKey ? '' : ' disabled'}>${done ? 'Refresh' : 'Compare with AI'}</button></div>`;
   return html;
 }
 function compareClick(e) {
@@ -1713,35 +1732,62 @@ function compareClick(e) {
   if (b.dataset.cmp === 'ai') compareWithAI(c, m);
   if (b.dataset.cmp === 'choose') chooseBranch(c, m, b.dataset.bid);
 }
+const RELATIONS = { alternatives: 'These branches are alternatives', complementary: 'These branches complement each other', sequential: 'One branch is a later step of another', unrelated: 'These branches explore different questions' };
+// What a comparison is built from, as blocks like a prompt's (F-20): the conversation up to the fork, decisions, memory, the user's focus, the branches
+function compareBlocks(c, m, kids, focus) {
+  const b = branchOf(c, m.id), kidIds = new Set(kids.map(k => k.id));
+  const under = x => { let bb = c.branches[x.branchId]; while (bb) { if (kidIds.has(bb.id)) return true; bb = c.branches[bb.parentId]; } return false; };
+  const path = b ? historyFor(c, b.id, m.id).filter(x => !x.hidden && !x.error && x.text).slice(-6) : [];
+  const said = x => `${x.role === 'user' ? 'User' : 'Assistant'}: ${x.text.slice(0, x.id === m.id ? 3000 : 1500)}`;
+  const decisions = decisionsIn(c).filter(x => !under(x)), memory = db.memory.filter(x => x.text);
+  const blocks = [{ kind: 'fork', label: 'Conversation up to the fork', text: path.map(said).join('\n\n') }];
+  if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions in force:\n' + decisions.map(x => `- ${x.decision.summary}`).join('\n') });
+  if (memory.length) blocks.push({ kind: 'memory', label: `Memory · ${memory.length}`, text: 'About the user and their work:\n' + memory.map(x => `- ${x.text}`).join('\n') });
+  if (focus) blocks.push({ kind: 'focus', label: 'Compare by', text: `The user asks to compare by: ${focus}` });
+  kids.forEach((k, i) => blocks.push({ kind: 'branch', label: branchName(k, c), text: `=== Option ${i + 1}: ${branchName(k, c)} ===\n${branchDigest(c, k) || '(not answered yet)'}` }));
+  blocks.forEach(x => { x.chars = x.text.length; });
+  return blocks;
+}
+const COMPARE_TASK = 'A user explored branches of a conversation, and now wants to compare them. Work in two steps.\n'
+  + '1. Say what the user is deciding at the point where the branches start ("question"), and how the branches relate ("relation"):\n'
+  + '   - alternatives: they answer the same question in different ways, so one of them can be chosen;\n'
+  + '   - complementary: they cover different parts of the problem and can be combined;\n'
+  + '   - sequential: one is a later step of another;\n'
+  + '   - unrelated: they explore different questions.\n'
+  + '   Give the reason in one sentence ("relation_why").\n'
+  + '2. If they are alternatives: pick 3 to 5 criteria that matter for this question, drawn from the user’s goal, constraints, decisions and memory below, not generic ones, each with a short reason why it matters here. For each option, write one short cell per criterion (at most 12 words, in the order of the criteria) and a one-sentence summary. Suggest a pick with one sentence on why; if it depends, say on what.\n'
+  + '   Otherwise: leave the criteria empty and set the pick to option 0. For each option, write a one-sentence summary of what it contributes, and say in "next" what to do with them (for example, combine them, or do one first).\n'
+  + 'If the user asks to compare by something, follow that. Refer to options by their number. Use the language of the conversation, and base everything on the texts below.';
 async function compareWithAI(c, m) {
   const v = cmpView, kids = compareKids(c, m);
   if (kids.length < 2 || v.loading) return;
-  const b = branchOf(c, m.id);
-  const q = m.role === 'model' && b ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
-  const prompt = 'A user explored alternatives in separate branches of a conversation. Compare them to help the user choose.\n'
-    + '- Pick 3 to 5 criteria that matter most for this choice.\n'
-    + '- For each option, write one short cell per criterion (at most 12 words, in the order of the criteria) and a one-sentence summary.\n'
-    + '- Suggest the best pick, with one sentence on why. If it depends, pick the most sensible default and say what it depends on.\n'
-    + '- Refer to options by their number. Use the language of the conversation.\n\n'
-    + `Where the branches start:\n${q ? `User: ${q.text.slice(0, 1500)}\n\n` : ''}${m.role === 'user' ? 'User' : 'Assistant'}: ${(m.text || '').slice(0, 3000)}\n\n`
-    + kids.map((k, i) => `=== Option ${i + 1}: ${branchName(k, c)} ===\n${branchDigest(c, k) || '(not answered yet)'}`).join('\n\n');
-  const schema = { type: 'OBJECT', required: ['criteria', 'options', 'pick'], properties: {
-    criteria: { type: 'ARRAY', items: { type: 'STRING' } },
+  const focus = clean(v.focus != null ? v.focus : (m.compare && m.compare.focus) || '', 300);
+  const blocks = compareBlocks(c, m, kids, focus);
+  const prompt = `${COMPARE_TASK}\n\n${blocks.map(x => x.kind === 'branch' ? x.text : `## ${x.label}\n${x.text}`).join('\n\n')}`;
+  const schema = { type: 'OBJECT', required: ['question', 'relation', 'relation_why', 'criteria', 'options', 'pick'], properties: {
+    question: { type: 'STRING' }, relation: { type: 'STRING', enum: Object.keys(RELATIONS) }, relation_why: { type: 'STRING' },
+    criteria: { type: 'ARRAY', items: { type: 'OBJECT', required: ['name', 'why'], properties: { name: { type: 'STRING' }, why: { type: 'STRING' } } } },
     options: { type: 'ARRAY', items: { type: 'OBJECT', required: ['option', 'cells', 'summary'], properties: { option: { type: 'INTEGER' }, cells: { type: 'ARRAY', items: { type: 'STRING' } }, summary: { type: 'STRING' } } } },
-    pick: { type: 'OBJECT', required: ['option', 'why'], properties: { option: { type: 'INTEGER' }, why: { type: 'STRING' } } } } };
+    pick: { type: 'OBJECT', required: ['option', 'why'], properties: { option: { type: 'INTEGER' }, why: { type: 'STRING' } } },
+    next: { type: 'STRING' } } };
   v.loading = true; v.error = ''; renderCompareIfOpen();
   try {
     const { data, model } = await helperJSON(prompt, schema, 'compare');
-    const criteria = (Array.isArray(data.criteria) ? data.criteria : []).map(x => clean(x, 60)).filter(Boolean).slice(0, 5);
-    if (!criteria.length) throw new Error('no criteria in the reply');
+    const relation = RELATIONS[data.relation] ? data.relation : 'alternatives', alt = relation === 'alternatives';
+    const criteria = alt ? (Array.isArray(data.criteria) ? data.criteria : []).map(x => ({ name: clean(x && (x.name || x), 60), why: clean(x && x.why, 140) })).filter(x => x.name).slice(0, 5) : [];
+    if (alt && !criteria.length) throw new Error('no criteria in the reply');
     const opts = Array.isArray(data.options) ? data.options : [];
     const cols = kids.map((k, i) => {
       const o = opts.find(x => x && +x.option === i + 1) || opts[i] || {};
       return { bid: k.id, cells: criteria.map((_, j) => clean(Array.isArray(o.cells) ? o.cells[j] : '', 140)), summary: clean(o.summary, 240) };
     });
-    const pi = data.pick ? +data.pick.option : 0;
+    const pi = alt && data.pick ? +data.pick.option : 0;
     const pick = pi >= 1 && pi <= kids.length ? { bid: kids[pi - 1].id, why: clean(data.pick.why, 240) } : null;
-    m.compare = { at: Date.now(), model, criteria, cols, ...(pick ? { pick } : {}), sig: compareSig(c, kids), ...(m.compare && m.compare.chosen ? { chosen: m.compare.chosen } : {}) };
+    const request = { chars: prompt.length, blocks: [{ kind: 'task', label: 'Task', text: COMPARE_TASK, chars: COMPARE_TASK.length }, ...blocks] };
+    m.compare = { at: Date.now(), model, question: clean(data.question, 200), relation, relationWhy: clean(data.relation_why, 240), criteria, cols,
+      ...(pick ? { pick } : {}), ...(!alt && data.next ? { next: clean(data.next, 300) } : {}), ...(focus ? { focus } : {}), request, sig: compareSig(c, kids),
+      ...(m.compare && m.compare.chosen ? { chosen: m.compare.chosen } : {}) };
+    v.focus = null;
     save();
   } catch (err) { v.error = `Couldn’t compare (${err.message}). Try again, or choose from the list.`; }
   v.loading = false;
@@ -1754,6 +1800,7 @@ function chooseBranch(c, m, bid) {
   const msgs = branchMsgs(c, win), target = [...msgs].reverse().find(x => x.role === 'model') || msgs[msgs.length - 1];
   if (!target) { toast('This branch has nothing to choose yet'); return; }
   const cmp = m.compare || {}, col = (cmp.cols || []).find(x => x.bid === bid);
+  if (cmp.relation && cmp.relation !== 'alternatives' && !confirm(`${RELATIONS[cmp.relation]}, so choosing one may lose the others. Choose “${branchName(win, c)}” anyway?`)) return;
   const why = cmp.pick && cmp.pick.bid === bid && cmp.pick.why ? cmp.pick.why : col && col.summary ? col.summary : '';
   const names = others.map(b => branchName(b, c));
   const over = names.length > 3 ? ` over ${names.length} other options` : names.length ? ` over ${names.join(', ')}` : '';
