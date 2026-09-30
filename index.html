@@ -557,7 +557,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.2.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 1d5dc24'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main efa0c74'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2546,7 +2546,7 @@ function cleanConvo(c) {
 function exportJSON(ids, withMemory) {
   if (!ids.length) { toast('Nothing to export'); return; }
   const data = { app: 'gemini-tree-chat', version: 1, exported: new Date().toISOString(), conversations: ids.map(id => cleanConvo(db.convos[id])) };
-  if (withMemory && db.memory.length) data.memory = db.memory.map(x => ({ text: x.text, at: x.at, from: (x.src && db.convos[x.src.cid] && db.convos[x.src.cid].title) || x.from }));
+  if (withMemory && db.memory.length) data.memory = db.memory.map(x => ({ text: x.text, at: x.at, from: (x.src && db.convos[x.src.cid] && db.convos[x.src.cid].title) || x.from, ...(x.itemId ? { itemId: x.itemId } : {}) }));
   const name = ids.length === 1 ? `${slug(db.convos[ids[0]].title)}.json` : `gemini-tree-chat-${stamp()}.json`;
   download(name, JSON.stringify(data, null, 2), 'application/json');
   toast(ids.length === 1 ? 'Conversation exported' : `Exported ${ids.length} conversations`);
@@ -2579,6 +2579,7 @@ function zipFiles(files, when = Date.now()) {
 }
 const yq = v => JSON.stringify(String(v)); // a JSON string is a valid YAML double-quoted scalar
 const sentenceOf = (t, max) => { const x = firstSentence(plain(t || '')); return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x; };
+const shortTitle = t => { const w = plain(t).split(/(?<=[.!?])\s|[:;]\s| [—–-] /)[0].replace(/\.$/, '').split(/\s+/).filter(Boolean); return w.slice(0, 10).join(' ') + (w.length > 10 ? '…' : ''); };
 const snippetOf = (t, max) => { const x = plain(t || ''); return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x; };
 function nodeId(t, taken) {
   const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz', day = new Date(t || Date.now()).toISOString().slice(0, 10).replace(/-/g, '');
@@ -2630,15 +2631,27 @@ function thinkingStateFiles(c) {
         sources: [{ resource: `/${session}#${m.id}`, title: 'The flagged message' }], body: (m.text || '').trim() });
     }
   }
-  const root = nodes[0], decisions = nodes.filter(n => n.type === 'Decision');
+  const root = nodes[0];
+  // the facts remembered from this conversation (F-23) are its project memory: one OKF document per item (spec §9)
+  const iso = t => new Date(t || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z');
+  const items = db.memory.filter(x => x.text && x.src && x.src.cid === c.id).map(x => {
+    const iid = keep(x.itemId, x.at);
+    if (x.itemId !== iid) { x.itemId = iid; given = true; }
+    const from = c.messages[x.src.mid], node = from && byBranch[from.branchId];
+    const text = x.text.replace(/\s+/g, ' ').trim();
+    const sources = [node && { resource: `/nodes/${node}.md`, title: branchName(c.branches[from.branchId], c) }, from && { resource: `/${session}#${from.id}`, title: 'The message it was remembered from' }].filter(Boolean);
+    return { id: iid, title: shortTitle(text), description: text, at: iso(x.at), sources };
+  }).sort((a, b) => (a.id < b.id ? -1 : 1));
   const kids = {}; nodes.forEach(n => { if (n.parent) (kids[n.parent] = kids[n.parent] || []).push(n); });
   const tree = []; const walk = (n, d) => { tree.push(`${'  '.repeat(d)}* [${n.title.replace(/[[\]]/g, '')}](${n.id}.md) - ${n.type} · ${n.status}: ${n.description}`); (kids[n.id] || []).forEach(k => walk(k, d + 1)); };
   walk(root, 0);
   const files = [
     { name: 'README.md', text: `---\ntype: Thinking State\ntitle: ${yq(c.title)}\ndescription: ${yq('Exported from a Mindbough demo conversation.')}\nthinking:\n  profile: "${FORMAT_PROFILE}"\n  id: ${c.tsId}\n  root: ${root.id}\ngenerated: { by: ${yq('mindbough-demo/' + APP_VERSION)}, at: ${yq(at)} }\n---\n\n# ${c.title}\n\nA Thinking State exported from the Mindbough demo on ${at.slice(0, 10)}. Start at the [thought tree](nodes/index.md): every branch of the conversation is a node, and every flagged message a decision.\n\nThe raw conversation is in \`${session}\`, which is git-ignored by default because conversations can hold private data.\n\nTo continue with an agent: \`python3 skills/mindbough/scripts/mb.py context ${folder} root\`.\n` },
-    { name: 'index.md', text: `---\nokf_version: "0.2"\n---\n\n# Thinking State\n\n* [${c.title.replace(/[[\]]/g, '')}](README.md) - Exported from a Mindbough demo conversation.\n* [Thought tree](nodes/index.md) - ${nodes.length} node${nodes.length === 1 ? '' : 's'}\n* [Project memory](memory/project.md) - the decisions of this conversation\n* [Log](log.md) - how the thinking changed, newest first\n` },
+    { name: 'index.md', text: `---\nokf_version: "0.2"\n---\n\n# Thinking State\n\n* [${c.title.replace(/[[\]]/g, '')}](README.md) - Exported from a Mindbough demo conversation.\n* [Thought tree](nodes/index.md) - ${nodes.length} node${nodes.length === 1 ? '' : 's'}\n* [Memory](memory/index.md) - ${items.length} item${items.length === 1 ? '' : 's'}\n* [Log](log.md) - how the thinking changed, newest first\n` },
     { name: 'nodes/index.md', text: `# Thought tree\n\n${tree.join('\n')}\n` },
-    { name: 'memory/project.md', text: `---\ntype: Memory\ntitle: Project memory\ndescription: ${yq('The decisions of this conversation; loaded into every context pack.')}\n---\n\n` + (decisions.length ? decisions.map(n => `- ${n.description} ([decision](/nodes/${n.id}.md))`).join('\n') : '<!-- No decisions yet: flag messages in the demo to add them. -->') + '\n' },
+    { name: 'memory/index.md', text: '# Memory\n\n' + (items.length ? items.map(x => `* [${x.title}](${x.id}.md) - ${x.description}`).join('\n') : '_Nothing remembered yet: `mb.py remember <dir> "…" --by <actor>` adds an item._') + '\n' },
+    ...items.map(x => ({ name: `memory/${x.id}.md`, text: ['---', 'type: Memory', `title: ${yq(x.title)}`, `description: ${yq(x.description)}`, `generated: { by: "human:me", at: ${yq(x.at)} }`,
+      ...(x.sources.length ? ['sources:', ...x.sources.map(y => `  - { resource: ${yq(y.resource)}, title: ${yq(y.title)} }`)] : []), '---', ''].join('\n') })),
     { name: 'log.md', text: `# Thinking log\n\n## ${at.slice(0, 10)}\n* **Creation**: Exported from the Mindbough demo conversation “${c.title}”.\n` },
     { name: '.gitignore', text: '# raw interaction logs may hold private data\nsessions/\n.mindbough/\n' },
     { name: session, text: JSON.stringify({ app: 'gemini-tree-chat', version: 1, exported: at, conversations: [cleanConvo(c)] }, null, 2) },
@@ -2719,8 +2732,12 @@ function bundleToConvo(r, files) {
     if (p && n.id !== rootId) { if (!kids.has(p)) kids.set(p, []); kids.get(p).push(n); }
   }
   kids.forEach(list => list.sort((a, b) => (a.id < b.id ? -1 : 1)));
+  // project memory: 0.2 items, one per memory/<id>.md (their index lines), or a 0.1 memory/project.md list
+  const itemLines = files.filter(f => f.name.startsWith(r.dir + 'memory/') && /^memory\/[^/]+\.md$/.test(f.name.slice(r.dir.length)) && !/\/(index|project)\.md$/.test(f.name))
+    .sort((a, b) => (a.name < b.name ? -1 : 1)).map(f => frontmatter(f.text)).filter(x => x && x.meta.title)
+    .map(x => `- **${String(x.meta.title).replace(/\s+/g, ' ')}** — ${String(x.meta.description || '').replace(/\s+/g, ' ')}${x.meta.resource && /^https?:\/\//.test(String(x.meta.resource)) ? ` ([link](${x.meta.resource}))` : ''}`);
   const mem = files.find(f => f.name === r.dir + 'memory/project.md');
-  const memory = mem ? (frontmatter(mem.text) || { body: mem.text }).body.replace(/<!--[\s\S]*?-->/g, '').trim() : '';
+  const memory = [itemLines.join('\n'), mem ? (frontmatter(mem.text) || { body: mem.text }).body.replace(/<!--[\s\S]*?-->/g, '').trim() : ''].filter(Boolean).join('\n\n');
   const now = Date.now(), convo = { title: String(r.fm.meta.title || 'Thinking State'), created: now, updated: now, root: 'b' + rootId, focus: 'b' + rootId, counter: 0, branches: {}, messages: {} };
   if (TS_ID.test(String(r.fm.meta.thinking.id || ''))) convo.tsId = String(r.fm.meta.thinking.id);
   let n = 0;
@@ -2784,7 +2801,7 @@ function mergeMemory(items) {
   for (const x of items || []) {
     const text = x && typeof x.text === 'string' ? x.text.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
     if (!text || db.memory.some(y => y.text === text)) continue;
-    db.memory.push({ id: uid(), text, at: Number.isFinite(x.at) ? x.at : Date.now(), ...(typeof x.from === 'string' && x.from ? { from: x.from.slice(0, 200) } : {}) });
+    db.memory.push({ id: uid(), text, at: Number.isFinite(x.at) ? x.at : Date.now(), ...(typeof x.from === 'string' && x.from ? { from: x.from.slice(0, 200) } : {}), ...(TS_ID.test(String(x.itemId || '')) ? { itemId: String(x.itemId) } : {}) });
     n++;
   }
   return n;
