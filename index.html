@@ -581,7 +581,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.2.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 593a0ea'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main afa7ac2'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2592,14 +2592,14 @@ const HELP = [
   { id: 'data', title: 'Your data and the format', cards: ['F-13', 'F-14', 'F-17', 'F-25', 'F-26'], body: `
     <ul><li>Everything is saved in this browser only (IndexedDB), and it survives reloads and closed tabs.</li>
     <li>The <b>bough</b> button on a conversation exports it as a <b>Thinking State</b> (.zip): nodes, decisions, memory, and the session with the model, prompt and tokens of every answer. Any tool or agent that reads the format can continue from it.</li>
-    <li><b>Import</b> opens a Thinking State (.zip) or a .json export. <b>Export all</b> saves everything, memory included.</li>
+    <li><b>Import</b> opens a Thinking State (.zip) or a .json export. A Thinking State with a session comes back as the whole conversation: branches, messages, models, prompts, decisions and remembered facts. <b>Export all</b> saves everything, memory included.</li>
     <li>The share button makes a read-only page of a conversation.</li></ul>` },
   { id: 'help', title: 'About this help', cards: ['F-34'], body: `
     <p>This help changes with the app: every new feature adds itself here, and <b>What's new</b> lists what changed in this version. Press <b>?</b> on a keyboard to open it.</p>` },
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.'] },
+  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.', 'Importing a Thinking State brings back the whole conversation, and an export, import and export again gives the same files.'] },
   { version: '0.2.0', items: ['Decisions and memory reach every prompt, and the prompt view shows how each request is built.', 'Branch into options, compare the branches and choose one; branches name themselves.',
     'A model per request and per helper task, and web search with its sources.', 'Export and open a conversation as a Thinking State (profile 0.2), with the model, prompt and tokens of every answer.'] },
 ];
@@ -2794,7 +2794,7 @@ function sessionLines(c, byBranch, nodes, iso) {
       const ids = (b.text || '').split('\n').filter(l => l.startsWith('- ')).map(l => decisionOf[l.slice(2)]).filter(Boolean);
       return { ...out, ...(ids.length ? { nodes: [...new Set(ids)] } : {}), ...(b.text ? { text: b.text } : {}) };
     }
-    if (Array.isArray(b.ids)) return { ...out, entries: b.ids.filter(id => c.messages[id]) };
+    if (Array.isArray(b.ids) && typeof b.text !== 'string') return { ...out, entries: b.ids.filter(id => c.messages[id]) };
     return { ...out, ...(b.text ? { text: b.text } : {}) };
   };
   for (const b of dfs(c)) {
@@ -2849,8 +2849,8 @@ async function unzipText(buf) {
     const method = dv.getUint16(p + 10, true), size = dv.getUint32(p + 20, true), full = dv.getUint32(p + 24, true), off = dv.getUint32(p + 42, true);
     const nlen = dv.getUint16(p + 28, true), name = dec.decode(u8.subarray(p + 46, p + 46 + nlen));
     p += 46 + nlen + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
-    // only Markdown matters; skip folders, macOS resource forks and anything suspiciously large
-    if (!/\.md$/i.test(name) || /(^|\/)(__MACOSX\/|\._)/.test(name) || full > 5e6) continue;
+    // only Markdown and sessions matter; skip folders, macOS resource forks and anything suspiciously large
+    if (!/\.md$|(^|\/)sessions\/[^/]+\.jsonl$/i.test(name) || /(^|\/)(__MACOSX\/|\._)/.test(name) || full > 5e6) continue;
     const start = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true), data = u8.subarray(start, start + size);
     let bytes = null;
     if (method === 0) bytes = data;
@@ -3012,6 +3012,114 @@ async function openThinkingStates(buf) {
     .filter(r => r.fm && r.fm.meta.type === 'Thinking State' && r.fm.meta.thinking && r.fm.meta.thinking.root)
     .map(r => bundleToConvo(r, files)).filter(Boolean);
 }
+// A Thinking State with a profile 0.2 session opens as the conversation it records (spec §10): a branch per node that has
+// entries, each message at its newest version, decisions on the messages they are anchored at, and the facts remembered from them.
+// Nodes without entries still become cards. Returns null when the bundle has no usable session.
+function sessionToConvo(r, files, nodes, rootId) {
+  const sf = files.find(f => f.name.startsWith(r.dir) && /^sessions\/[0-9]{8}-[0-9a-z]{6}\.jsonl$/.test(f.name.slice(r.dir.length)));
+  if (!sf) return null;
+  let lines;
+  try { lines = sf.text.split('\n').filter(l => l.trim()).map(l => JSON.parse(l)); } catch (e) { return null; }
+  const head = lines[0], sid = sf.name.slice(r.dir.length + 9, -6);
+  if (!head || head.type !== 'Session' || head.id !== sid) return null;
+  const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+  const entries = lines.slice(1).filter(e => isObj(e) && typeof e.id === 'string' && /^[0-9a-z][0-9a-z_-]{3,31}$/.test(e.id));
+  const time = (v, d) => { const t = Date.parse(v); return Number.isFinite(t) ? t : d; };
+  const now = Date.now(), th = n => isObj(n.meta.thinking) ? n.meta.thinking : {};
+  const modelOf = by => { const b = String(by || ''); return b.startsWith('human:') || b.startsWith('process:') || !b.includes('/') ? '' : b.slice(b.lastIndexOf('/') + 1); };
+  const msgs = entries.filter(e => e.kind === 'message' && !e.pending && nodes.has(String(e.node)));
+  const newest = new Map(); msgs.forEach(e => { if (e.replaces) newest.set(e.replaces, e); });
+  const latest = e => { let x = e; const seen = new Set(); while (newest.has(x.id) && !seen.has(x.id)) { seen.add(x.id); x = newest.get(x.id); } return x; };
+  const slots = msgs.filter(e => !e.replaces);
+  if (!slots.length) return null;
+  const toMsg = new Map(); slots.forEach(e => { toMsg.set(e.id, e.id); let x = e; const seen = new Set(); while (newest.has(x.id) && !seen.has(x.id)) { seen.add(x.id); x = newest.get(x.id); toMsg.set(x.id, e.id); } });
+  const branchEntry = new Map(); entries.filter(e => e.kind === 'branch').forEach(e => { if (!branchEntry.has(String(e.node))) branchEntry.set(String(e.node), e); });
+  const convo = { title: String(r.fm.meta.title || head.title || 'Thinking State'), created: time(head.at, now),
+    updated: time(isObj(r.fm.meta.generated) ? r.fm.meta.generated.at : null, now), branches: {}, messages: {}, counter: 0,
+    tsId: r.fm.meta.thinking.id != null ? String(r.fm.meta.thinking.id) : undefined, sessionId: sid, facts: [] };
+  const withEntries = new Set(slots.map(e => String(e.node)).concat([...branchEntry.keys()]));
+  withEntries.add(rootId);
+  const bidOf = nid => { const be = branchEntry.get(nid); return nid === rootId ? 'b' + nid : be && be.id.startsWith('br') && be.id.length > 5 ? be.id.slice(2) : 'b' + nid; };
+  // the nearest ancestor that is a branch
+  const up = nid => { let p = th(nodes.get(nid)).parent, seen = new Set(); while (p && !seen.has(String(p))) { p = String(p); seen.add(p); if (withEntries.has(p) && nodes.has(p)) return p; const n = nodes.get(p); p = n && th(n).parent; } return rootId; };
+  const order = [rootId, ...[...branchEntry.keys()].filter(n => n !== rootId && nodes.has(n)), ...[...withEntries].filter(n => n !== rootId && !branchEntry.has(n) && nodes.has(n))];
+  const WEB = new Map(); entries.filter(e => e.kind === 'tool' && e.tool === 'web_search').forEach(e => { WEB.set(String(e.after), e); });
+  const blockBack = b => {
+    const out = { kind: BLOCK_KINDS.includes(b.kind) ? b.kind : 'harness', label: String(b.label || ({ harness: 'Harness', memory: 'Memory', decisions: 'Decisions', history: 'History', message: 'Your message' }[b.kind] || b.kind || 'Block')).slice(0, 80), chars: Math.max(0, b.chars | 0) };
+    if (b.kind === 'memory') return { ...out, text: '', omitted: true };
+    if (Array.isArray(b.entries) && (b.kind === 'history' || b.kind === 'message')) return { ...out, ids: b.entries.map(x => toMsg.get(x)).filter(Boolean) };
+    return { ...out, text: typeof b.text === 'string' ? b.text : '' };
+  };
+  let n = 0;
+  for (const nid of order) {
+    const node = nodes.get(nid), be = branchEntry.get(nid), id = bidOf(nid);
+    const parentNode = nid === rootId ? null : up(nid);
+    const own = slots.filter(e => String(e.node) === nid);
+    const b = { id, parentId: parentNode ? bidOf(parentNode) : null, forkMsgId: be && be.after && toMsg.has(be.after) ? toMsg.get(be.after) : null, msgIds: [],
+      n: nid === rootId ? 0 : ++n, created: time(be ? be.at : own[0] && own[0].at, convo.created), nodeId: nid };
+    for (const slot of own) {
+      const v = latest(slot), role = slot.role === 'user' ? 'user' : 'model';
+      const m = { id: slot.id, role, text: typeof v.text === 'string' ? v.text : '', branchId: id, ts: time(v.at, now) };
+      const model = role === 'model' ? modelOf(v.by) : ''; if (model) m.model = model;
+      if (v.error) m.error = String(v.error);
+      if (slot.excluded || v.excluded) m.hidden = true;
+      if (isObj(v.ext) && isObj(v.ext['mindbough-demo']) && v.ext['mindbough-demo'].edited) m.edited = true;
+      if (isObj(v.request)) {
+        const rq = v.request, blocks = (Array.isArray(rq.blocks) ? rq.blocks : []).filter(isObj).map(blockBack);
+        if (Array.isArray(rq.tools) && rq.tools.includes('web_search')) blocks.push({ kind: 'tools', label: 'Tools · web search', chars: 0, text: WEB_NOTE });
+        m.request = { model: model || '', at: time(rq.at, m.ts), chars: Math.max(0, rq.chars | 0), blocks };
+        if (isObj(v.usage)) m.request.usage = { prompt: v.usage.input | 0, answer: v.usage.output | 0, thoughts: v.usage.reasoning | 0 };
+      }
+      const ws = WEB.get(String(slot.after));
+      if (role === 'model' && (ws || Array.isArray(v.sources))) {
+        const found = webSearchOf({ webSearchQueries: ws && isObj(ws.input) ? ws.input.queries : [], groundingChunks: (Array.isArray(v.sources) ? v.sources : ws && Array.isArray(ws.sources) ? ws.sources : []).filter(isObj).map(x => ({ web: { uri: x.resource, title: x.title } })) });
+        if (found) m.search = found;
+      }
+      if (b.msgIds.length === 0 && slot.variant_of && toMsg.has(slot.variant_of)) b.editOf = toMsg.get(slot.variant_of);
+      convo.messages[m.id] = m; b.msgIds.push(m.id);
+    }
+    const title = String(node.meta.title || ''), first = b.msgIds.map(x => convo.messages[x]).find(x => x.role === 'user');
+    if (nid !== rootId && title && title !== (first ? sentenceOf(first.text, 80) : '')) b.name = title.slice(0, 60); // a name given by someone, not the automatic one
+    convo.branches[id] = b;
+  }
+  convo.root = bidOf(rootId); convo.focus = convo.root;
+  // decisions anchored at entries (spec §7.1, §10.6)
+  const used = new Set(withEntries);
+  for (const [nid, node] of nodes) {
+    if (String(node.meta.type) !== 'Decision') continue;
+    const src = (Array.isArray(node.meta.sources) ? node.meta.sources : []).filter(isObj).map(x => String(x.resource || '')).find(x => x.startsWith(`/sessions/${sid}.jsonl#`));
+    const mid = src && toMsg.get(src.split('#')[1]), m = mid && convo.messages[mid];
+    if (!m) continue;
+    const t = th(node), status = TS_STATUSES.includes(t.status) ? t.status : 'open', by = isObj(node.meta.generated) ? String(node.meta.generated.by || '') : '';
+    if (status === 'accepted' || status === 'open') m.flagged = true;
+    if (status !== 'open') {
+      m.decision = { summary: String(node.meta.description || node.meta.title || '').slice(0, 300), at: time(isObj(node.meta.generated) ? node.meta.generated.at : null, m.ts), ...(modelOf(by) ? { model: modelOf(by) } : {}) };
+      const hist = (Array.isArray(t.revisions) ? t.revisions : []).filter(x => isObj(x) && x.description).slice(0, 10).map(x => ({ summary: String(x.description).slice(0, 300), at: time(isObj(x.generated) ? x.generated.at : null, m.ts), ...(isObj(x.generated) && modelOf(x.generated.by) ? { model: modelOf(x.generated.by) } : {}) }));
+      if (hist.length) m.decision.history = hist;
+    }
+    m.nodeId = nid; used.add(nid);
+  }
+  // the facts remembered from this conversation's messages (spec §9)
+  for (const f of files) {
+    const rel = f.name.slice(r.dir.length);
+    if (!f.name.startsWith(r.dir) || !/^memory\/[0-9]{8}-[0-9a-z]{6}\.md$/.test(rel)) continue;
+    const fm = frontmatter(f.text); if (!fm || !fm.meta.description) continue;
+    const src = (Array.isArray(fm.meta.sources) ? fm.meta.sources : []).filter(isObj).map(x => String(x.resource || '')).find(x => x.startsWith(`/sessions/${sid}.jsonl#`));
+    const mid = src && toMsg.get(src.split('#')[1]);
+    if (mid) convo.facts.push({ text: String(fm.meta.description).slice(0, 300), at: time(isObj(fm.meta.generated) ? fm.meta.generated.at : null, now), itemId: rel.slice(7, -3), mid });
+  }
+  // nodes the session doesn't cover stay cards, under the nearest branch above them
+  for (const [nid, node] of nodes) {
+    if (used.has(nid)) continue;
+    const t = th(node), type = String(node.meta.type || 'Thought'), status = TS_STATUSES.includes(t.status) ? t.status : 'open';
+    const parent = convo.branches[bidOf(up(nid))] ? bidOf(up(nid)) : convo.root, bid = 'b' + nid, mid = 'm' + nid;
+    convo.messages[mid] = { id: mid, role: 'user', text: [`**${type} · ${status}** — ${String(node.meta.title || nid)}`, node.meta.description ? `_${node.meta.description}_` : '', node.body].filter(Boolean).join('\n\n'), branchId: bid, ts: now,
+      node: { id: nid, type, status, title: String(node.meta.title || nid), description: String(node.meta.description || ''), links: {} } };
+    convo.branches[bid] = { id: bid, parentId: parent, forkMsgId: null, msgIds: [mid], n: ++n, name: String(node.meta.title || nid).slice(0, 60), created: now, ...(['rejected', 'superseded', 'parked'].includes(status) ? { collapsed: true } : {}) };
+  }
+  convo.counter = n;
+  return convo;
+}
 // A Thinking State becomes a conversation whose branches mirror the tree: each node is a branch holding the node's card,
 // so writing in a branch sends the path of cards from the root to that node (spec §13, as a conversation)
 function bundleToConvo(r, files) {
@@ -3024,6 +3132,8 @@ function bundleToConvo(r, files) {
   }
   const rootId = String(r.fm.meta.thinking.root);
   if (!nodes.has(rootId)) return null;
+  const whole = sessionToConvo(r, files, nodes, rootId);
+  if (whole) return whole;
   const th = n => n.meta.thinking && typeof n.meta.thinking === 'object' ? n.meta.thinking : {};
   const title = n => String(n.meta.title || n.id);
   for (const n of nodes.values()) {
@@ -3125,11 +3235,14 @@ function adoptConvo(src) {
     if (!kids.has(b.parentId)) kids.set(b.parentId, []);
     kids.get(b.parentId).push(k);
   }
-  const bid = new Map(), mid = new Map(), order = [], queue = [src.root];
+  const bid = new Map(), mid = new Map(), order = [], queue = [src.root], taken = new Set();
+  // an id that is safe (it goes into data- attributes) and unique in this conversation is kept, so a Thinking State round trip
+  // keeps its entry ids; anything else gets a fresh one
+  const keepId = k => { const id = typeof k === 'string' && /^[0-9a-z][0-9a-z_-]{3,31}$/.test(k) && !taken.has(k) ? k : uid(); taken.add(id); return id; };
   while (queue.length) {
     const k = queue.shift();
     if (bid.has(k)) continue;
-    bid.set(k, uid()); order.push(k);
+    bid.set(k, keepId(k)); order.push(k);
     queue.push(...(kids.get(k) || []));
   }
   const c = { id: uid(), title: str(src.title, 200).trim() || 'Imported conversation', created: time(src.created), updated: time(src.updated),
@@ -3142,7 +3255,7 @@ function adoptConvo(src) {
     for (const m of Array.isArray(b.msgIds) ? b.msgIds : []) {
       const x = own(src.messages, m) ? src.messages[m] : null;
       if (!isObj(x) || (x.role !== 'user' && x.role !== 'model') || mid.has(m)) continue;
-      const nm = { id: uid(), role: x.role, text: str(x.text, 1e6), branchId: id, ts: time(x.ts) };
+      const nm = { id: keepId(m), role: x.role, text: str(x.text, 1e6), branchId: id, ts: time(x.ts) };
       if (x.model) nm.model = str(x.model, 100);
       if (x.error) nm.error = str(x.error, 2000);
       if (x.flagged) nm.flagged = true;
@@ -3184,7 +3297,7 @@ function adoptConvo(src) {
       const out = { kind: BLOCK_KINDS.includes(b.kind) ? b.kind : 'history', label: str(b.label, 80), chars: count(b.chars) };
       if (typeof b.text === 'string') out.text = str(b.text, 20000);
       if (b.omitted) out.omitted = true;
-      else out.ids = (Array.isArray(b.ids) ? b.ids : []).map(i => mid.get(i)).filter(Boolean);
+      else if (typeof b.text !== 'string') out.ids = (Array.isArray(b.ids) ? b.ids : []).map(i => mid.get(i)).filter(Boolean); // text blocks keep their text, conversation blocks their ids
       return out;
     });
     const rec = { model: str(r.model, 100), at: time(r.at), chars: count(r.chars), blocks };
@@ -3214,7 +3327,17 @@ $('#importFile').addEventListener('change', async e => {
       if (head[0] === 0x50 && head[1] === 0x4b && head[2] === 3 && head[3] === 4) { // "PK\3\4": a zip, so Thinking States
         const convos = await openThinkingStates(await f.arrayBuffer());
         if (!convos.length) throw new Error('No Thinking State in this zip: it needs a README.md with type: Thinking State');
-        convos.forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; });
+        convos.forEach(c => {
+          const id = adoptConvo(c);
+          if (!id) { failed++; return; }
+          added.push(id);
+          for (const f of c.facts || []) { // facts remembered from this conversation (spec §9), linked to their messages again
+            if (!db.convos[id].messages[f.mid]) continue;
+            const known = db.memory.find(x => (f.itemId && x.itemId === f.itemId) || x.text === f.text);
+            if (known) { if (!(known.src && db.convos[known.src.cid])) known.src = { cid: id, mid: f.mid }; continue; } // a fact whose conversation is gone follows it here
+            db.memory.push({ id: uid(), text: f.text, at: f.at, src: { cid: id, mid: f.mid }, from: db.convos[id].title, ...(TS_ID.test(f.itemId) ? { itemId: f.itemId } : {}) }); facts++;
+          }
+        });
         continue;
       }
       const list = parseImport(await f.text()); list.forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; }); facts += mergeMemory(list.memory);
