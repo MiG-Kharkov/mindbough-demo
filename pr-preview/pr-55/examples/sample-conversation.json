@@ -1,0 +1,181 @@
+{
+  "app": "gemini-tree-chat",
+  "version": 1,
+  "exported": "2026-09-29T12:00:00.000Z",
+  "conversations": [
+    {
+      "id": "sample-habit-tracker",
+      "title": "Database for a small habit tracker",
+      "created": 1790618400000,
+      "updated": 1790619480000,
+      "root": "bmain",
+      "counter": 3,
+      "focus": "bmain",
+      "branches": {
+        "bmain": {
+          "id": "bmain",
+          "parentId": null,
+          "forkMsgId": null,
+          "msgIds": [
+            "m1",
+            "m2",
+            "m3",
+            "m4",
+            "m5",
+            "m6"
+          ],
+          "n": 0,
+          "created": 1790618400000
+        },
+        "bsqlite": {
+          "id": "bsqlite",
+          "parentId": "bmain",
+          "forkMsgId": "m2",
+          "msgIds": [
+            "m7",
+            "m8"
+          ],
+          "n": 1,
+          "name": "SQLite instead",
+          "created": 1790618940000,
+          "collapsed": true
+        },
+        "bmongo": {
+          "id": "bmongo",
+          "parentId": "bmain",
+          "forkMsgId": "m2",
+          "editOf": "m3",
+          "msgIds": [
+            "m9",
+            "m10",
+            "m11"
+          ],
+          "n": 2,
+          "created": 1790619120000
+        },
+        "bweekend": {
+          "id": "bweekend",
+          "parentId": "bmain",
+          "forkMsgId": "m4",
+          "msgIds": [
+            "m12",
+            "m13"
+          ],
+          "n": 3,
+          "name": "Weekend plan",
+          "created": 1790619360000
+        }
+      },
+      "messages": {
+        "m1": {
+          "id": "m1",
+          "role": "user",
+          "text": "I'm building a small habit tracker for me and a few friends, maybe 100 users at most. Which database should I use?",
+          "branchId": "bmain",
+          "ts": 1790618400000
+        },
+        "m2": {
+          "id": "m2",
+          "role": "model",
+          "text": "For about 100 users any mainstream database will cope. What matters more is how little you want to operate. The short list:\n\n| Option | Why it fits | What to watch |\n|---|---|---|\n| **SQLite** | One file, zero setup, very fast for small apps | One writer at a time; backups are on you |\n| **PostgreSQL** | Relational, rock solid, easy to grow | Needs a server or a managed plan |\n| **MongoDB** | Flexible documents, quick to start | Joins and reporting get awkward |\n| **Firebase** | Auth and sync included | Vendor lock-in; pricing jumps at scale |\n\n**My pick:** start with **PostgreSQL** on a managed free tier. Habits and daily check-ins are naturally relational, and you won't have to migrate later.",
+          "branchId": "bmain",
+          "ts": 1790618460000,
+          "model": "gemini-3.6-pro"
+        },
+        "m3": {
+          "id": "m3",
+          "role": "user",
+          "text": "OK, PostgreSQL. How should I model habits and daily check-ins?",
+          "branchId": "bmain",
+          "ts": 1790618580000
+        },
+        "m4": {
+          "id": "m4",
+          "role": "model",
+          "text": "Two tables are enough:\n\n```sql\ncreate table habits (\n  id         bigserial primary key,\n  user_id    bigint not null,\n  title      text   not null,\n  created_at timestamptz not null default now()\n);\n\ncreate table checkins (\n  habit_id bigint not null references habits(id) on delete cascade,\n  day      date   not null,\n  primary key (habit_id, day)  -- one check-in per habit per day\n);\n```\n\nThe composite primary key makes a double tap harmless, and a streak is just a run of consecutive `day` values.",
+          "branchId": "bmain",
+          "ts": 1790618640000,
+          "model": "gemini-3.6-flash",
+          "flagged": true,
+          "decision": {
+            "summary": "Use PostgreSQL with two tables, habits and check-ins, and one check-in per habit per day.",
+            "at": 1790618640000
+          }
+        },
+        "m5": {
+          "id": "m5",
+          "role": "user",
+          "text": "What will hosting cost per month?",
+          "branchId": "bmain",
+          "ts": 1790618760000
+        },
+        "m6": {
+          "id": "m6",
+          "role": "model",
+          "text": "Roughly $c = c_{db} + c_{app}$. On free tiers for both, $c = 0$ until you outgrow them; a small paid setup is about **$5–10 a month**.\n\n- **Database:** a managed Postgres free tier (~0.5 GB) holds years of check-ins for 100 users.\n- **App:** a small container or serverless functions.",
+          "branchId": "bmain",
+          "ts": 1790618820000,
+          "model": "gemini-3.6-flash"
+        },
+        "m7": {
+          "id": "m7",
+          "role": "user",
+          "text": "What breaks if I use SQLite instead and the app grows?",
+          "branchId": "bsqlite",
+          "ts": 1790619000000
+        },
+        "m8": {
+          "id": "m8",
+          "role": "model",
+          "text": "Nothing breaks at your size. The limits show up later:\n\n1. **Writes queue up.** SQLite allows one writer at a time: fine for check-ins, painful for heavy concurrent writes.\n2. **One machine.** The database lives next to the app, so scaling out means moving to a server database.\n3. **Backups are yours.** Copy the file safely (for example with `VACUUM INTO`) on a schedule.\n\nIf you ever switch, tools like `pgloader` move the data to PostgreSQL in minutes.",
+          "branchId": "bsqlite",
+          "ts": 1790619060000,
+          "model": "gemini-3.6-flash"
+        },
+        "m9": {
+          "id": "m9",
+          "role": "user",
+          "text": "OK, MongoDB. How should I model habits and daily check-ins?",
+          "branchId": "bmongo",
+          "ts": 1790619180000
+        },
+        "m10": {
+          "id": "m10",
+          "role": "model",
+          "text": "Keep the check-ins inside each habit document:\n\n```json\n{\n  \"_id\": \"habit_42\",\n  \"userId\": \"u_7\",\n  \"title\": \"Read 20 pages\",\n  \"checkins\": [\"2026-09-27\", \"2026-09-28\"]\n}\n```\n\nIt reads nicely, but the array grows forever, and questions like \"who checked in today?\" need an index on `checkins` or a separate collection.",
+          "branchId": "bmongo",
+          "ts": 1790619240000,
+          "model": "gemini-3.6-flash"
+        },
+        "m11": {
+          "id": "m11",
+          "role": "user",
+          "text": "(note to self: maybe DynamoDB? probably overkill)",
+          "branchId": "bmongo",
+          "ts": 1790619300000,
+          "hidden": true
+        },
+        "m12": {
+          "id": "m12",
+          "role": "user",
+          "text": "Give me a checklist to set this up this weekend.",
+          "branchId": "bweekend",
+          "ts": 1790619420000
+        },
+        "m13": {
+          "id": "m13",
+          "role": "model",
+          "text": "- [x] Pick PostgreSQL\n- [ ] Create a free managed database and copy the connection string\n- [ ] Run the two `create table` statements\n- [ ] Build the check-in endpoint (insert, ignore duplicates)\n- [ ] Show the current streak on the home screen\n- [ ] Turn on daily backups",
+          "branchId": "bweekend",
+          "ts": 1790619480000,
+          "model": "gemini-3.6-flash",
+          "flagged": true,
+          "decision": {
+            "summary": "Set it up this weekend: a managed Postgres, the two tables, a check-in endpoint, streaks and daily backups.",
+            "at": 1790619480000
+          }
+        }
+      }
+    }
+  ]
+}
