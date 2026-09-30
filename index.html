@@ -34,7 +34,7 @@
   --flag:#B86E00; --flag-soft:rgba(199,119,0,.10);
   --wire:#93A9B0; --dot:rgba(19,33,43,.10); --danger:#B3261E;
   --shadow:0 1px 1px rgba(19,33,43,.04),0 6px 18px rgba(19,33,43,.06);
-  --k-harness:#8FA3A9; --k-memory:#8E6CCB; --k-decisions:#C77700; --k-history:#4F86B8; --k-message:#0F7B74;
+  --k-harness:#8FA3A9; --k-memory:#8E6CCB; --k-decisions:#C77700; --k-history:#4F86B8; --k-message:#0F7B74; --k-tools:#B8527A;
   --colW:460px;
 }
 @media (prefers-color-scheme:dark){:root{
@@ -44,7 +44,7 @@
   --flag:#F0A640; --flag-soft:rgba(240,166,64,.12);
   --wire:#355157; --dot:rgba(220,231,232,.07); --danger:#F2847C;
   --shadow:0 1px 2px rgba(0,0,0,.35);
-  --k-harness:#5F777D; --k-memory:#B39DDB; --k-decisions:#F0A640; --k-history:#7FB2E0; --k-message:#3CC3B6;
+  --k-harness:#5F777D; --k-memory:#B39DDB; --k-decisions:#F0A640; --k-history:#7FB2E0; --k-message:#3CC3B6; --k-tools:#E08AAE;
 }}
 *{box-sizing:border-box}
 [hidden]{display:none!important} /* keep the hidden attribute stronger than display rules like .ib */
@@ -184,7 +184,17 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 .pbar-seg{border:0;padding:0;min-width:8px;cursor:pointer}
 .pbar-seg:hover{filter:brightness(1.1)}
 .k-harness{background:var(--k-harness)} .k-memory{background:var(--k-memory)} .k-decisions{background:var(--k-decisions)}
-.k-history{background:var(--k-history)} .k-message{background:var(--k-message)}
+.k-history{background:var(--k-history)} .k-message{background:var(--k-message)} .k-tools{background:var(--k-tools)}
+#webSearch{border:1px solid var(--line);border-radius:999px;padding:3px 9px 3px 7px;font-size:12px;flex:none}
+#webSearch[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);font-weight:600}
+.srcs{margin-top:8px;font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.srcs a{color:var(--accent);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pv-search{margin-top:14px;font-size:13.5px}
+.pv-search ul{margin:6px 0 0;padding-left:18px}
+.pv-search a{color:var(--accent);overflow-wrap:anywhere}
+body.readonly #webSearch{display:none}
+@media (max-width:820px){.modelpick{flex-shrink:2}}
+@media (max-width:400px){#webSearch .lbl{display:none}#webSearch{padding:3px 6px}.modelpick{flex-shrink:3}}
 .pb-row{display:flex;align-items:center;gap:10px;width:100%;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;padding:11px 4px;font-size:14px;min-height:44px}
 .pb-row:hover{background:var(--accent-soft)}
 .pb-row:last-child{border-bottom:0}
@@ -493,7 +503,7 @@ button.model-chip svg.i{width:11px;height:11px}
     </div>
     <div class="composer">
       <div id="keyHint" class="keyhint" hidden>To chat, add a Gemini API key in <button type="button" data-open="settings">Settings</button>, or <button type="button" data-open="sample">try a sample conversation</button>.</div>
-      <div class="to"><span id="toLabel"></span><button id="promptPreview" class="ib" type="button" title="Preview the prompt your next message would send" aria-label="Preview the next prompt"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button><label class="modelpick" title="Model for the next request"><select id="model" aria-label="Model for the next request"></select></label></div>
+      <div class="to"><span id="toLabel"></span><button id="promptPreview" class="ib" type="button" title="Preview the prompt your next message would send" aria-label="Preview the next prompt"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button><button id="webSearch" class="ib" type="button" aria-pressed="false" aria-label="Web search" title="Let the model search the web (Google Search) for the next requests"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg><span class="lbl">Web</span></button><label class="modelpick" title="Model for the next request"><select id="model" aria-label="Model for the next request"></select></label></div>
       <div class="box">
         <textarea id="input" rows="1" placeholder="Write a message…  (Enter to send, Shift+Enter for a new line)"></textarea>
         <button id="send"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>Send</span></button>
@@ -557,7 +567,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.2.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main edfbae2'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 7dc4220'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -888,6 +898,13 @@ document.addEventListener('dblclick', e => {
 });
 
 let editing = null; // { cid, mid }
+// The pages a web search found for an answer (F-33); titles and links are untrusted, so they are escaped
+function sourcesHTML(m) {
+  const s = m.search;
+  if (!s || m.streaming || !(s.sources || []).length) return '';
+  return `<div class="srcs"><span>Sources${s.queries && s.queries.length ? ` for “${esc(s.queries[0])}”${s.queries.length > 1 ? ` and ${s.queries.length - 1} more` : ''}` : ''}:</span>`
+    + s.sources.map(x => `<a href="${esc(x.uri)}" target="_blank" rel="noopener noreferrer" title="${esc(x.uri)}">${esc(x.title)}</a>`).join('') + '</div>';
+}
 function msgHTML(c, m) {
   const isSel = sel && sel.cid === c.id && sel.ids.has(m.id);
   const isEdit = editing && editing.cid === c.id && editing.mid === m.id;
@@ -952,7 +969,7 @@ function msgHTML(c, m) {
     </div>`;
   }
   return `<div class="${cls}" data-mid="${m.id}">
-    <div class="bubble"><div class="role">${who}${chip}${tags}</div><div class="content">${body}</div></div>
+    <div class="bubble"><div class="role">${who}${chip}${tags}</div><div class="content">${body}</div>${sourcesHTML(m)}</div>
     ${dec}${isEdit ? '' : reaskHTML(c, m)}${acts}${kidsHTML}</div>`;
 }
 
@@ -2045,6 +2062,9 @@ async function loadModels() {
 let kT;
 keyInput.addEventListener('input', () => { db.key = keyInput.value.trim(); save(); renderKeyState(); clearTimeout(kT); kT = setTimeout(loadModels, 600); });
 modelSel.addEventListener('change', () => { db.model = modelSel.value; save(); });
+const renderWeb = () => { $('#webSearch').setAttribute('aria-pressed', String(!!db.web)); };
+$('#webSearch').onclick = () => { db.web = !db.web; save(); renderWeb(); toast(db.web ? 'Web search on' : 'Web search off'); };
+renderWeb();
 $('#showKey').onclick = () => { keyInput.type = keyInput.type === 'password' ? 'text' : 'password'; };
 if (!RO) loadModels();
 
@@ -2132,7 +2152,9 @@ async function sendToBranch(c, bid, text, modelOverride) {
 /* ---------------- building a request ---------------- */
 // A request is a list of blocks: fixed system blocks first (harness, memory, decisions), then the conversation.
 // The prompt view shows these blocks, and every answer keeps a record of the ones it was generated from.
-const BLOCK_KINDS = ['harness', 'memory', 'decisions', 'history', 'message'];
+const BLOCK_KINDS = ['harness', 'memory', 'decisions', 'history', 'message', 'tools'];
+// Web search runs inside the Gemini API (its google_search tool), so the key still goes only to the model API
+const WEB_NOTE = 'The model may search the web with Google Search and ground its answer in what it finds. The searches and the sources come back with the answer.';
 // The harness explains the blocks that follow it, so it is sent only when there is at least one block
 const HARNESS = 'You are the assistant in Mindbough, a branching chat for thinking problems through. The user explores ideas in separate branches, and you see only the path of the current branch. The blocks below come from the whole conversation: treat them as settled, and don’t reopen them unless the user does.';
 function decisionsIn(c) { return Object.values(c.messages).filter(m => m.flagged && m.decision && m.decision.summary).sort((a, b) => a.ts - b.ts); }
@@ -2169,6 +2191,7 @@ function buildRequest(c, msgs) {
   if (past.length) blocks.push({ kind: 'history', label: `History · ${past.length} turn${past.length === 1 ? '' : 's'}`, ids: past.flatMap(t => t.ids), chars: size(past) });
   if (current) blocks.push({ kind: 'message', label: 'Your message', ids: current.ids, chars: current.text.length });
   const body = { contents: turns.map(t => ({ role: t.role, parts: [{ text: t.text }] })) };
+  if (db.web && turns.length) { blocks.push({ kind: 'tools', label: 'Tools · web search', chars: 0, text: WEB_NOTE }); body.tools = [{ google_search: {} }]; }
   if (system.length) body.systemInstruction = { parts: [{ text: system.map(b => b.text).join('\n\n') }] };
   return { turns, blocks, body, chars: blocks.reduce((n, b) => n + b.chars, 0) };
 }
@@ -2179,6 +2202,17 @@ function requestRecord(req, model) {
     : { kind: b.kind, label: b.label, chars: b.chars, ids: b.ids }) };
 }
 
+// What the model searched and found, from Gemini's groundingMetadata: untrusted, so only http(s) links and plain text are kept
+function webSearchOf(g) {
+  const queries = (Array.isArray(g.webSearchQueries) ? g.webSearchQueries : []).map(q => String(q).replace(/\s+/g, ' ').trim().slice(0, 200)).filter(Boolean).slice(0, 10);
+  const seen = new Set(), sources = [];
+  for (const ch of Array.isArray(g.groundingChunks) ? g.groundingChunks : []) {
+    const w = ch && ch.web, uri = w && String(w.uri || '');
+    if (!/^https?:\/\//i.test(uri) || seen.has(uri) || sources.length >= 20) continue;
+    seen.add(uri); sources.push({ uri: uri.slice(0, 2000), title: String(w.title || uri).replace(/\s+/g, ' ').trim().slice(0, 200) });
+  }
+  return queries.length || sources.length ? { queries, sources } : null;
+}
 // Streams a Gemini answer into message `am`. `backup` = previous version (in-place regeneration)
 async function streamInto(c, am, req, key, picked, backup) {
   let model = am.model, done = false;
@@ -2218,7 +2252,7 @@ async function streamInto(c, am, req, key, picked, backup) {
       throw new Error(`Error ${res.status}${apiMsg ? ': ' + apiMsg : ''}`);
     }
     const reader = res.body.getReader(); const dec = new TextDecoder();
-    let buf = '', lastPaint = 0, lastSave = performance.now(), finish = '', usage = null;
+    let buf = '', lastPaint = 0, lastSave = performance.now(), finish = '', usage = null, grounding = null;
     const onLine = line => {
       if (!line.startsWith('data:')) return;
       const payload = line.slice(5).trim(); if (!payload) return;
@@ -2231,6 +2265,7 @@ async function streamInto(c, am, req, key, picked, backup) {
           const parts = (cand.content && cand.content.parts) || [];
           am.text += parts.filter(p => p.text && !p.thought).map(p => p.text).join('');
           if (cand.finishReason) finish = cand.finishReason;
+          if (cand.groundingMetadata) grounding = cand.groundingMetadata;
         } else if (j.promptFeedback && j.promptFeedback.blockReason) {
           finish = 'BLOCKED:' + j.promptFeedback.blockReason;
         }
@@ -2249,6 +2284,8 @@ async function streamInto(c, am, req, key, picked, backup) {
     }
     (buf + dec.decode()).split('\n').forEach(onLine); // a stream cut off without a final newline
     if (usage && am.request) am.request.usage = { prompt: usage.promptTokenCount | 0, answer: usage.candidatesTokenCount | 0, thoughts: usage.thoughtsTokenCount | 0 };
+    const search = grounding && webSearchOf(grounding);
+    if (search) am.search = search; else delete am.search;
     if (!am.text) {
       if (finish.startsWith('BLOCKED')) am.error = `Gemini blocked the request (${finish.split(':')[1]}).`;
       else if (finish && finish !== 'STOP') am.error = `Empty response (reason: ${finish}).`;
@@ -2328,7 +2365,7 @@ function openPromptView(c, m) {
     rec = requestRecord(buildRequest(c, historyFor(c, branchOf(c, m.id).id, m.id).slice(0, -1)), m.model);
     note = 'Reconstructed: this answer was made before prompts were recorded, so this is what the demo would send for it now.';
   }
-  showPrompt({ c, rec, note, title: 'Prompt of this answer', lookup: id => c.messages[id] });
+  showPrompt({ c, rec, note, title: 'Prompt of this answer', lookup: id => c.messages[id], search: m.search });
 }
 function previewPrompt() {
   const c = cur(); if (!c) return;
@@ -2370,6 +2407,8 @@ function pvRender(pv) {
       <p class="pv-meta"><span><b>${esc(r.model || 'unknown model')}</b> · ${esc(when)}</span><span>${fmtChars(total)}</span>${tokens}</p>
       <div class="pbar" role="list">${r.blocks.map((b, i) => `<button class="pbar-seg k-${b.kind}" style="flex-grow:${Math.max(b.chars, 1)}" data-block="${i}" title="${esc(b.label)} · ${fmtChars(b.chars)}" aria-label="${esc(b.label)}"></button>`).join('')}</div>
       <div>${r.blocks.map((b, i) => `<button class="pb-row" data-block="${i}"><span class="pb-dot k-${b.kind}"></span><span class="pb-name">${esc(b.label)}</span><span class="pb-size">${fmtChars(b.chars)} · ${Math.round(b.chars * 100 / total)}%</span>${ICON.chevRight}</button>`).join('')}</div>
+      ${pv.search ? `<div class="pv-search"><b>The model searched the web</b>${(pv.search.queries || []).length ? `<ul>${pv.search.queries.map(q => `<li>“${esc(q)}”</li>`).join('')}</ul>` : ''}
+        ${(pv.search.sources || []).length ? `<p class="pv-meta" style="margin-top:8px"><span>${pv.search.sources.length} source${pv.search.sources.length === 1 ? '' : 's'}</span></p><ul>${pv.search.sources.map(x => `<li><a href="${esc(x.uri)}" target="_blank" rel="noopener noreferrer">${esc(x.title)}</a></li>`).join('')}</ul>` : ''}</div>` : ''}
       <div class="pv-actions"><button class="btn" data-copy>Copy the whole prompt</button></div>`;
   }
   const b = r.blocks[pv.block];
@@ -2699,6 +2738,15 @@ function sessionLines(c, byBranch, nodes, iso) {
         if (r.usage) e.usage = { input: r.usage.prompt | 0, output: r.usage.answer | 0, ...(r.usage.thoughts ? { reasoning: r.usage.thoughts | 0 } : {}) };
       }
       if (m.edited) e.ext = { 'mindbough-demo': { edited: true } }; // edited in place: the earlier text wasn't kept
+      if (m.search) {
+        const src = (m.search.sources || []).map(x => ({ resource: x.uri, title: x.title }));
+        lines.push({ id: m.id + 'ws', kind: 'tool', node, after, tool: 'web_search', input: { queries: m.search.queries || [] }, ...(src.length ? { sources: src } : {}), by: who(m), at: iso(m.ts) });
+        if (src.length) e.sources = src;
+      }
+      if (e.request && m.request.blocks.some(b => b.kind === 'tools')) {
+        e.request.tools = ['web_search'];
+        e.request.blocks = e.request.blocks.filter(b => b.kind !== 'tools');
+      }
       lines.push(e);
       after = m.id;
     });
@@ -2900,6 +2948,7 @@ function adoptConvo(src) {
       }
       if (x.hidden) nm.hidden = true;
       if (x.edited) nm.edited = true;
+      if (isObj(x.search)) { const ws = webSearchOf({ webSearchQueries: x.search.queries, groundingChunks: (Array.isArray(x.search.sources) ? x.search.sources : []).map(y => ({ web: isObj(y) ? { uri: y.uri, title: y.title } : null })) }); if (ws) nm.search = ws; }
       mid.set(m, nm.id); c.messages[nm.id] = nm; msgIds.push(nm.id);
     }
     const n = k === src.root ? 0 : Math.max(1, Math.floor(Number(b.n)) || 1);
