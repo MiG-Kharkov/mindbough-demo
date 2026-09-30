@@ -1,7 +1,7 @@
 {
   "name": "Mindbough",
   "short_name": "Mindbough",
-  "description": "Think with AI in branches: every answer can fork, and each branch sends the model only its own path.",
+  "description": "Mindbough MVP: think with AI in branches. Every prompt is built from your Thinking State: where you are, what you decided and what you remember.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
