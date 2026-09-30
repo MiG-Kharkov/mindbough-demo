@@ -581,7 +581,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.2.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 1589f65'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 593a0ea'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2599,7 +2599,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.'] },
+  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.'] },
   { version: '0.2.0', items: ['Decisions and memory reach every prompt, and the prompt view shows how each request is built.', 'Branch into options, compare the branches and choose one; branches name themselves.',
     'A model per request and per helper task, and web search with its sources.', 'Export and open a conversation as a Thinking State (profile 0.2), with the model, prompt and tokens of every answer.'] },
 ];
@@ -2687,7 +2687,9 @@ function zipFiles(files, when = Date.now()) {
   end.setUint32(12, size, true); end.setUint32(16, offset, true);
   return new Blob([...parts, ...central, end.buffer], { type: 'application/zip' });
 }
-const yq = v => JSON.stringify(String(v)); // a JSON string is a valid YAML double-quoted scalar
+// A JSON string is a valid YAML double-quoted scalar, once the characters YAML treats as line breaks or forbids are escaped
+const yq = v => JSON.stringify(String(v)).replace(/[\u007f-\u009f\u2028\u2029\ufeff\ufffe\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+const TS_TYPES = ['Thought', 'Question', 'Hypothesis', 'Finding', 'Decision', 'Assumption', 'Constraint', 'Reference', 'Memory', 'Thinking State'];
 const sentenceOf = (t, max) => { const x = firstSentence(plain(t || '')); return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x; };
 const shortTitle = t => { const w = plain(t).split(/(?<=[.!?])\s|[:;]\s| [—–-] /)[0].replace(/\.$/, '').split(/\s+/).filter(Boolean); return w.slice(0, 10).join(' ') + (w.length > 10 ? '…' : ''); };
 const snippetOf = (t, max) => { const x = plain(t || ''); return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x; };
@@ -2698,7 +2700,7 @@ function nodeId(t, taken) {
   taken.add(id); return id;
 }
 function nodeDoc(n, ids) {
-  const out = ['---', `type: ${/^[A-Za-z][A-Za-z0-9 _-]*$/.test(n.type) ? n.type : yq(n.type)}`, `title: ${yq(n.title)}`, `description: ${yq(n.description)}`];
+  const out = ['---', `type: ${TS_TYPES.includes(n.type) ? n.type : yq(n.type)}`, `title: ${yq(n.title)}`, `description: ${yq(n.description)}`];
   if (n.status === 'rejected' || n.status === 'superseded' || (n.status === 'parked' && ['Decision', 'Constraint', 'Assumption'].includes(n.type))) out.push('status: deprecated'); // OKF readers then skip it
   if (n.generated) out.push(`generated: { by: ${yq(n.generated.by)}, at: ${yq(n.generated.at)} }`);
   if (n.sources) { out.push('sources:'); n.sources.forEach(x => out.push(`  - { resource: ${yq(x.resource)}, title: ${yq(x.title)}${x.author ? `, author: ${yq(x.author)}` : ''} }`)); }
@@ -2871,15 +2873,141 @@ function loadYaml() {
     document.head.appendChild(sc);
   }));
 }
+// A YAML reader for frontmatter, so that opening a Thinking State needs no library from the network: block mappings and
+// sequences, flow collections, plain and quoted scalars, | and > blocks, with js-yaml's core schema types. It throws on what
+// it doesn't know (anchors, tags, odd indentation), and frontmatter() then falls back to js-yaml when it is loaded.
+function ymlRead(src) {
+  const lines = src.replace(/\r\n?/g, '\n').split('\n');
+  let i = 0;
+  const fail = why => { throw new Error(`YAML line ${i + 1}: ${why}`); };
+  const indentOf = l => l.match(/^ */)[0].length;
+  const blank = l => /^\s*(#.*)?$/.test(l);
+  const skip = () => { while (i < lines.length && blank(lines[i])) i++; };
+  const isItem = t => t === '-' || t.startsWith('- ');
+  const unescape = body => body.replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)/g, (_, e) => {
+    const simple = { '0': '\0', a: '\x07', b: '\b', t: '\t', n: '\n', v: '\v', f: '\f', r: '\r', e: '\x1b', ' ': ' ', '"': '"', '/': '/', '\\': '\\', N: '\x85', _: '\xa0', L: ' ', P: ' ', '\t': '\t' };
+    if (e.length === 1) { if (e in simple) return simple[e]; fail(`unknown escape \\${e}`); }
+    return String.fromCodePoint(parseInt(e.slice(1), 16));
+  });
+  const scalar = t => {
+    if (t === '' || /^(null|Null|NULL|~)$/.test(t)) return null;
+    if (/^(true|True|TRUE)$/.test(t)) return true;
+    if (/^(false|False|FALSE)$/.test(t)) return false;
+    if (/^[-+]?[0-9]+$/.test(t)) return Number(t);
+    if (/^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$/.test(t)) return Number(t);
+    if (/^[&*!|>%@`]/.test(t)) fail('anchors, aliases and tags are not read here');
+    return t;
+  };
+  // one value that is inline: a quoted or plain scalar, or a flow collection; returns [value, rest of the text]
+  const inline = (t, stops) => {
+    t = t.replace(/^\s+/, '');
+    if (t[0] === '"') { let k = 1; while (k < t.length && t[k] !== '"') k += t[k] === '\\' ? 2 : 1; if (k >= t.length) fail('unclosed "'); return [unescape(t.slice(1, k)), t.slice(k + 1)]; }
+    if (t[0] === "'") { let k = 1; for (; k < t.length; k++) { if (t[k] === "'") { if (t[k + 1] === "'") k++; else break; } } if (k >= t.length) fail("unclosed '"); return [t.slice(1, k).replace(/''/g, "'"), t.slice(k + 1)]; }
+    if (t[0] === '{') {
+      const o = {}; t = t.slice(1).replace(/^\s+/, '');
+      if (t[0] === '}') return [o, t.slice(1)];
+      for (;;) {
+        let key; [key, t] = inline(t, /[:,}]/);
+        t = t.replace(/^\s+/, '');
+        if (t[0] !== ':') fail('expected : in a flow mapping');
+        let v; [v, t] = inline(t.slice(1), /[,}]/);
+        o[String(key)] = v; t = t.replace(/^\s+/, '');
+        if (t[0] === ',') { t = t.slice(1); continue; }
+        if (t[0] === '}') return [o, t.slice(1)];
+        fail('expected , or } in a flow mapping');
+      }
+    }
+    if (t[0] === '[') {
+      const a = []; t = t.slice(1).replace(/^\s+/, '');
+      if (t[0] === ']') return [a, t.slice(1)];
+      for (;;) {
+        let v; [v, t] = inline(t, /[,\]]/);
+        a.push(v); t = t.replace(/^\s+/, '');
+        if (t[0] === ',') { t = t.slice(1); continue; }
+        if (t[0] === ']') return [a, t.slice(1)];
+        fail('expected , or ] in a flow sequence');
+      }
+    }
+    // a plain scalar ends at a stop character (in flow), a ": " (a key) or a " #" comment
+    let k = 0;
+    while (k < t.length && !(stops && stops.test(t[k]) && (t[k] !== ':' || /[\s,}\]]/.test(t[k + 1] || ' '))) && !(t[k] === '#' && /\s/.test(t[k - 1] || ' ') && k > 0)) k++;
+    return [scalar(t.slice(0, k).trim()), t.slice(k)];
+  };
+  const endOfLine = rest => { if (!/^\s*(#.*)?$/.test(rest)) fail(`unexpected ${rest.trim().slice(0, 20)}`); };
+  const lineValue = t => { const [v, rest] = inline(t, null); endOfLine(rest); return v; };
+  const blockScalar = (head, ind) => {
+    const folded = head[0] === '>', chomp = head.slice(1);
+    const body = [];
+    while (i < lines.length && (lines[i].trim() === '' || indentOf(lines[i]) > ind)) body.push(lines[i++]);
+    while (body.length && body[body.length - 1].trim() === '') body.pop();
+    const cut = Math.min(...body.filter(l => l.trim()).map(indentOf));
+    const text = body.map(l => l.slice(cut));
+    let out = folded ? text.join('\n').replace(/([^\n])\n(?=[^\n])/g, '$1 ') : text.join('\n');
+    return chomp === '-' ? out : out + '\n';
+  };
+  const block = ind => {
+    skip(); if (i >= lines.length) return null;
+    const n = indentOf(lines[i]);
+    return isItem(lines[i].slice(n)) ? seq(n) : map(n);
+  };
+  const afterKey = (rest, ind) => {
+    const t = rest.replace(/^\s+/, '');
+    if (t === '' || t[0] === '#') {
+      skip();
+      if (i < lines.length) { const n = indentOf(lines[i]), l = lines[i].slice(n); if (n > ind || (n === ind && isItem(l))) return block(n); }
+      return null;
+    }
+    if (/^[|>][+-]?\s*(#.*)?$/.test(t)) return blockScalar(t.trim().replace(/\s*#.*$/, ''), ind);
+    return lineValue(t);
+  };
+  function map(ind) {
+    const out = {};
+    for (;;) {
+      skip(); if (i >= lines.length) break;
+      const l = lines[i], n = indentOf(l);
+      if (n < ind || (n === ind && isItem(l.slice(n)))) break;
+      if (n > ind) fail('unexpected indentation');
+      let key, rest; [key, rest] = inline(l.slice(n), /:/);
+      rest = rest.replace(/^\s+/, '');
+      if (rest[0] !== ':') fail('expected key: value');
+      i++;
+      out[String(key)] = afterKey(rest.slice(1), ind);
+    }
+    return out;
+  }
+  function seq(ind) {
+    const out = [];
+    for (;;) {
+      skip(); if (i >= lines.length) break;
+      const l = lines[i], n = indentOf(l), t = l.slice(n);
+      if (n !== ind || !isItem(t)) break;
+      const rest = t.slice(1).replace(/^ /, '');
+      if (rest.trim() === '' || rest.trim()[0] === '#') { i++; out.push(block(ind + 1)); continue; }
+      if (/^("(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s'"{\[#][^:#]*?)\s*:(\s|$)/.test(rest)) { lines[i] = ' '.repeat(ind + 2) + rest; out.push(map(ind + 2)); continue; }
+      i++; out.push(lineValue(rest));
+    }
+    return out;
+  }
+  const v = block(0);
+  skip();
+  if (i < lines.length) fail('unexpected text');
+  return v;
+}
+const FM_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n([\s\S]*))?$/;
 function frontmatter(text) {
-  const m = text.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n([\s\S]*))?$/);
+  const m = text.match(FM_RE);
   if (!m) return null;
-  let meta; try { meta = window.jsyaml.load(m[1], { schema: window.jsyaml.CORE_SCHEMA }); } catch (e) { return null; }
+  let meta;
+  try { meta = ymlRead(m[1]); }
+  catch (e) { try { meta = window.jsyaml ? window.jsyaml.load(m[1], { schema: window.jsyaml.CORE_SCHEMA }) : null; } catch (e2) { return null; } }
   return meta && typeof meta === 'object' && !Array.isArray(meta) ? { meta, body: (m[2] || '').trim() } : null;
 }
+// true when the built-in reader can't read a file's frontmatter, so js-yaml is worth loading
+const needsYaml = text => { const m = text.match(FM_RE); if (!m) return false; try { ymlRead(m[1]); return false; } catch (e) { return true; } };
+if (BUILD.startsWith('__')) window.__mbTest = { ymlRead, yq, nodeDoc }; // local builds only: the e2e tests reach the pure functions
 async function openThinkingStates(buf) {
-  await loadYaml();
   const files = await unzipText(buf);
+  if (!window.jsyaml && files.some(f => /\.md$/.test(f.name) && needsYaml(f.text))) await loadYaml().catch(() => {});
   return files.filter(f => /(^|\/)README\.md$/.test(f.name)).map(f => ({ dir: f.name.slice(0, -'README.md'.length), fm: frontmatter(f.text) }))
     .filter(r => r.fm && r.fm.meta.type === 'Thinking State' && r.fm.meta.thinking && r.fm.meta.thinking.root)
     .map(r => bundleToConvo(r, files)).filter(Boolean);
