@@ -169,6 +169,19 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 .sheet-head h2{flex:1;margin:0;font-size:16px;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sheet-body{overflow:auto;padding:14px 18px calc(18px + env(safe-area-inset-bottom))}
 .set-h{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:18px 0 8px}
+.help-new{border:1px solid var(--accent);background:var(--accent-soft);border-radius:12px;padding:10px 14px;margin:0 0 12px}
+.help-new h4,.help-sec h4{margin:0 0 6px;font-size:14px}
+.help-new ul,.help-sec ul{margin:4px 0 0;padding-left:18px}
+.help-new li,.help-sec li{margin:3px 0;font-size:14px;line-height:1.45}
+.help-sec{border-bottom:1px solid var(--line)}
+.help-sec summary{cursor:pointer;padding:11px 2px;font-weight:600;font-size:15px;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.help-sec summary::-webkit-details-marker{display:none}
+.help-sec summary::after{content:'+';color:var(--muted);font-weight:400;font-size:18px}
+.help-sec[open] summary::after{content:'−'}
+.help-sec .help-body{padding:0 2px 12px;font-size:14px;line-height:1.5}
+.help-sec p{margin:4px 0 8px}
+.help-ver{font-size:12.5px;color:var(--muted);margin:0 0 12px}
+.linkbtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer}
 .set-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);align-items:center;gap:4px 12px;padding:5px 0;font-size:14px}
 .set-row select{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);padding:6px 8px;font:inherit;font-size:13px}
 @media (max-width:560px){.set-row{grid-template-columns:1fr;padding:4px 0 8px}}
@@ -481,7 +494,7 @@ button.model-chip svg.i{width:11px;height:11px}
     <button id="sampleBtn" class="sample-link" type="button">Try a sample conversation (no API key needed)</button>
     <div id="roBanner"><b>Shared conversation · read-only</b>You can explore every branch here. To continue it, download the .json and import it in the Mindbough demo.<button id="roDownload"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Download .json</button></div>
     <div id="convList"></div>
-    <div class="side-foot"><span class="hint-desk">Drag the canvas or scroll with <kbd>Shift</kbd>. Drag a column’s right edge to resize. <kbd>Alt</kbd>+<kbd>←</kbd> goes to the parent branch, <kbd>Alt</kbd>+<kbd>→</kbd> to the first child.</span><span class="hint-touch">Swipe left on the canvas to open the first branch that continues from here, and right to go back to its parent. <b>Back</b> and the ↳ badges jump between branches too.</span><div class="ver" id="ver"></div></div>
+    <div class="side-foot"><span class="hint-desk">Drag the canvas or scroll with <kbd>Shift</kbd>. Drag a column’s right edge to resize. <kbd>Alt</kbd>+<kbd>←</kbd> goes to the parent branch, <kbd>Alt</kbd>+<kbd>→</kbd> to the first child.</span><span class="hint-touch">Swipe left on the canvas to open the first branch that continues from here, and right to go back to its parent. <b>Back</b> and the ↳ badges jump between branches too.</span><div class="ver"><button type="button" class="linkbtn" id="openHelp" title="Help and what's new (?)">Help</button> · <span id="ver"></span></div></div>
   </aside>
   <main>
     <header class="topbar">
@@ -545,6 +558,7 @@ button.model-chip svg.i{width:11px;height:11px}
         <h3 class="set-h">About</h3>
         <p class="set-hint">This is the MVP of the Thinking State format, an open format for the state of your thinking with AI. Every prompt is built from where you are, what you decided and what you remember. Export a conversation as a Thinking State (the bough button in the menu), and any app or agent can read it.</p>
         <p class="set-hint" id="verSettings"></p>
+        <p class="set-hint"><button type="button" class="linkbtn" data-open-help>Help and what's new</button></p>
         <p class="set-hint" id="storageInfo"></p>
       </div>
       <div id="sheetDyn"></div>
@@ -567,7 +581,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.2.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 68cb05d'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 1589f65'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1020,7 +1034,7 @@ function renderCanvas() {
                  : `<div class="fork-note">${ICON.branch}<span>Continues from the start of ${esc(branchName(parent))}</span></div>`;
     }
     body += own ? b.msgIds.map(id => msgHTML(c, c.messages[id])).join('')
-      : `<div class="empty">${parent ? 'New branch. Write a message below — Gemini will only see this path of the conversation.' : '<b>Start by writing a message below.</b><br>This is the MVP of the Thinking State format: each branch sends the model only its own path, plus the decisions in force and your memory. The layers button shows how every prompt is built.'}</div>`;
+      : `<div class="empty">${parent ? 'New branch. Write a message below — Gemini will only see this path of the conversation.' : '<b>Start by writing a message below.</b><br>This is the MVP of the Thinking State format: each branch sends the model only its own path, plus the decisions in force and your memory. The layers button shows how every prompt is built. <button type="button" class="linkbtn" data-open-help>Help</button>'}</div>`;
     col.innerHTML = `<div class="col-head">${head}</div><div class="col-body">${body}</div><div class="col-resize" title="Drag to resize · double-click to reset"></div>`;
     canvas.appendChild(col);
     colEls[b.id] = col;
@@ -2544,6 +2558,63 @@ $('#keyHint').addEventListener('click', e => {
   const b = e.target.closest('[data-open]'); if (!b) return;
   if (b.dataset.open === 'settings') openSettings(); else $('#sampleBtn').click();
 });
+
+/* ---------------- help (F-34) ---------------- */
+// Every change to the demo updates this help: its section lists the cards it covers, and scripts/check-help.py checks
+// that every card of demo/FEATURES.md is covered and that WHATS_NEW has the current version.
+const HELP = [
+  { id: 'what', title: 'What this is', cards: ['F-01', 'F-16'], body: `
+    <p>Mindbough keeps the <b>state of your thinking</b> with AI as open data: a tree of questions, options, findings and decisions. This app is the <b>MVP of the Thinking State format</b>: every screen is a way to work with that data.</p>
+    <ul><li>Every request to the model is built from where you are (this branch's path), the decisions in force and your memory, never the whole chat.</li>
+    <li>Menu → <b>New conversation</b> starts one. The first message becomes its title.</li>
+    <li>The version, the format it writes and the build are at the bottom of the menu and in Settings → About.</li></ul>` },
+  { id: 'start', title: 'Getting started', cards: ['F-02', 'F-15', 'F-18'], body: `
+    <ul><li><b>Settings</b> (gear, top right): paste a Gemini API key. It stays in this browser and goes only to Google's Gemini API.</li>
+    <li>No key yet? Menu → <b>Try a sample conversation</b>: a ready-made conversation with branches, decisions and a prompt view.</li>
+    <li>On a phone, add it to the home screen: iPhone Safari → Share → <b>Add to Home Screen</b>; Android Chrome → ⋮ → <b>Add to Home screen</b>.</li></ul>` },
+  { id: 'branches', title: 'Think in branches', cards: ['F-03', 'F-04', 'F-05', 'F-06', 'F-07', 'F-10', 'F-11', 'F-12', 'F-19', 'F-24', 'F-27', 'F-28', 'F-29'], body: `
+    <ul><li><b>Branch out</b> under any message: a new column that continues from there. The model sees only that branch's path, so dead ends don't pollute the context.</li>
+    <li>The <b>options</b> button (fork icon): the model proposes options, you tick the ones to explore, and each becomes a branch.</li>
+    <li><b>Compare N</b> next to the branch badges: see the branches side by side (with AI: criteria, or a note that they aren't alternatives), then <b>Choose</b> one.</li>
+    <li>Edit a message (sends a new branch), regenerate an answer with another model (tap its model chip), select a path (↑) to copy, mute or delete it.</li>
+    <li>Branches name themselves; tap the pencil on a column to rename. The Branches panel (right) shows the tree and a filter.</li>
+    <li>Move around: <b>Back</b>, the ↳ badges and the breadcrumbs; on a phone, swipe left and right; on a desktop, drag the canvas or use Alt+← / Alt+→.</li></ul>` },
+  { id: 'context', title: 'Context from your thinking', cards: ['F-08', 'F-09', 'F-20', 'F-21', 'F-22', 'F-23', 'F-31'], body: `
+    <ul><li><b>Flag</b> a message to make it a decision: a one-line summary that goes into every prompt of the conversation. The flag button in the top bar lists all decisions, with history and restore.</li>
+    <li><b>Remember</b> (bookmark) keeps a fact for all conversations. Edit it before saving, and any time later on the Memory tab.</li>
+    <li>The crossed eye leaves a message out of the history the model sees.</li>
+    <li>The <b>layers</b> button shows how a prompt was built: harness, memory, decisions, history, your message, tools. The one next to "Writing in …" previews the next prompt.</li>
+    <li>An answer made before later decisions says so: <b>Re-ask</b> writes it again with them. Re-asking in the middle of a chain opens a new branch.</li></ul>` },
+  { id: 'models', title: 'Models as compute', cards: ['F-30', 'F-33'], body: `
+    <ul><li>Pick the model for the next request next to "Writing in …". Each answer shows the model that wrote it, and its prompt view shows the token counts.</li>
+    <li>Settings → <b>Models for helper tasks</b>: which model writes summaries, names, options and comparisons (the cheapest by default), or turn summaries and names off.</li>
+    <li><b>Web</b> lets the model search the web (inside the Gemini API). The answer lists its sources, and the prompt view shows what was searched.</li></ul>` },
+  { id: 'data', title: 'Your data and the format', cards: ['F-13', 'F-14', 'F-17', 'F-25', 'F-26'], body: `
+    <ul><li>Everything is saved in this browser only (IndexedDB), and it survives reloads and closed tabs.</li>
+    <li>The <b>bough</b> button on a conversation exports it as a <b>Thinking State</b> (.zip): nodes, decisions, memory, and the session with the model, prompt and tokens of every answer. Any tool or agent that reads the format can continue from it.</li>
+    <li><b>Import</b> opens a Thinking State (.zip) or a .json export. <b>Export all</b> saves everything, memory included.</li>
+    <li>The share button makes a read-only page of a conversation.</li></ul>` },
+  { id: 'help', title: 'About this help', cards: ['F-34'], body: `
+    <p>This help changes with the app: every new feature adds itself here, and <b>What's new</b> lists what changed in this version. Press <b>?</b> on a keyboard to open it.</p>` },
+];
+// What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
+const WHATS_NEW = [
+  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.'] },
+  { version: '0.2.0', items: ['Decisions and memory reach every prompt, and the prompt view shows how each request is built.', 'Branch into options, compare the branches and choose one; branches name themselves.',
+    'A model per request and per helper task, and web search with its sources.', 'Export and open a conversation as a Thinking State (profile 0.2), with the model, prompt and tokens of every answer.'] },
+];
+function renderHelp() {
+  const cur = WHATS_NEW.find(x => x.version === APP_VERSION), next = WHATS_NEW.find(x => x.version === 'Unreleased');
+  const list = xs => `<ul>${xs.map(x => `<li>${x}</li>`).join('')}</ul>`;
+  return `<p class="help-ver">Mindbough demo v${esc(APP_VERSION)} · Thinking State format ${esc(FORMAT_PROFILE)}</p>`
+    + (next && next.items.length && !BUILD.startsWith('main') ? `<div class="help-new"><h4>New in this build</h4>${list(next.items)}</div>` : '')
+    + (cur ? `<div class="help-new"><h4>What's new in v${esc(APP_VERSION)}</h4>${list(cur.items)}</div>` : '')
+    + HELP.map((h, i) => `<details class="help-sec" data-help="${h.id}"${i === 0 ? ' open' : ''}><summary>${h.title}</summary><div class="help-body">${h.body}</div></details>`).join('');
+}
+function openHelp() { openSheet({ title: 'Help', render: renderHelp }); }
+$('#openHelp').onclick = () => { $('#sidebar').classList.remove('open'); openHelp(); };
+document.addEventListener('click', e => { if (e.target.closest('[data-open-help]')) { e.preventDefault(); openHelp(); } });
+document.addEventListener('keydown', e => { if (e.key === '?' && !typing(e) && !e.ctrlKey && !e.metaKey && !e.altKey && $('#sheet').hidden) { e.preventDefault(); openHelp(); } });
 
 /* ---------------- toast ---------------- */
 let tT;
