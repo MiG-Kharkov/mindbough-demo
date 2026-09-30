@@ -320,6 +320,7 @@ body.readonly .col-head .rename{display:none}
 .ib.fold svg{transition:transform .2s}
 .col.collapsed .ib.fold svg{transform:rotate(-90deg)}
 .col-head .name small{font-weight:400;color:var(--muted);margin-left:6px}
+.vers-text{white-space:pre-wrap;max-height:40vh;overflow:auto}
 .bstat{flex:none;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;line-height:18px}
 @media (max-width:400px){.bstat{font-size:11px;padding:1px 6px}}
 .bstat.s-accepted,.ostat.s-accepted{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
@@ -591,7 +592,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.2.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 5994352'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main b615552'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1018,6 +1019,7 @@ function msgHTML(c, m) {
     chip = RO ? `<span class="model-chip" title="Model">${label}</span>`
               : `<button class="model-chip" data-act="regen-menu" title="Regenerate this answer (replaces it)">${label}${ICON.regen}</button>`;
   } else if (m.role === 'model' && m.model) chip = `<span class="model-chip">${esc(m.model)}</span>`;
+  if (m.role === 'model' && !m.streaming && (m.versions || []).length) chip += `<button class="model-chip vers" data-act="versions" title="Every version of this answer">${m.versions.length + 1} versions</button>`;
   let body;
   if (isEdit) body = `<textarea class="edit-area" aria-label="Edit message">${esc(editing.draft ?? m.text)}</textarea>`;
   else if (m.role === 'user') body = `<div class="user-text">${esc(m.text)}</div>`;
@@ -1252,6 +1254,7 @@ $('#canvas').addEventListener('click', async e => {
     copyText(code, 'Code copied'); return;
   }
   if (act === 'rename') { startRename(bid); return; }
+  if (act === 'versions' && m) { openVersions(c, m); return; }
   if (act === 'status') { if (!RO) openStatus(c, bid); return; }
   if (act === 'back') { goTo(c.branches[bid].parentId); return; }
   if (act === 'goto') { goTo(btn.dataset.bid, 'top'); return; }
@@ -1416,15 +1419,19 @@ function canGenerate() {
   return true;
 }
 // Replace an answer with a fresh one, in the same place
+// An answer's earlier versions (F-07), kept when it is regenerated or edited in place, oldest first, up to 10 (spec §14.5)
+const versionOf = x => ({ text: x.text || '', ...(x.model ? { model: x.model } : {}), ts: x.ts, ...(x.edited ? { edited: true } : {}), ...(x.editedAt ? { editedAt: x.editedAt } : {}),
+  ...(x.request ? { request: x.request } : {}), ...(x.search ? { search: x.search } : {}) });
+function addVersion(m, x) { if (x && x.text) m.versions = (m.versions || []).concat(versionOf(x)).slice(-10); }
 function regenerateInPlace(c, m, model) {
   if (!canGenerate()) return;
   const b = branchOf(c, m.id); if (!b) return;
   const ids = pathIds(c, m.id);
   const req = buildRequest(c, ids.slice(0, -1).map(id => c.messages[id]));
-  const backup = { text: m.text, model: m.model, edited: m.edited, ts: m.ts, request: m.request };
+  const backup = { text: m.text, model: m.model, edited: m.edited, ts: m.ts, request: m.request, ...(m.editedAt ? { editedAt: m.editedAt } : {}), ...(m.search ? { search: m.search } : {}) };
   if (editing && editing.mid === m.id) editing = null;
   m.prev = backup; // saved with the message until the new answer is complete, so a reload or crash can't lose the original
-  m.text = ''; delete m.error; m.edited = false; m.model = model; m.ts = Date.now(); m.streaming = true;
+  m.text = ''; delete m.error; m.edited = false; delete m.editedAt; delete m.search; m.model = model; m.ts = Date.now(); m.streaming = true;
   m.request = requestRecord(req, model);
   c.updated = Date.now();
   b.collapsed = false;
@@ -1516,7 +1523,10 @@ function editValue(el) { const ta = el && el.querySelector('.edit-area'); return
 function saveEdit(c, m, el) {
   const text = editValue(el);
   if (!text) { toast('Message can’t be empty'); return; }
-  if (text !== m.text) { m.text = text; m.edited = true; c.updated = Date.now(); save(); renderOutline(); }
+  if (text !== m.text) {
+    if (m.role === 'model') { addVersion(m, m); m.editedAt = Date.now(); } // an answer edited in place keeps the text it had
+    m.text = text; m.edited = true; c.updated = Date.now(); save(); renderOutline();
+  }
   stopEdit();
 }
 function editAsBranch(c, m, el) {
@@ -1991,6 +2001,34 @@ function chooseBranch(c, m, bid) {
     c.updated = Date.now(); save();
     renderCanvas(); renderSidebar(); renderDecCount();
   } });
+}
+
+/* ---------------- versions of an answer (F-07) ---------------- */
+let versFor = null;
+function openVersions(c, m) {
+  versFor = { cid: c.id, mid: m.id };
+  openSheet({ title: 'Versions of this answer', render: renderVersions, onClick: versionsClick });
+}
+function renderVersions() {
+  const c = db.convos[versFor.cid], m = c && c.messages[versFor.mid];
+  if (!m) return '';
+  const all = [...(m.versions || []).map((v, i) => ({ v, i })), { v: m, i: -1 }].reverse();
+  return `<p class="pv-note">Every version is kept, and a Thinking State export keeps them all. <b>Restore</b> makes an earlier one the answer again and keeps the one it replaces.</p>`
+    + all.map(({ v, i }, k) => `<article class="dp-card"><div class="dp-meta">${i < 0 ? '<b>Current</b> · ' : ''}Version ${all.length - k} · ${esc(v.edited ? 'edited by you' : v.model || 'unknown model')} · ${esc(shortDate(v.editedAt || v.ts))}</div>
+      <div class="dp-text vers-text">${esc(v.text)}</div>${i >= 0 && !RO ? `<div class="dp-actions"><button class="btn" data-vers="${i}">Restore</button></div>` : ''}</article>`).join('');
+}
+function versionsClick(e) {
+  const x = e.target.closest('[data-vers]'); if (!x || !versFor) return;
+  const c = db.convos[versFor.cid], m = c && c.messages[versFor.mid];
+  if (!m || m.streaming || RO) return;
+  if (busy) { toast('Wait for the current response to finish'); return; }
+  const i = +x.dataset.vers, v = m.versions && m.versions[i]; if (!v) return;
+  const now = versionOf(m);
+  m.versions.splice(i, 1); m.versions.push(now);
+  m.text = v.text; m.ts = v.ts; if (v.model) m.model = v.model;
+  for (const k of ['edited', 'editedAt', 'request', 'search']) { if (v[k] !== undefined) m[k] = v[k]; else delete m[k]; }
+  c.updated = Date.now(); save();
+  closeSheet(); renderCanvas(); toast('Restored an earlier version');
 }
 
 /* ---------------- branch status (F-32) ---------------- */
@@ -2506,7 +2544,7 @@ async function streamInto(c, am, req, key, picked, backup) {
       delete am.error;
       Object.assign(am, backup);
       toast(why ? `Regeneration failed — kept the previous answer. ${why}` : 'Regeneration stopped — kept the previous answer');
-    }
+    } else if (backup) addVersion(am, backup); // the answer it replaced stays as an earlier version
     delete am.prev;
     am.streaming = false;
     c.updated = Date.now();
@@ -2776,6 +2814,7 @@ const HELP = [
     <li>The <b>status</b> chip on a branch: Open, Accepted, Parked or Rejected. The decisions of a parked or rejected branch, and of the branches under it, leave the prompts. Choose sets the statuses for you.</li>
     <li>In the Thinking State, options, comparisons and choices are data: the fork is a question, each option answers it, a comparison is a finding, and choosing accepts one option and rejects the other alternatives.</li>
     <li>Edit a message (sends a new branch), regenerate an answer with another model (tap its model chip), select a path (↑) to copy, mute or delete it.</li>
+    <li>A regenerated or edited answer keeps its earlier versions: tap <b>N versions</b> next to its model to read them or restore one.</li>
     <li>Branches name themselves; tap the pencil on a column to rename. The Branches panel (right) shows the tree and a filter.</li>
     <li>Move around: <b>Back</b>, the ↳ badges and the breadcrumbs; on a phone, swipe left and right; on a desktop, drag the canvas or use Alt+← / Alt+→.</li></ul>` },
   { id: 'context', title: 'Context from your thinking', cards: ['F-08', 'F-09', 'F-20', 'F-21', 'F-22', 'F-23', 'F-31'], body: `
@@ -2799,7 +2838,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.', 'Importing a Thinking State brings back the whole conversation, and an export, import and export again gives the same files.', 'Your conversations are now stored as Thinking State bundles, the same files an export holds.', '<b>Export all</b> saves a .zip of Thinking States and your memory, and a shared page downloads its Thinking State.', 'Fixed: a comparison no longer carries your memory into exported and shared copies, and your prompts keep showing their memory after a reload.', 'Helper calls (summaries, names, options, comparisons) are saved with their model and tokens, and shown in the prompt view and Settings.', 'Options, comparisons and choices are saved as data: a question, its options, a finding, and the statuses a choice sets. Comparisons come back with an import.', '<b>Branch status</b>: mark a branch accepted, parked or rejected; the decisions of dropped branches leave the prompts.', '<b>Web</b> search is on from the start, and the model decides when to search. The prompt view says whether it searched.'] },
+  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.', 'Importing a Thinking State brings back the whole conversation, and an export, import and export again gives the same files.', 'Your conversations are now stored as Thinking State bundles, the same files an export holds.', '<b>Export all</b> saves a .zip of Thinking States and your memory, and a shared page downloads its Thinking State.', 'Fixed: a comparison no longer carries your memory into exported and shared copies, and your prompts keep showing their memory after a reload.', 'Helper calls (summaries, names, options, comparisons) are saved with their model and tokens, and shown in the prompt view and Settings.', 'Options, comparisons and choices are saved as data: a question, its options, a finding, and the statuses a choice sets. Comparisons come back with an import.', '<b>Branch status</b>: mark a branch accepted, parked or rejected; the decisions of dropped branches leave the prompts.', '<b>Web</b> search is on from the start, and the model decides when to search. The prompt view says whether it searched.', 'A regenerated or edited answer keeps its earlier <b>versions</b>, to read or restore, and the Thinking State keeps them all.'] },
   { version: '0.2.0', items: ['Decisions and memory reach every prompt, and the prompt view shows how each request is built.', 'Branch into options, compare the branches and choose one; branches name themselves.',
     'A model per request and per helper task, and web search with its sources.', 'Export and open a conversation as a Thinking State (profile 0.2), with the model, prompt and tokens of every answer.'] },
 ];
@@ -3106,20 +3145,34 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       lines.push({ id: 'br' + b.id, kind: 'branch', node, after: fork, by: 'human:me', at: iso(b.created), ext: { 'mindbough-demo': { n: b.n, ...(b.option ? { option: b.option } : {}) } } });
       after = 'br' + b.id;
     }
+    const reqOf = r => ({ at: iso(r.at), chars: r.chars | 0, blocks: (r.blocks || []).map(block) });
+    const useOf = r => r.usage ? { usage: { input: r.usage.prompt | 0, output: r.usage.answer | 0, ...(r.usage.thoughts ? { reasoning: r.usage.thoughts | 0 } : {}) } } : {};
+    const srcOf = x => (x && x.sources || []).map(y => ({ resource: y.uri, title: y.title }));
     b.msgIds.map(id => c.messages[id]).filter(Boolean).forEach((m, i) => {
+      // an answer's earlier versions come first: the first as it was written, each later one replacing the one before;
+      // a version edited in place is by you, without a request (spec §14.5, S4)
+      const vs = m.role === 'model' ? (m.versions || []).filter(v => v && typeof v.text === 'string') : [];
+      const variant = i === 0 && b.editOf && c.messages[b.editOf] ? { variant_of: b.editOf } : {};
+      let prev = null;
+      vs.forEach((v, k) => {
+        const id = k === 0 ? m.id : `${m.id}r${k}`, src = srcOf(v.search);
+        const tools = v.request && (v.request.blocks || []).some(x => x.kind === 'tools'), rq = v.request && !v.edited ? reqOf(v.request) : null;
+        if (rq && tools) { rq.tools = ['web_search']; rq.blocks = rq.blocks.filter(x => x.kind !== 'tools'); }
+        lines.push({ id, kind: 'message', node, after, role: 'assistant', by: v.edited ? 'human:me' : `mindbough-demo/${v.model || 'unknown'}`, at: iso(v.editedAt || v.ts),
+          ...(prev ? { replaces: prev } : variant), text: v.text, ...(rq ? { request: rq, ...useOf(v.request) } : {}), ...(src.length ? { sources: src } : {}) });
+        prev = id;
+      });
+      const human = vs.length && m.edited;
       // an option's first message is written by the demo from a template (spec §14.2, P3)
-      const e = { id: m.id, kind: 'message', node, after, role: m.role === 'user' ? 'user' : 'assistant', by: b.option && i === 0 && m.role === 'user' && !m.edited ? 'process:mindbough-demo' : who(m), at: iso(m.ts) };
+      const e = { id: vs.length ? `${m.id}r${vs.length}` : m.id, kind: 'message', node, after, role: m.role === 'user' ? 'user' : 'assistant',
+        by: human ? 'human:me' : b.option && i === 0 && m.role === 'user' && !m.edited ? 'process:mindbough-demo' : who(m), at: iso(human && m.editedAt ? m.editedAt : m.ts), ...(prev ? { replaces: prev } : {}) };
       if (m.streaming) e.pending = true; // still being written: readers skip it, and the demo resumes it after a crash (spec §10.3)
       if (m.text) e.text = m.text;
       if (m.error) e.error = m.error;
       if (!m.text && !m.error) e.text = '';
       if (m.hidden) e.excluded = true;
-      if (i === 0 && b.editOf && c.messages[b.editOf]) e.variant_of = b.editOf;
-      if (m.request) {
-        const r = m.request;
-        e.request = { at: iso(r.at), chars: r.chars | 0, blocks: (r.blocks || []).map(block) };
-        if (r.usage) e.usage = { input: r.usage.prompt | 0, output: r.usage.answer | 0, ...(r.usage.thoughts ? { reasoning: r.usage.thoughts | 0 } : {}) };
-      }
+      if (!vs.length) Object.assign(e, variant);
+      if (m.request && !human) { e.request = reqOf(m.request); Object.assign(e, useOf(m.request)); }
       // the demo's own data (spec §5.3): an answer edited in place, a streaming answer's previous version, a cached comparison,
       // and a card of a node that came from an opened Thinking State
       // a saved comparison, in a fixed key order so the same comparison always writes the same line
@@ -3380,9 +3433,13 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     if (nid !== rootId && ['accepted', 'parked', 'rejected'].includes(th(node).status)) b.status = th(node).status;
     if (isObj(bext.option)) b.option = { ...(typeof bext.option.why === 'string' ? { why: bext.option.why.slice(0, 200) } : {}), ...(typeof bext.option.call === 'string' ? { call: bext.option.call } : {}) };
     for (const slot of mine) {
-      const v = latest(slot), role = slot.role === 'user' ? 'user' : 'model';
-      const m = { id: slot.id, role, text: typeof v.text === 'string' ? v.text : '', branchId: id, ts: time(v.at, now) };
-      const model = role === 'model' ? modelOf(v.by) : ''; if (model) m.model = model;
+      const chain = [slot]; { let x = slot; const seen = new Set(); while (newest.has(x.id) && !seen.has(x.id)) { seen.add(x.id); x = newest.get(x.id); chain.push(x); } }
+      const v = chain[chain.length - 1], role = slot.role === 'user' ? 'user' : 'model';
+      // an answer edited in place is by a person: its model, time and prompt are those of the version it was edited from
+      const gen = role === 'model' ? [...chain].reverse().find(e => modelOf(e.by)) || v : v, rqE = [...chain].reverse().find(e => isObj(e.request));
+      const m = { id: slot.id, role, text: typeof v.text === 'string' ? v.text : '', branchId: id, ts: time(gen.at, now) };
+      if (gen !== v) m.editedAt = time(v.at, now);
+      const model = role === 'model' ? modelOf(gen.by) : ''; if (model) m.model = model;
       if (v.error) m.error = String(v.error);
       if (slot.excluded || v.excluded) m.hidden = true;
       const ext = isObj(v.ext) && isObj(v.ext['mindbough-demo']) ? v.ext['mindbough-demo'] : {};
@@ -3392,12 +3449,20 @@ function sessionToConvo(r, files, nodes, rootId, own) {
         if (v.pending) { m.streaming = true; if (isObj(ext.prev)) m.prev = ext.prev; }
         if (isObj(ext.card) && isObj(ext.card.node)) { m.node = ext.card.node; if (ext.card.flagged) m.flagged = true; if (isObj(ext.card.decision)) m.decision = ext.card.decision; }
       }
-      if (isObj(v.request)) {
-        const rq = v.request, blocks = (Array.isArray(rq.blocks) ? rq.blocks : []).filter(isObj).map(blockBack);
+      const recBack = (x, mdl, ts) => {
+        const rq = x.request, blocks = (Array.isArray(rq.blocks) ? rq.blocks : []).filter(isObj).map(blockBack);
         if (Array.isArray(rq.tools) && rq.tools.includes('web_search')) blocks.push({ kind: 'tools', label: 'Tools · web search', chars: 0, text: WEB_NOTE });
-        m.request = { model: model || '', at: time(rq.at, m.ts), chars: Math.max(0, rq.chars | 0), blocks };
-        if (isObj(v.usage)) m.request.usage = { prompt: v.usage.input | 0, answer: v.usage.output | 0, thoughts: v.usage.reasoning | 0, ...(ext.toolTokens > 0 ? { tools: ext.toolTokens | 0 } : {}) };
-      }
+        const r = { model: mdl || '', at: time(rq.at, ts), chars: Math.max(0, rq.chars | 0), blocks };
+        if (isObj(x.usage)) r.usage = { prompt: x.usage.input | 0, answer: x.usage.output | 0, thoughts: x.usage.reasoning | 0, ...(x === v && ext.toolTokens > 0 ? { tools: ext.toolTokens | 0 } : {}) };
+        return r;
+      };
+      if (rqE) m.request = recBack(rqE, model, m.ts);
+      if (role === 'model' && chain.length > 1) m.versions = chain.slice(0, -1).slice(-10).map(x => {
+        const human = !modelOf(x.by), ts = time(x.at, now), srcs = (Array.isArray(x.sources) ? x.sources : []).filter(isObj);
+        const found = srcs.length ? webSearchOf({ webSearchQueries: [], groundingChunks: srcs.map(y => ({ web: { uri: y.resource, title: y.title } })) }) : null;
+        return { text: typeof x.text === 'string' ? x.text : '', ...(modelOf(x.by) ? { model: modelOf(x.by) } : {}), ts, ...(human ? { edited: true, editedAt: ts } : {}),
+          ...(isObj(x.request) ? { request: recBack(x, modelOf(x.by), ts) } : {}), ...(found ? { search: found } : {}) };
+      });
       const ws = WEB.get(String(slot.after));
       if (role === 'model' && (ws || Array.isArray(v.sources))) {
         const found = webSearchOf({ webSearchQueries: ws && isObj(ws.input) ? ws.input.queries : [], groundingChunks: (Array.isArray(v.sources) ? v.sources : ws && Array.isArray(ws.sources) ? ws.sources : []).filter(isObj).map(x => ({ web: { uri: x.resource, title: x.title } })) });
@@ -3618,6 +3683,7 @@ function adoptConvo(src) {
       if (x.hidden) nm.hidden = true;
       if (x.edited) nm.edited = true;
       if (tsIdOk(x.choiceId)) nm.choiceId = x.choiceId;
+      if (Number.isFinite(x.editedAt)) nm.editedAt = x.editedAt;
       if (isObj(x.search)) { const ws = webSearchOf({ webSearchQueries: x.search.queries, groundingChunks: (Array.isArray(x.search.sources) ? x.search.sources : []).map(y => ({ web: isObj(y) ? { uri: y.uri, title: y.title } : null })) }); if (ws) nm.search = ws; }
       mid.set(m, nm.id); c.messages[nm.id] = nm; msgIds.push(nm.id);
     }
@@ -3655,9 +3721,7 @@ function adoptConvo(src) {
     if (isObj(x.compare)) { const cmp = cmpOf(x.compare); if (cmp) nm.compare = cmp; }
     if (nm.decision && isObj(x.decision) && mid.has(x.decision.choice)) nm.decision.choice = mid.get(x.decision.choice);
   }
-  for (const [k, x] of Object.entries(src.messages)) {
-    if (!mid.has(k) || !isObj(x) || !isObj(x.request)) continue;
-    const r = x.request;
+  const recOf = r => {
     const blocks = (Array.isArray(r.blocks) ? r.blocks : []).filter(isObj).slice(0, 20).map(b => {
       const out = { kind: BLOCK_KINDS.includes(b.kind) ? b.kind : 'history', label: str(b.label, 80), chars: count(b.chars) };
       if (typeof b.text === 'string') out.text = str(b.text, 20000);
@@ -3667,7 +3731,18 @@ function adoptConvo(src) {
     });
     const rec = { model: str(r.model, 100), at: time(r.at), chars: count(r.chars), blocks };
     if (isObj(r.usage)) rec.usage = { prompt: count(r.usage.prompt), answer: count(r.usage.answer), thoughts: count(r.usage.thoughts), ...(count(r.usage.tools) ? { tools: count(r.usage.tools) } : {}) };
-    c.messages[mid.get(k)].request = rec;
+    return rec;
+  };
+  const searchOf = x => isObj(x) ? webSearchOf({ webSearchQueries: x.queries, groundingChunks: (Array.isArray(x.sources) ? x.sources : []).map(y => ({ web: isObj(y) ? { uri: y.uri, title: y.title } : null })) }) : null;
+  for (const [k, x] of Object.entries(src.messages)) {
+    if (!mid.has(k) || !isObj(x)) continue;
+    const nm = c.messages[mid.get(k)];
+    if (isObj(x.request)) nm.request = recOf(x.request);
+    if (nm.role === 'model' && Array.isArray(x.versions)) {
+      const vs = x.versions.filter(isObj).slice(-10).map(v => { const ws = searchOf(v.search); return { text: str(v.text, 1e6), ...(v.model ? { model: str(v.model, 100) } : {}), ts: time(v.ts), ...(v.edited ? { edited: true } : {}),
+        ...(Number.isFinite(v.editedAt) ? { editedAt: v.editedAt } : {}), ...(isObj(v.request) ? { request: recOf(v.request) } : {}), ...(ws ? { search: ws } : {}) }; });
+      if (vs.length) nm.versions = vs;
+    }
   }
   // helper calls (F-30), anchored at their messages
   const srcCalls = (Array.isArray(src.calls) ? src.calls : []).filter(x => isObj(x) && typeof x.task === 'string').slice(-300);
