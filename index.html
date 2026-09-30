@@ -590,9 +590,9 @@ const GAP = 90;
 const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.3.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 1df1512'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 1577c0e'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2848,7 +2848,11 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.', 'Importing a Thinking State brings back the whole conversation, and an export, import and export again gives the same files.', 'Your conversations are now stored as Thinking State bundles, the same files an export holds.', '<b>Export all</b> saves a .zip of Thinking States and your memory, and a shared page downloads its Thinking State.', 'Fixed: a comparison no longer carries your memory into exported and shared copies, and your prompts keep showing their memory after a reload.', 'Helper calls (summaries, names, options, comparisons) are saved with their model and tokens, and shown in the prompt view and Settings.', 'Options, comparisons and choices are saved as data: a question, its options, a finding, and the statuses a choice sets. Comparisons come back with an import.', '<b>Branch status</b>: mark a branch accepted, parked or rejected; the decisions of dropped branches leave the prompts.', '<b>Web</b> search is on from the start, and the model decides when to search. The prompt view says whether it searched.', 'A regenerated or edited answer keeps its earlier <b>versions</b>, to read or restore, and the Thinking State keeps them all.', 'Each prompt records which memory items it used, so an exported answer still says which facts it was built on.'] },
+  { version: '0.3.0', items: ['<b>Help</b>: this guide, and what changed in each version.',
+    'Your conversations are stored as Thinking States, the same files an export holds. <b>Export all</b> saves them all with your memory, and an import brings back the whole conversation.',
+    'More of what you do is data: helper calls with their tokens, options, comparisons and choices, branch statuses, earlier versions of an answer, and which memory each prompt used.',
+    '<b>Branch status</b>: accepted, parked or rejected, and the decisions of dropped branches leave the prompts.',
+    '<b>Web</b> search is on from the start, the model decides when to search, and the prompt view says whether it did.'] },
   { version: '0.2.0', items: ['Decisions and memory reach every prompt, and the prompt view shows how each request is built.', 'Branch into options, compare the branches and choose one; branches name themselves.',
     'A model per request and per helper task, and web search with its sources.', 'Export and open a conversation as a Thinking State (profile 0.2), with the model, prompt and tokens of every answer.'] },
 ];
