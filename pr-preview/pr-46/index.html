@@ -555,8 +555,9 @@ const GAP = 90;
 const NEW_TITLE = 'New conversation';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.1.0';
-const BUILD = 'PR #46 3b4f918'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const APP_VERSION = '0.2.0';
+const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
+const BUILD = 'PR #46 4a9cfef'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2645,7 +2646,7 @@ function thinkingStateFiles(c) {
   const tree = []; const walk = (n, d) => { tree.push(`${'  '.repeat(d)}* [${n.title.replace(/[[\]]/g, '')}](${n.id}.md) - ${n.type} · ${n.status}: ${n.description}`); (kids[n.id] || []).forEach(k => walk(k, d + 1)); };
   walk(root, 0);
   const files = [
-    { name: 'README.md', text: `---\ntype: Thinking State\ntitle: ${yq(c.title)}\ndescription: ${yq('Exported from a Mindbough demo conversation.')}\nthinking:\n  profile: "0.2"\n  id: ${c.tsId}\n  root: ${root.id}\ngenerated: { by: ${yq('mindbough-demo/' + APP_VERSION)}, at: ${yq(at)} }\n---\n\n# ${c.title}\n\nA Thinking State exported from the Mindbough demo on ${at.slice(0, 10)}. Start at the [thought tree](nodes/index.md): every branch of the conversation is a node, and every flagged message a decision.\n\nThe raw conversation is in \`${session}\`, which is git-ignored by default because conversations can hold private data.\n\nTo continue with an agent: \`python3 skills/mindbough/scripts/mb.py context ${folder} root\`.\n` },
+    { name: 'README.md', text: `---\ntype: Thinking State\ntitle: ${yq(c.title)}\ndescription: ${yq('Exported from a Mindbough demo conversation.')}\nthinking:\n  profile: "${FORMAT_PROFILE}"\n  id: ${c.tsId}\n  root: ${root.id}\ngenerated: { by: ${yq('mindbough-demo/' + APP_VERSION)}, at: ${yq(at)} }\n---\n\n# ${c.title}\n\nA Thinking State exported from the Mindbough demo on ${at.slice(0, 10)}. Start at the [thought tree](nodes/index.md): every branch of the conversation is a node, and every flagged message a decision.\n\nThe raw conversation is in \`${session}\`, which is git-ignored by default because conversations can hold private data.\n\nTo continue with an agent: \`python3 skills/mindbough/scripts/mb.py context ${folder} root\`.\n` },
     { name: 'index.md', text: `---\nokf_version: "0.2"\n---\n\n# Thinking State\n\n* [${c.title.replace(/[[\]]/g, '')}](README.md) - Exported from a Mindbough demo conversation.\n* [Thought tree](nodes/index.md) - ${nodes.length} node${nodes.length === 1 ? '' : 's'}\n* [Memory](memory/index.md) - ${items.length} item${items.length === 1 ? '' : 's'}\n* [Log](log.md) - how the thinking changed, newest first\n` },
     { name: 'nodes/index.md', text: `# Thought tree\n\n${tree.join('\n')}\n` },
     { name: 'memory/index.md', text: '# Memory\n\n' + (items.length ? items.map(x => `* [${x.title}](${x.id}.md) - ${x.description}`).join('\n') : '_Nothing remembered yet: `mb.py remember <dir> "…" --by <actor>` adds an item._') + '\n' },
@@ -3080,7 +3081,7 @@ function goToMessage(mid) {
 }
 
 /* ---------------- start ---------------- */
-$('#ver').textContent = `Mindbough demo v${APP_VERSION} · ${BUILD.startsWith('__') ? 'local' : BUILD}`;
+$('#ver').textContent = `Mindbough demo v${APP_VERSION} · format ${FORMAT_PROFILE} · ${BUILD.startsWith('__') ? 'local' : BUILD}`;
 $('#verSettings').textContent = $('#ver').textContent;
 renderKeyState();
 if (isMobile()) ui.outline = false; // drawers start closed on small screens
