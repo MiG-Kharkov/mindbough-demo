@@ -581,7 +581,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.2.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 877d139'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 9ac715f'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -718,7 +718,7 @@ function nativeRecord() {
   const bundles = {}, view = {};
   for (const c of Object.values(db.convos)) {
     try {
-      const { files } = thinkingStateFiles(c, true);
+      const { files } = thinkingStateFiles(c, true, true);
       bundles[c.id] = { files: Object.fromEntries(files.map(f => [f.name.slice(f.name.indexOf('/') + 1), f.text])) };
     } catch (err) { console.error(err); continue; }
     const bs = Object.values(c.branches);
@@ -1822,7 +1822,7 @@ function renderCompare() {
   if (done && cmp.next) html += `<p class="cmp-pick"><b>Next:</b> ${esc(cmp.next)}</p>`;
   if (done) html += `<p class="set-hint${stale ? ' warn' : ''}">${stale ? 'The branches have changed since this comparison. ' : ''}Compared ${esc(shortDate(cmp.at))} by ${esc(cmp.model)}.</p>`;
   if (done && cmp.request && Array.isArray(cmp.request.blocks)) html += `<details class="cmp-built"><summary>What the comparison was built from · ${esc(fmtChars(cmp.request.chars || 0))}</summary>
-    ${cmp.request.blocks.map(k => `<div>${esc(k.label)} · ${esc(fmtChars(k.chars || 0))}</div><pre>${esc(k.text || '')}</pre>`).join('')}</details>`;
+    ${cmp.request.blocks.map(k => `<div>${esc(k.label)} · ${esc(fmtChars(k.chars || 0))}</div>${k.omitted ? '<p class="pv-empty">Memory is personal, so its text is left out of exported and shared copies.</p>' : `<pre>${esc(k.text || '')}</pre>`}`).join('')}</details>`;
   if (!RO && hasKey) html += `<input class="cmp-focus" data-cmp-focus maxlength="300" placeholder="Compare by… your question or criteria (optional)" value="${esc(cmpView.focus != null ? cmpView.focus : cmp.focus || '')}" aria-label="Compare by">`;
   if (cmpView.loading) html += `<p class="pv-empty">Comparing ${kids.length} branches…</p>`;
   if (cmpView.error) html += `<p class="set-hint warn">${esc(cmpView.error)}</p>`;
@@ -2676,7 +2676,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.', 'Importing a Thinking State brings back the whole conversation, and an export, import and export again gives the same files.', 'Your conversations are now stored as Thinking State bundles, the same files an export holds.', '<b>Export all</b> saves a .zip of Thinking States and your memory, and a shared page downloads its Thinking State.'] },
+  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.', 'Importing a Thinking State brings back the whole conversation, and an export, import and export again gives the same files.', 'Your conversations are now stored as Thinking State bundles, the same files an export holds.', '<b>Export all</b> saves a .zip of Thinking States and your memory, and a shared page downloads its Thinking State.', 'Fixed: a comparison no longer carries your memory into exported and shared copies, and your prompts keep showing their memory after a reload.'] },
   { version: '0.2.0', items: ['Decisions and memory reach every prompt, and the prompt view shows how each request is built.', 'Branch into options, compare the branches and choose one; branches name themselves.',
     'A model per request and per helper task, and web search with its sources.', 'Export and open a conversation as a Thinking State (profile 0.2), with the model, prompt and tokens of every answer.'] },
 ];
@@ -2721,12 +2721,15 @@ function download(name, text, type) {
 }
 const slug = t => (t || 'conversation').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'conversation';
 const stamp = () => new Date().toISOString().slice(0, 10);
+// Memory is personal and shared by all conversations: an exported or shared conversation leaves its text out,
+// from the prompts of answers and from what a comparison was built from
+const omitMemory = r => { if (r && Array.isArray(r.blocks)) r.blocks.forEach(b => { if (b.kind === 'memory') { b.text = ''; b.omitted = true; } }); };
 function cleanConvo(c) {
   const x = JSON.parse(JSON.stringify(c));
   Object.values(x.messages).forEach(m => {
     delete m.streaming;
-    // memory is personal and shared by all conversations: an exported or shared conversation leaves its text out
-    if (m.request) m.request.blocks.forEach(b => { if (b.kind === 'memory') { b.text = ''; b.omitted = true; } });
+    omitMemory(m.request);
+    if (m.compare) omitMemory(m.compare.request);
   });
   return x;
 }
@@ -2833,7 +2836,8 @@ function nodeDoc(n, ids) {
 // the decisions as project memory, and the raw conversation in sessions/ (spec Appendix B)
 // Ids are kept on the conversation once given (c.tsId, b.nodeId, m.nodeId), and times come from the conversation, not the clock,
 // so exporting the same conversation twice gives the same files (spec W3)
-function thinkingStateFiles(c, quiet) {
+// `mine` is the demo's own storage (F-17), which keeps the memory text that exports and shared pages leave out
+function thinkingStateFiles(c, quiet, mine) {
   const taken = new Set(), nodes = [], byBranch = {};
   const keep = (v, t) => { const id = typeof v === 'string' && TS_ID.test(v) && !taken.has(v) ? v : nodeId(t, taken); taken.add(id); return id; };
   const iso = t => new Date(t || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z');
@@ -2892,20 +2896,20 @@ function thinkingStateFiles(c, quiet) {
       ...(x.sources.length ? ['sources:', ...x.sources.map(y => `  - { resource: ${yq(y.resource)}, title: ${yq(y.title)} }`)] : []), '---', ''].join('\n') })),
     { name: 'log.md', text: `# Thinking log\n\n## ${at.slice(0, 10)}\n* **Creation**: Exported from the Mindbough demo conversation “${c.title}”.\n` },
     { name: '.gitignore', text: '# raw interaction logs may hold private data\nsessions/\n.mindbough/\n' },
-    { name: session, text: sessionLines(c, byBranch, nodes, iso) },
+    { name: session, text: sessionLines(c, byBranch, nodes, iso, mine) },
     ...nodes.map(n => ({ name: `nodes/${n.id}.md`, text: nodeDoc(n, new Set(nodes.map(x => x.id))) })),
   ];
   if (given && !quiet) save(); // the new ids are kept for the next export
   return { folder, at, files: files.map(f => ({ name: `${folder}/${f.name}`, text: f.text })) };
 }
 // The conversation as a profile 0.2 session (spec §10): one entry per message and branch point, each answer with its request
-function sessionLines(c, byBranch, nodes, iso) {
+function sessionLines(c, byBranch, nodes, iso, mine) {
   const lines = [{ type: 'Session', profile: '0.2', id: c.sessionId, node: byBranch[c.root], title: c.title, by: `mindbough-demo/${APP_VERSION}`, at: iso(c.created) }];
   const decisionOf = {}; nodes.filter(n => n.type === 'Decision').forEach(n => { decisionOf[n.description] = n.id; });
   const who = m => m.role === 'user' ? 'human:me' : `mindbough-demo/${m.model || 'unknown'}`;
   const block = b => {
     const out = { kind: b.kind, chars: b.chars | 0, ...(b.label ? { label: b.label } : {}) };
-    if (b.kind === 'memory') return { ...out, omitted: true }; // memory is personal and spans conversations: its text stays out
+    if (b.kind === 'memory') return mine && !b.omitted && b.text ? { ...out, text: b.text } : { ...out, omitted: true }; // memory is personal and spans conversations: its text stays out of exports
     if (b.kind === 'decisions') {
       const ids = (b.text || '').split('\n').filter(l => l.startsWith('- ')).map(l => decisionOf[l.slice(2)]).filter(Boolean);
       return { ...out, ...(ids.length ? { nodes: [...new Set(ids)] } : {}), ...(b.text ? { text: b.text } : {}) };
@@ -2936,7 +2940,8 @@ function sessionLines(c, byBranch, nodes, iso) {
       }
       // the demo's own data (spec §5.3): an answer edited in place, a streaming answer's previous version, a cached comparison,
       // and a card of a node that came from an opened Thinking State
-      const own = { ...(m.edited ? { edited: true } : {}), ...(m.streaming && m.prev ? { prev: m.prev } : {}), ...(m.compare ? { compare: m.compare } : {}),
+      const cmp = m.compare && (mine ? m.compare : JSON.parse(JSON.stringify(m.compare))); if (cmp && !mine) omitMemory(cmp.request);
+      const own = { ...(m.edited ? { edited: true } : {}), ...(m.streaming && m.prev ? { prev: m.prev } : {}), ...(cmp ? { compare: cmp } : {}),
         ...(m.node ? { card: { node: m.node, ...(m.flagged ? { flagged: true } : {}), ...(m.decision ? { decision: m.decision } : {}) } } : {}) };
       if (Object.keys(own).length) e.ext = { 'mindbough-demo': own };
       if (m.search) {
@@ -3169,7 +3174,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
   const WEB = new Map(); entries.filter(e => e.kind === 'tool' && e.tool === 'web_search').forEach(e => { WEB.set(String(e.after), e); });
   const blockBack = b => {
     const out = { kind: BLOCK_KINDS.includes(b.kind) ? b.kind : 'harness', label: String(b.label || ({ harness: 'Harness', memory: 'Memory', decisions: 'Decisions', history: 'History', message: 'Your message' }[b.kind] || b.kind || 'Block')).slice(0, 80), chars: Math.max(0, b.chars | 0) };
-    if (b.kind === 'memory') return { ...out, text: '', omitted: true };
+    if (b.kind === 'memory') return own && !b.omitted && typeof b.text === 'string' ? { ...out, text: b.text } : { ...out, text: '', omitted: true };
     if (Array.isArray(b.entries) && (b.kind === 'history' || b.kind === 'message')) return { ...out, ids: b.entries.map(x => toMsg.get(x)).filter(Boolean) };
     return { ...out, text: typeof b.text === 'string' ? b.text : '' };
   };
