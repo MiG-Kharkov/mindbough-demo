@@ -488,11 +488,11 @@ button.model-chip svg.i{width:11px;height:11px}
     <button id="newChat"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New conversation</button>
     <div class="side-tools">
       <button id="importBtn" title="Import a .json export, a shared read-only .html, or a Thinking State .zip"><svg class="i" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Import</button>
-      <button id="exportAllBtn" title="Download every conversation as one .json file"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Export all</button>
+      <button id="exportAllBtn" title="Download every conversation as a Thinking State, with your memory, in one .zip"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Export all</button>
       <input type="file" id="importFile" accept=".json,.html,.htm,.zip,application/json,text/html,application/zip" hidden>
     </div>
     <button id="sampleBtn" class="sample-link" type="button">Try a sample conversation (no API key needed)</button>
-    <div id="roBanner"><b>Shared conversation · read-only</b>You can explore every branch here. To continue it, download the .json and import it in the Mindbough demo.<button id="roDownload"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Download .json</button></div>
+    <div id="roBanner"><b>Shared conversation · read-only</b>You can explore every branch here. To continue it, download its Thinking State and import it in the Mindbough demo.<button id="roDownload"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Download Thinking State</button></div>
     <div id="convList"></div>
     <div class="side-foot"><span class="hint-desk">Drag the canvas or scroll with <kbd>Shift</kbd>. Drag a column’s right edge to resize. <kbd>Alt</kbd>+<kbd>←</kbd> goes to the parent branch, <kbd>Alt</kbd>+<kbd>→</kbd> to the first child.</span><span class="hint-touch">Swipe left on the canvas to open the first branch that continues from here, and right to go back to its parent. <b>Back</b> and the ↳ badges jump between branches too.</span><div class="ver"><button type="button" class="linkbtn" id="openHelp" title="Help and what's new (?)">Help</button> · <span id="ver"></span></div></div>
   </aside>
@@ -581,7 +581,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.2.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 2689364'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 877d139'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -921,7 +921,6 @@ function renderSidebar() {
     return `<div class="conv ${id === db.current ? 'active' : ''}" data-cid="${id}" tabindex="0">
       <div class="t"><b>${esc(c.title)}</b><small>${when}, ${nb} branch${nb === 1 ? '' : 'es'}</small></div>
       <button class="rowbtn" data-share="${id}" title="Share as a read-only page (.html)" aria-label="Share read-only">${ICON.share}</button>
-      <button class="rowbtn" data-json="${id}" title="Download as .json" aria-label="Download JSON">${ICON.download}</button>
       <button class="rowbtn" data-ts="${id}" title="Export as a Thinking State (.zip) for agents and tools" aria-label="Export as a Thinking State">${ICON.bough}</button>
       <button class="del" data-del="${id}" aria-label="Delete conversation">${ICON.trash}</button></div>`;
   }).join('');
@@ -931,8 +930,6 @@ $('#convList').addEventListener('click', e => {
   if (sh) { exportReadOnly(sh.dataset.share); return; }
   const tsb = e.target.closest('[data-ts]');
   if (tsb) { exportThinkingState(tsb.dataset.ts); return; }
-  const js = e.target.closest('[data-json]');
-  if (js) { exportJSON([js.dataset.json]); return; }
   const del = e.target.closest('[data-del]');
   if (del) {
     const id = del.dataset.del;
@@ -2672,14 +2669,14 @@ const HELP = [
   { id: 'data', title: 'Your data and the format', cards: ['F-13', 'F-14', 'F-17', 'F-25', 'F-26'], body: `
     <ul><li>Everything is saved in this browser only (IndexedDB), as Thinking State bundles: the same files an export holds. It survives reloads, closed tabs and crashes.</li>
     <li>The <b>bough</b> button on a conversation exports it as a <b>Thinking State</b> (.zip): nodes, decisions, memory, and the session with the model, prompt and tokens of every answer. Any tool or agent that reads the format can continue from it.</li>
-    <li><b>Import</b> opens a Thinking State (.zip) or a .json export. A Thinking State with a session comes back as the whole conversation: branches, messages, models, prompts, decisions and remembered facts. <b>Export all</b> saves everything, memory included.</li>
-    <li>The share button makes a read-only page of a conversation.</li></ul>` },
+    <li><b>Export all</b> saves one .zip: a Thinking State per conversation, and your memory as documents in <code>home/memory/</code>. The share button saves a read-only page, whose own download is the Thinking State.</li>
+    <li><b>Import</b> opens a Thinking State (.zip), an Export all .zip, a shared page, or a .json from an earlier version. A Thinking State with a session comes back as the whole conversation: branches, messages, models, prompts, decisions and remembered facts.</li></ul>` },
   { id: 'help', title: 'About this help', cards: ['F-34'], body: `
     <p>This help changes with the app: every new feature adds itself here, and <b>What's new</b> lists what changed in this version. Press <b>?</b> on a keyboard to open it.</p>` },
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.', 'Importing a Thinking State brings back the whole conversation, and an export, import and export again gives the same files.', 'Your conversations are now stored as Thinking State bundles, the same files an export holds.'] },
+  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.', 'Importing a Thinking State brings back the whole conversation, and an export, import and export again gives the same files.', 'Your conversations are now stored as Thinking State bundles, the same files an export holds.', '<b>Export all</b> saves a .zip of Thinking States and your memory, and a shared page downloads its Thinking State.'] },
   { version: '0.2.0', items: ['Decisions and memory reach every prompt, and the prompt view shows how each request is built.', 'Branch into options, compare the branches and choose one; branches name themselves.',
     'A model per request and per helper task, and web search with its sources.', 'Export and open a conversation as a Thinking State (profile 0.2), with the model, prompt and tokens of every answer.'] },
 ];
@@ -2733,13 +2730,52 @@ function cleanConvo(c) {
   });
   return x;
 }
-function exportJSON(ids, withMemory) {
-  if (!ids.length) { toast('Nothing to export'); return; }
-  const data = { app: 'gemini-tree-chat', version: 1, exported: new Date().toISOString(), conversations: ids.map(id => cleanConvo(db.convos[id])) };
-  if (withMemory && db.memory.length) data.memory = db.memory.map(x => ({ text: x.text, at: x.at, from: (x.src && db.convos[x.src.cid] && db.convos[x.src.cid].title) || x.from, ...(x.itemId ? { itemId: x.itemId } : {}) }));
-  const name = ids.length === 1 ? `${slug(db.convos[ids[0]].title)}.json` : `gemini-tree-chat-${stamp()}.json`;
-  download(name, JSON.stringify(data, null, 2), 'application/json');
-  toast(ids.length === 1 ? 'Conversation exported' : `Exported ${ids.length} conversations`);
+// Export all: one .zip with every conversation as its Thinking State bundle, and global memory as a Mindbough home
+// (home/memory/, spec §9), each fact citing where it was remembered, across bundles (§8.3)
+function exportAllStates() {
+  const ids = db.order.filter(id => db.convos[id] && Object.keys(db.convos[id].messages).length); // an empty conversation holds nothing
+  if (!ids.length && !db.memory.length) { toast('Nothing to export'); return; }
+  const files = [], used = new Set();
+  let latest = 0;
+  for (const id of ids) {
+    const c = db.convos[id];
+    let folder = slug(c.title) || 'conversation';
+    for (let k = 2; used.has(folder); k++) folder = `${slug(c.title) || 'conversation'}-${k}`;
+    used.add(folder);
+    const out = thinkingStateFiles(c, true);
+    out.files.forEach(f => files.push({ name: folder + f.name.slice(f.name.indexOf('/')), text: f.text }));
+    latest = Math.max(latest, Date.parse(out.at) || 0);
+  }
+  const taken = new Set(), items = [];
+  for (const x of db.memory.filter(y => y.text)) {
+    if (!(typeof x.itemId === 'string' && TS_ID.test(x.itemId) && !taken.has(x.itemId))) x.itemId = nodeId(x.at, taken);
+    taken.add(x.itemId);
+    const c = x.src && db.convos[x.src.cid], m = c && c.messages[x.src.mid];
+    const text = x.text.replace(/\s+/g, ' ').trim();
+    items.push({ id: x.itemId, title: shortTitle(text), description: text, at: new Date(x.at || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z'),
+      source: m && c.tsId && c.sessionId ? { resource: `mindbough://${c.tsId}/sessions/${c.sessionId}.jsonl#${m.id}`, title: c.title } : null });
+  }
+  items.sort((a, b) => (a.id < b.id ? -1 : 1));
+  files.push({ name: 'home/memory/index.md', text: '# Memory\n\n' + (items.length ? items.map(x => `* [${x.title}](${x.id}.md) - ${x.description}`).join('\n') : '_Nothing remembered yet._') + '\n' });
+  items.forEach(x => files.push({ name: `home/memory/${x.id}.md`, text: ['---', 'type: Memory', `title: ${yq(x.title)}`, `description: ${yq(x.description)}`, `generated: { by: "human:me", at: ${yq(x.at)} }`,
+    ...(x.source ? ['sources:', `  - { resource: ${yq(x.source.resource)}, title: ${yq(x.source.title)} }`] : []), '---', ''].join('\n') }));
+  save(); // ids given on the way are kept
+  download(`mindbough-${stamp()}.zip`, zipFiles(files, latest || Date.now()), 'application/zip');
+  toast(`Exported ${ids.length} conversation${ids.length === 1 ? '' : 's'} and ${items.length} memory item${items.length === 1 ? '' : 's'} (.zip)`);
+}
+// A Mindbough home in a zip (home/memory/<id>.md): global memory items, linked to the conversations they came from when those are here
+function homeFacts(files) {
+  const out = [];
+  for (const f of files) {
+    const m = f.name.match(/(^|\/)home\/memory\/([0-9]{8}-[0-9a-z]{6})\.md$/);
+    if (!m) continue;
+    const fm = frontmatter(f.text); if (!fm || !fm.meta.description) continue;
+    const src = (Array.isArray(fm.meta.sources) ? fm.meta.sources : []).find(x => x && /^mindbough:\/\/[0-9]{8}-[0-9a-z]{6}\/sessions\/[^#]+#./.test(String(x.resource || '')));
+    const at = Date.parse(fm.meta.generated && fm.meta.generated.at);
+    out.push({ text: String(fm.meta.description).replace(/\s+/g, ' ').trim().slice(0, 300), at: Number.isFinite(at) ? at : Date.now(), itemId: m[2],
+      ...(src ? { bundle: String(src.resource).slice(12, 27), mid: String(src.resource).split('#')[1], ...(typeof src.title === 'string' && src.title ? { from: src.title.slice(0, 200) } : {}) } : {}) });
+  }
+  return out;
 }
 /* ---------------- export as a Thinking State (spec v0.2, an OKF profile) ---------------- */
 // Minimal ZIP writer, stored without compression: enough for a folder of small text files
@@ -3093,9 +3129,11 @@ if (BUILD.startsWith('__')) window.__mbTest = { ymlRead, yq, nodeDoc, nativeReco
 async function openThinkingStates(buf) {
   const files = await unzipText(buf);
   if (!window.jsyaml && files.some(f => /\.md$/.test(f.name) && needsYaml(f.text))) await loadYaml().catch(() => {});
-  return files.filter(f => /(^|\/)README\.md$/.test(f.name)).map(f => ({ dir: f.name.slice(0, -'README.md'.length), fm: frontmatter(f.text) }))
+  const convos = files.filter(f => /(^|\/)README\.md$/.test(f.name)).map(f => ({ dir: f.name.slice(0, -'README.md'.length), fm: frontmatter(f.text) }))
     .filter(r => r.fm && r.fm.meta.type === 'Thinking State' && r.fm.meta.thinking && r.fm.meta.thinking.root)
     .map(r => bundleToConvo(r, files)).filter(Boolean);
+  convos.home = homeFacts(files);
+  return convos;
 }
 // A Thinking State with a profile 0.2 session opens as the conversation it records (spec §10): a branch per node that has
 // entries, each message at its newest version, decisions on the messages they are anchored at, and the facts remembered from them.
@@ -3408,7 +3446,8 @@ function finishImport(added, failed, sources, facts = 0) {
     save(); renderAll(false);
     $('#sidebar').classList.remove('open');
     toast(`Imported ${added.length} conversation${added.length === 1 ? '' : 's'}${facts ? ` and ${facts} memory fact${facts === 1 ? '' : 's'}` : ''}${failed ? ` (${failed} skipped)` : ''}`);
-  } else if (failed && sources > 1) toast('Nothing could be imported');
+  } else if (facts) { save(); renderAll(false); toast(`Imported ${facts} memory fact${facts === 1 ? '' : 's'}`); }
+  else if (failed && sources > 1) toast('Nothing could be imported');
 }
 $('#importBtn').onclick = () => $('#importFile').click();
 $('#importFile').addEventListener('change', async e => {
@@ -3419,7 +3458,7 @@ $('#importFile').addEventListener('change', async e => {
       const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
       if (head[0] === 0x50 && head[1] === 0x4b && head[2] === 3 && head[3] === 4) { // "PK\3\4": a zip, so Thinking States
         const convos = await openThinkingStates(await f.arrayBuffer());
-        if (!convos.length) throw new Error('No Thinking State in this zip: it needs a README.md with type: Thinking State');
+        if (!convos.length && !(convos.home || []).length) throw new Error('No Thinking State in this zip: it needs a README.md with type: Thinking State');
         convos.forEach(c => {
           const id = adoptConvo(c);
           if (!id) { failed++; return; }
@@ -3431,6 +3470,12 @@ $('#importFile').addEventListener('change', async e => {
             db.memory.push({ id: uid(), text: f.text, at: f.at, src: { cid: id, mid: f.mid }, from: db.convos[id].title, ...(TS_ID.test(f.itemId) ? { itemId: f.itemId } : {}) }); facts++;
           }
         });
+        for (const f of convos.home || []) { // global memory from Export all
+          const c = f.bundle && Object.values(db.convos).find(x => x.tsId === f.bundle && x.messages[f.mid]);
+          const known = db.memory.find(x => x.itemId === f.itemId || x.text === f.text);
+          if (known) { if (c && !(known.src && db.convos[known.src.cid])) known.src = { cid: c.id, mid: f.mid }; continue; }
+          db.memory.push({ id: uid(), text: f.text, at: f.at, itemId: f.itemId, ...(c ? { src: { cid: c.id, mid: f.mid }, from: c.title } : f.from ? { from: f.from } : {}) }); facts++;
+        }
         continue;
       }
       const list = parseImport(await f.text()); list.forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; }); facts += mergeMemory(list.memory);
@@ -3447,8 +3492,8 @@ $('#sampleBtn').onclick = async () => {
     finishImport(parseImport(await r.text()).map(adoptConvo).filter(Boolean), 0, 1);
   } catch (err) { toast('Couldn’t load the sample. Open the demo from its web address rather than as a file.'); }
 };
-$('#exportAllBtn').onclick = () => exportJSON(db.order.filter(id => db.convos[id]), true);
-$('#roDownload').onclick = () => exportJSON([db.current]);
+$('#exportAllBtn').onclick = exportAllStates;
+$('#roDownload').onclick = () => exportThinkingState(db.current);
 
 /* ---------------- panels & outline ---------------- */
 const UIKEY = 'gemini_tree_chat_ui';
