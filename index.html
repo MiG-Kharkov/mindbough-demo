@@ -581,7 +581,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.2.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main afa7ac2'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 2689364'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -621,7 +621,7 @@ const LS = 'gemini_tree_chat_v1' + (PREVIEW ? ':' + PREVIEW : '');
 // The whole db is still one JSON record, but in IndexedDB, which has no ~5 MB cap like localStorage.
 // Each PR preview has its own database, seeded from the main demo's on first open.
 const IDB = { name: 'mindbough' + (PREVIEW ? ':' + PREVIEW : ''), store: 'state' };
-let storage = 'IndexedDB', savedChars = 0, idbConn = null;
+let storage = 'IndexedDB', savedChars = 0, nativeChars = 0, idbConn = null;
 const tabs = 'BroadcastChannel' in window ? new BroadcastChannel(IDB.name) : null; // tells other tabs to reload
 function idbOpen(name) {
   return new Promise((resolve, reject) => {
@@ -643,46 +643,65 @@ async function loadStored() {
   try {
     if (!window.indexedDB) throw new Error('no IndexedDB');
     idbConn = await idbOpen(IDB.name);
-    let text = await idbDo(idbConn, 'readonly', st => st.get('db'));
-    if (text == null) {
+    let text = await idbDo(idbConn, 'readonly', st => st.get('db')), ts = await idbDo(idbConn, 'readonly', st => st.get('ts'));
+    if (text == null && ts == null) {
       // first run on IndexedDB: take over what the localStorage version saved; a preview copies the main demo
       text = localStorage.getItem(LS);
       if (text == null && PREVIEW) {
-        try { const main = await idbOpen('mindbough'); text = await idbDo(main, 'readonly', st => st.get('db')); main.close(); } catch (e) {}
+        try { const main = await idbOpen('mindbough'); text = await idbDo(main, 'readonly', st => st.get('db')); ts = await idbDo(main, 'readonly', st => st.get('ts')); main.close(); } catch (e) {}
         if (text == null) text = localStorage.getItem('gemini_tree_chat_v1');
       }
       if (text != null) await idbDo(idbConn, 'readwrite', st => st.put(text, 'db'));
+      if (ts != null) await idbDo(idbConn, 'readwrite', st => st.put(ts, 'ts'));
     }
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); // ask the browser to keep it
-    savedChars = text ? text.length : 0;
-    return text ? JSON.parse(text) : null;
+    savedChars = text ? text.length : 0; nativeChars = ts ? ts.length : 0;
+    let v2 = null; try { v2 = ts ? JSON.parse(ts) : null; } catch (e) { v2 = null; }
+    return { v1: text ? JSON.parse(text) : null, v2: v2 && v2.v === 2 ? v2 : null };
   } catch (e) {
     storage = 'localStorage'; // e.g. a private mode without IndexedDB: work as before
-    try { const text = localStorage.getItem(LS); savedChars = text ? text.length : 0; return JSON.parse(text); } catch (err) { return null; }
+    try { const text = localStorage.getItem(LS); savedChars = text ? text.length : 0; return { v1: JSON.parse(text), v2: null }; } catch (err) { return { v1: null, v2: null }; }
   }
 }
-let db = null;
+let db = null, stored = { v1: null, v2: null };
 if (RO) {
   db = { convos: { [RO.id]: RO }, order: [RO.id], current: RO.id, key: '', model: '' };
   document.body.classList.add('readonly');
   document.title = `${RO.title} — shared conversation`;
 } else {
-  db = await loadStored();
+  stored = await loadStored();
+  db = stored.v1;
+}
+// The conversations are stored as Thinking State bundles ('ts', F-17), next to the old single record ('db'), which is kept for
+// one release as a mirror. The bundles win unless the mirror was saved later (rev). The settings and memory are read now,
+// and the bundles are opened at start, once the reader is defined.
+// A mirror without rev was saved by a tab of an older version after the bundles, so its changes win
+const NATIVE = stored.v2 && (!stored.v1 || (typeof stored.v1.rev === 'number' && (stored.v2.rev | 0) >= stored.v1.rev)) ? stored.v2 : null;
+if (NATIVE) {
+  const st = NATIVE.settings || {}, ws = NATIVE.workspace || {};
+  db = { convos: {}, order: Array.isArray(ws.order) ? ws.order.slice() : [], current: ws.current || null, key: st.key || '', model: st.model || '',
+    helpers: st.helpers || {}, web: !!st.web, memory: Array.isArray(NATIVE.memory) ? NATIVE.memory : [], rev: NATIVE.rev | 0 };
 }
 if (!db || !db.convos) db = { convos: {}, order: [], current: null, key: '', model: DEFAULT_MODELS[0] };
 if (!db.model) db.model = DEFAULT_MODELS[0];
 if (!Array.isArray(db.memory)) db.memory = []; // facts shared by all conversations: [{ id, text, at, src?: { cid, mid }, from? }]
 if (!db.helpers || typeof db.helpers !== 'object') db.helpers = {}; // the model per helper task (F-30): { summary?, name?, options?, compare? }
 // An answer still "streaming" was cut off by a reload or crash: restore the answer it was replacing, if any
-Object.values(db.convos).forEach(c => Object.values(c.messages).forEach(m => {
-  if (m.streaming) { m.streaming = false; if (m.prev && !m.text) Object.assign(m, m.prev); else if (!m.text) m.text = '(response interrupted)'; }
-  delete m.prev;
-  if (m.decision) delete m.decision.pending;
-}));
+let repaired = false; // saved at start, so the repair is stored at once
+function repairConvo(c) {
+  Object.values(c.messages).forEach(m => {
+    if (m.streaming) { repaired = true; m.streaming = false; if (m.prev && !m.text) Object.assign(m, m.prev); else if (!m.text) m.text = '(response interrupted)'; }
+    delete m.prev;
+    if (m.decision) delete m.decision.pending;
+  });
+}
+Object.values(db.convos).forEach(repairConvo);
 Object.values(db.convos).forEach(c => { if (c.title === 'Нова розмова') c.title = 'New conversation'; Object.values(c.branches || {}).forEach(b => { delete b.regenOf; }); });
 let saving = Promise.resolve();
 const save = () => {
   if (RO) return;
+  db.rev = (db.rev | 0) + 1;
+  scheduleNative();
   const text = JSON.stringify(db);
   savedChars = text.length;
   if (storage === 'localStorage') { try { localStorage.setItem(LS, text); } catch (e) { toast('Couldn’t save: browser storage is full'); } return; }
@@ -691,6 +710,64 @@ const save = () => {
     .catch(err => toast(err && err.name === 'QuotaExceededError' ? 'Couldn’t save: browser storage is full' : 'Couldn’t save to browser storage'));
 };
 const cur = () => db.convos[db.current];
+// The Thinking State record: each conversation as the files of its bundle (the same ones a zip export holds), plus what stays
+// out of bundles (W8, W10): the order, the view (focus, folds), the settings and global memory
+let nativeT = null, backedUp = false;
+function scheduleNative() { if (storage !== 'IndexedDB') return; clearTimeout(nativeT); nativeT = setTimeout(writeNative, 400); }
+function nativeRecord() {
+  const bundles = {}, view = {};
+  for (const c of Object.values(db.convos)) {
+    try {
+      const { files } = thinkingStateFiles(c, true);
+      bundles[c.id] = { files: Object.fromEntries(files.map(f => [f.name.slice(f.name.indexOf('/') + 1), f.text])) };
+    } catch (err) { console.error(err); continue; }
+    const bs = Object.values(c.branches);
+    view[c.id] = { focus: c.focus, collapsed: bs.filter(b => b.collapsed).map(b => b.id), ofold: bs.filter(b => b.ofold).map(b => b.id) };
+  }
+  return { v: 2, rev: db.rev | 0, savedAt: Date.now(), settings: { key: db.key || '', model: db.model || '', helpers: db.helpers || {}, web: !!db.web },
+    workspace: { order: db.order, current: db.current }, view, memory: db.memory || [], bundles };
+}
+function writeNative() {
+  clearTimeout(nativeT); nativeT = null;
+  if (RO || storage !== 'IndexedDB' || !idbConn) return;
+  const text = JSON.stringify(nativeRecord());
+  nativeChars = text.length;
+  saving = saving.then(async () => {
+    if (!backedUp) { // the first time: keep the record from before the Thinking State storage, untouched
+      backedUp = true;
+      const old = await idbDo(idbConn, 'readonly', st => st.get('db-v1'));
+      if (old == null && stored.v1 && !stored.v2) await idbDo(idbConn, 'readwrite', st => st.put(JSON.stringify(stored.v1), 'db-v1'));
+    }
+    await idbDo(idbConn, 'readwrite', st => st.put(text, 'ts'));
+  }).catch(err => toast(err && err.name === 'QuotaExceededError' ? 'Couldn’t save: browser storage is full' : 'Couldn’t save to browser storage'));
+}
+// Opens the stored bundles at start; a bundle that can't be read falls back to its copy in the mirror
+function restoreNative() {
+  if (!NATIVE) return;
+  let lost = 0;
+  const mirror = stored.v1 && stored.v1.convos ? stored.v1.convos : {};
+  for (const [cid, rec] of Object.entries(NATIVE.bundles || {})) {
+    try {
+      const files = Object.entries(rec.files || {}).map(([name, text]) => ({ name, text: String(text) }));
+      const readme = files.find(f => f.name === 'README.md'), fm = readme && frontmatter(readme.text);
+      if (!fm || !fm.meta.thinking || !fm.meta.thinking.root) throw new Error('no manifest');
+      const c = bundleToConvo({ dir: '', fm }, files, true);
+      if (!c || !c.root || !c.branches[c.root]) throw new Error('unreadable bundle');
+      c.id = cid; delete c.facts;
+      const v = (NATIVE.view || {})[cid] || {};
+      if (v.focus && c.branches[v.focus]) c.focus = v.focus;
+      (v.collapsed || []).forEach(b => { if (c.branches[b]) c.branches[b].collapsed = true; });
+      (v.ofold || []).forEach(b => { if (c.branches[b]) c.branches[b].ofold = true; });
+      db.convos[cid] = c;
+    } catch (err) {
+      console.warn('Thinking State storage:', cid, err.message);
+      if (mirror[cid]) db.convos[cid] = mirror[cid]; else lost++;
+    }
+  }
+  Object.values(db.convos).forEach(repairConvo);
+  db.order = db.order.filter(id => db.convos[id]).concat(Object.keys(db.convos).filter(id => !db.order.includes(id)));
+  if (lost) toast(`Couldn’t open ${lost} stored conversation${lost === 1 ? '' : 's'}`);
+}
 
 let panX = 0;
 let busy = null; // {controller, convoId, msgId}
@@ -2103,7 +2180,7 @@ if (tabs) tabs.onmessage = async () => {
   try { const text = await idbDo(idbConn, 'readonly', st => st.get('db')); if (text) { savedChars = text.length; takeFrom(JSON.parse(text)); } } catch (err) {}
 };
 // Phones kill background tabs without warning: save whatever is pending when the page is hidden
-window.addEventListener('pagehide', save);
+window.addEventListener('pagehide', () => { save(); writeNative(); });
 
 /* ---------------- sending ---------------- */
 const input = $('#input'), sendBtn = $('#send');
@@ -2355,10 +2432,13 @@ $('#sheet').addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('#sheet').hidden) { e.preventDefault(); e.stopPropagation(); closeSheet(); }
 }, true);
+const fmtMB = mb => mb < 0.1 ? mb.toFixed(2) : mb.toFixed(1);
 function openSettings(hint) {
   openSheet({ title: 'Settings', settings: true });
   const mb = savedChars / 1048576;
-  $('#storageInfo').textContent = `Your data is saved only in this browser (${storage}), about ${mb < 0.1 ? mb.toFixed(2) : mb.toFixed(1)} MB.`;
+  $('#storageInfo').textContent = storage === 'IndexedDB'
+    ? `Your data is saved only in this browser (IndexedDB), as Thinking State bundles: the same files an export holds. About ${fmtMB((nativeChars || savedChars) / 1048576)} MB.`
+    : `Your data is saved only in this browser (${storage}), about ${fmtMB(mb)} MB.`;
   $('#settingsHint').textContent = hint || '';
   $('#settingsHint').hidden = !hint;
   if (!keyInput.value.trim()) keyInput.focus();
@@ -2590,7 +2670,7 @@ const HELP = [
     <li>Settings → <b>Models for helper tasks</b>: which model writes summaries, names, options and comparisons (the cheapest by default), or turn summaries and names off.</li>
     <li><b>Web</b> lets the model search the web (inside the Gemini API). The answer lists its sources, and the prompt view shows what was searched.</li></ul>` },
   { id: 'data', title: 'Your data and the format', cards: ['F-13', 'F-14', 'F-17', 'F-25', 'F-26'], body: `
-    <ul><li>Everything is saved in this browser only (IndexedDB), and it survives reloads and closed tabs.</li>
+    <ul><li>Everything is saved in this browser only (IndexedDB), as Thinking State bundles: the same files an export holds. It survives reloads, closed tabs and crashes.</li>
     <li>The <b>bough</b> button on a conversation exports it as a <b>Thinking State</b> (.zip): nodes, decisions, memory, and the session with the model, prompt and tokens of every answer. Any tool or agent that reads the format can continue from it.</li>
     <li><b>Import</b> opens a Thinking State (.zip) or a .json export. A Thinking State with a session comes back as the whole conversation: branches, messages, models, prompts, decisions and remembered facts. <b>Export all</b> saves everything, memory included.</li>
     <li>The share button makes a read-only page of a conversation.</li></ul>` },
@@ -2599,7 +2679,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.', 'Importing a Thinking State brings back the whole conversation, and an export, import and export again gives the same files.'] },
+  { version: 'Unreleased', items: ['<b>Help</b>: this guide, and what changed in each version.', 'Thinking States open offline, and any text survives an export and an import.', 'Importing a Thinking State brings back the whole conversation, and an export, import and export again gives the same files.', 'Your conversations are now stored as Thinking State bundles, the same files an export holds.'] },
   { version: '0.2.0', items: ['Decisions and memory reach every prompt, and the prompt view shows how each request is built.', 'Branch into options, compare the branches and choose one; branches name themselves.',
     'A model per request and per helper task, and web search with its sources.', 'Export and open a conversation as a Thinking State (profile 0.2), with the model, prompt and tokens of every answer.'] },
 ];
@@ -2717,7 +2797,7 @@ function nodeDoc(n, ids) {
 // the decisions as project memory, and the raw conversation in sessions/ (spec Appendix B)
 // Ids are kept on the conversation once given (c.tsId, b.nodeId, m.nodeId), and times come from the conversation, not the clock,
 // so exporting the same conversation twice gives the same files (spec W3)
-function thinkingStateFiles(c) {
+function thinkingStateFiles(c, quiet) {
   const taken = new Set(), nodes = [], byBranch = {};
   const keep = (v, t) => { const id = typeof v === 'string' && TS_ID.test(v) && !taken.has(v) ? v : nodeId(t, taken); taken.add(id); return id; };
   const iso = t => new Date(t || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z');
@@ -2779,7 +2859,7 @@ function thinkingStateFiles(c) {
     { name: session, text: sessionLines(c, byBranch, nodes, iso) },
     ...nodes.map(n => ({ name: `nodes/${n.id}.md`, text: nodeDoc(n, new Set(nodes.map(x => x.id))) })),
   ];
-  if (given) save(); // the new ids are kept for the next export
+  if (given && !quiet) save(); // the new ids are kept for the next export
   return { folder, at, files: files.map(f => ({ name: `${folder}/${f.name}`, text: f.text })) };
 }
 // The conversation as a profile 0.2 session (spec §10): one entry per message and branch point, each answer with its request
@@ -2802,11 +2882,12 @@ function sessionLines(c, byBranch, nodes, iso) {
     let after = null;
     if (b.parentId) {
       const fork = b.forkMsgId && c.messages[b.forkMsgId] ? b.forkMsgId : null;
-      lines.push({ id: 'br' + b.id, kind: 'branch', node, after: fork, by: 'human:me', at: iso(b.created) });
+      lines.push({ id: 'br' + b.id, kind: 'branch', node, after: fork, by: 'human:me', at: iso(b.created), ext: { 'mindbough-demo': { n: b.n } } });
       after = 'br' + b.id;
     }
-    b.msgIds.map(id => c.messages[id]).filter(m => m && !m.streaming).forEach((m, i) => {
+    b.msgIds.map(id => c.messages[id]).filter(Boolean).forEach((m, i) => {
       const e = { id: m.id, kind: 'message', node, after, role: m.role === 'user' ? 'user' : 'assistant', by: who(m), at: iso(m.ts) };
+      if (m.streaming) e.pending = true; // still being written: readers skip it, and the demo resumes it after a crash (spec §10.3)
       if (m.text) e.text = m.text;
       if (m.error) e.error = m.error;
       if (!m.text && !m.error) e.text = '';
@@ -2817,7 +2898,11 @@ function sessionLines(c, byBranch, nodes, iso) {
         e.request = { at: iso(r.at), chars: r.chars | 0, blocks: (r.blocks || []).map(block) };
         if (r.usage) e.usage = { input: r.usage.prompt | 0, output: r.usage.answer | 0, ...(r.usage.thoughts ? { reasoning: r.usage.thoughts | 0 } : {}) };
       }
-      if (m.edited) e.ext = { 'mindbough-demo': { edited: true } }; // edited in place: the earlier text wasn't kept
+      // the demo's own data (spec §5.3): an answer edited in place, a streaming answer's previous version, a cached comparison,
+      // and a card of a node that came from an opened Thinking State
+      const own = { ...(m.edited ? { edited: true } : {}), ...(m.streaming && m.prev ? { prev: m.prev } : {}), ...(m.compare ? { compare: m.compare } : {}),
+        ...(m.node ? { card: { node: m.node, ...(m.flagged ? { flagged: true } : {}), ...(m.decision ? { decision: m.decision } : {}) } } : {}) };
+      if (Object.keys(own).length) e.ext = { 'mindbough-demo': own };
       if (m.search) {
         const src = (m.search.sources || []).map(x => ({ resource: x.uri, title: x.title }));
         lines.push({ id: m.id + 'ws', kind: 'tool', node, after, tool: 'web_search', input: { queries: m.search.queries || [] }, ...(src.length ? { sources: src } : {}), by: who(m), at: iso(m.ts) });
@@ -3004,7 +3089,7 @@ function frontmatter(text) {
 }
 // true when the built-in reader can't read a file's frontmatter, so js-yaml is worth loading
 const needsYaml = text => { const m = text.match(FM_RE); if (!m) return false; try { ymlRead(m[1]); return false; } catch (e) { return true; } };
-if (BUILD.startsWith('__')) window.__mbTest = { ymlRead, yq, nodeDoc }; // local builds only: the e2e tests reach the pure functions
+if (BUILD.startsWith('__')) window.__mbTest = { ymlRead, yq, nodeDoc, nativeRecord: () => nativeRecord() }; // local builds only: the e2e tests reach the pure functions
 async function openThinkingStates(buf) {
   const files = await unzipText(buf);
   if (!window.jsyaml && files.some(f => /\.md$/.test(f.name) && needsYaml(f.text))) await loadYaml().catch(() => {});
@@ -3015,7 +3100,7 @@ async function openThinkingStates(buf) {
 // A Thinking State with a profile 0.2 session opens as the conversation it records (spec §10): a branch per node that has
 // entries, each message at its newest version, decisions on the messages they are anchored at, and the facts remembered from them.
 // Nodes without entries still become cards. Returns null when the bundle has no usable session.
-function sessionToConvo(r, files, nodes, rootId) {
+function sessionToConvo(r, files, nodes, rootId, own) {
   const sf = files.find(f => f.name.startsWith(r.dir) && /^sessions\/[0-9]{8}-[0-9a-z]{6}\.jsonl$/.test(f.name.slice(r.dir.length)));
   if (!sf) return null;
   let lines;
@@ -3027,7 +3112,7 @@ function sessionToConvo(r, files, nodes, rootId) {
   const time = (v, d) => { const t = Date.parse(v); return Number.isFinite(t) ? t : d; };
   const now = Date.now(), th = n => isObj(n.meta.thinking) ? n.meta.thinking : {};
   const modelOf = by => { const b = String(by || ''); return b.startsWith('human:') || b.startsWith('process:') || !b.includes('/') ? '' : b.slice(b.lastIndexOf('/') + 1); };
-  const msgs = entries.filter(e => e.kind === 'message' && !e.pending && nodes.has(String(e.node)));
+  const msgs = entries.filter(e => e.kind === 'message' && (own || !e.pending) && nodes.has(String(e.node)));
   const newest = new Map(); msgs.forEach(e => { if (e.replaces) newest.set(e.replaces, e); });
   const latest = e => { let x = e; const seen = new Set(); while (newest.has(x.id) && !seen.has(x.id)) { seen.add(x.id); x = newest.get(x.id); } return x; };
   const slots = msgs.filter(e => !e.replaces);
@@ -3054,16 +3139,24 @@ function sessionToConvo(r, files, nodes, rootId) {
   for (const nid of order) {
     const node = nodes.get(nid), be = branchEntry.get(nid), id = bidOf(nid);
     const parentNode = nid === rootId ? null : up(nid);
-    const own = slots.filter(e => String(e.node) === nid);
+    const mine = slots.filter(e => String(e.node) === nid);
+    const bext = be && isObj(be.ext) && isObj(be.ext['mindbough-demo']) ? be.ext['mindbough-demo'] : {};
     const b = { id, parentId: parentNode ? bidOf(parentNode) : null, forkMsgId: be && be.after && toMsg.has(be.after) ? toMsg.get(be.after) : null, msgIds: [],
-      n: nid === rootId ? 0 : ++n, created: time(be ? be.at : own[0] && own[0].at, convo.created), nodeId: nid };
-    for (const slot of own) {
+      n: nid === rootId ? 0 : Number.isInteger(bext.n) && bext.n > 0 ? bext.n : ++n, created: time(be ? be.at : mine[0] && mine[0].at, convo.created), nodeId: nid };
+    n = Math.max(n, b.n);
+    for (const slot of mine) {
       const v = latest(slot), role = slot.role === 'user' ? 'user' : 'model';
       const m = { id: slot.id, role, text: typeof v.text === 'string' ? v.text : '', branchId: id, ts: time(v.at, now) };
       const model = role === 'model' ? modelOf(v.by) : ''; if (model) m.model = model;
       if (v.error) m.error = String(v.error);
       if (slot.excluded || v.excluded) m.hidden = true;
-      if (isObj(v.ext) && isObj(v.ext['mindbough-demo']) && v.ext['mindbough-demo'].edited) m.edited = true;
+      const ext = isObj(v.ext) && isObj(v.ext['mindbough-demo']) ? v.ext['mindbough-demo'] : {};
+      if (ext.edited) m.edited = true;
+      if (own) { // the demo's own storage: what only the demo keeps comes back too
+        if (v.pending) { m.streaming = true; if (isObj(ext.prev)) m.prev = ext.prev; }
+        if (isObj(ext.compare)) m.compare = ext.compare;
+        if (isObj(ext.card) && isObj(ext.card.node)) { m.node = ext.card.node; if (ext.card.flagged) m.flagged = true; if (isObj(ext.card.decision)) m.decision = ext.card.decision; }
+      }
       if (isObj(v.request)) {
         const rq = v.request, blocks = (Array.isArray(rq.blocks) ? rq.blocks : []).filter(isObj).map(blockBack);
         if (Array.isArray(rq.tools) && rq.tools.includes('web_search')) blocks.push({ kind: 'tools', label: 'Tools · web search', chars: 0, text: WEB_NOTE });
@@ -3099,8 +3192,8 @@ function sessionToConvo(r, files, nodes, rootId) {
     }
     m.nodeId = nid; used.add(nid);
   }
-  // the facts remembered from this conversation's messages (spec §9)
-  for (const f of files) {
+  // the facts remembered from this conversation's messages (spec §9); the demo's own storage keeps them with the settings
+  for (const f of own ? [] : files) {
     const rel = f.name.slice(r.dir.length);
     if (!f.name.startsWith(r.dir) || !/^memory\/[0-9]{8}-[0-9a-z]{6}\.md$/.test(rel)) continue;
     const fm = frontmatter(f.text); if (!fm || !fm.meta.description) continue;
@@ -3122,7 +3215,7 @@ function sessionToConvo(r, files, nodes, rootId) {
 }
 // A Thinking State becomes a conversation whose branches mirror the tree: each node is a branch holding the node's card,
 // so writing in a branch sends the path of cards from the root to that node (spec §13, as a conversation)
-function bundleToConvo(r, files) {
+function bundleToConvo(r, files, own) {
   const nodes = new Map(), kids = new Map();
   for (const f of files) {
     const rel = f.name.slice(r.dir.length), m = f.name.startsWith(r.dir) && rel.match(/^nodes\/([^/]+)\.md$/);
@@ -3132,7 +3225,7 @@ function bundleToConvo(r, files) {
   }
   const rootId = String(r.fm.meta.thinking.root);
   if (!nodes.has(rootId)) return null;
-  const whole = sessionToConvo(r, files, nodes, rootId);
+  const whole = sessionToConvo(r, files, nodes, rootId, own);
   if (whole) return whole;
   const th = n => n.meta.thinking && typeof n.meta.thinking === 'object' ? n.meta.thinking : {};
   const title = n => String(n.meta.title || n.id);
@@ -3514,6 +3607,8 @@ $('#verSettings').textContent = $('#ver').textContent;
 renderKeyState();
 if (isMobile()) ui.outline = false; // drawers start closed on small screens
 applyUI(false);
+restoreNative();
+if (repaired) save();
 if (!db.current || !db.convos[db.current]) { db.current = db.order[0] || null; }
 try { if (!db.current) newConvo(); else renderAll(false); }
 catch (err) {
