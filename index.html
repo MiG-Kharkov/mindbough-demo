@@ -567,7 +567,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.2.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 7dc4220'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 68cb05d'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2628,12 +2628,16 @@ function nodeId(t, taken) {
 }
 function nodeDoc(n, ids) {
   const out = ['---', `type: ${/^[A-Za-z][A-Za-z0-9 _-]*$/.test(n.type) ? n.type : yq(n.type)}`, `title: ${yq(n.title)}`, `description: ${yq(n.description)}`];
-  if (n.status === 'rejected' || n.status === 'superseded') out.push('status: deprecated'); // OKF readers then skip it
+  if (n.status === 'rejected' || n.status === 'superseded' || (n.status === 'parked' && ['Decision', 'Constraint', 'Assumption'].includes(n.type))) out.push('status: deprecated'); // OKF readers then skip it
   if (n.generated) out.push(`generated: { by: ${yq(n.generated.by)}, at: ${yq(n.generated.at)} }`);
   if (n.sources) { out.push('sources:'); n.sources.forEach(x => out.push(`  - { resource: ${yq(x.resource)}, title: ${yq(x.title)}${x.author ? `, author: ${yq(x.author)}` : ''} }`)); }
   out.push('thinking:', `  status: ${n.status}`);
   if (n.parent) out.push(`  parent: ${n.parent}`);
   for (const [k, v] of Object.entries(n.links || {})) { const to = v.filter(x => ids.has(x)); if (to.length) out.push(`  ${k}: [${to.join(', ')}]`); }
+  if (n.revisions && n.revisions.length) {
+    out.push('  revisions:');
+    n.revisions.forEach(r => out.push(`    - { title: ${yq(r.title)}, description: ${yq(r.description)}, generated: { by: ${yq(r.generated.by)}, at: ${yq(r.generated.at)} } }`));
+  }
   return out.concat('---', '', n.body || '').join('\n').trimEnd() + '\n';
 }
 // One conversation → a Thinking State bundle: a Thought (or the root Question) per branch, a Decision per flagged message,
@@ -2643,6 +2647,7 @@ function nodeDoc(n, ids) {
 function thinkingStateFiles(c) {
   const taken = new Set(), nodes = [], byBranch = {};
   const keep = (v, t) => { const id = typeof v === 'string' && TS_ID.test(v) && !taken.has(v) ? v : nodeId(t, taken); taken.add(id); return id; };
+  const iso = t => new Date(t || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z');
   let given = false;
   if (!(typeof c.tsId === 'string' && TS_ID.test(c.tsId))) { c.tsId = nodeId(c.created, new Set()); given = true; }
   if (!(typeof c.sessionId === 'string' && TS_ID.test(c.sessionId))) { c.sessionId = nodeId(c.created, new Set([c.tsId])); given = true; }
@@ -2663,11 +2668,14 @@ function thinkingStateFiles(c) {
       description: nd ? nd.description || nd.title : eo ? `Edited version of: ${snippetOf(eo.text, 200)}` : first ? sentenceOf(first.text, 240) : 'An empty branch.',
       status: nd ? nd.status : 'open', links: nd ? nd.links : null, parent: b.parentId ? byBranch[b.parentId] : null, sources: [{ resource: `/${session}#${b.parentId ? 'br' + b.id : (b.msgIds[0] || 'br' + b.id)}`, title: 'Where this branch starts in the session' }],
       body: msgs.length ? `## Conversation\n\n${transcript(b.msgIds)}` : '' });
-    for (const m of msgs.filter(x => x.flagged && x !== own)) {
-      const summary = (m.decision && m.decision.summary) || sentenceOf(m.text, 240);
+    // a flag is an open Decision, a summary accepts it, and an unflagged one keeps its summary as a parked Decision (spec §7.1)
+    for (const m of msgs.filter(x => x !== own && (x.flagged || (x.decision && x.decision.summary)))) {
+      const d = m.decision || {}, summary = d.summary || sentenceOf(m.text, 240);
       const did = m.node && m.node.id && m.node.id !== id ? m.node.id : keep(m.nodeId, m.ts);
       if (!(m.node && m.node.id === did) && m.nodeId !== did) { m.nodeId = did; given = true; }
-      nodes.push({ id: did, type: 'Decision', title: sentenceOf(summary, 120), description: summary, status: 'accepted', parent: id,
+      const actor = x => x.model ? `mindbough-demo/${x.model}` : 'human:me';
+      const revisions = (d.history || []).filter(h => h.summary).map(h => ({ title: sentenceOf(h.summary, 120), description: h.summary, generated: { by: actor(h), at: iso(h.at) } }));
+      nodes.push({ id: did, type: 'Decision', title: sentenceOf(summary, 120), description: summary, status: !m.flagged ? 'parked' : d.summary ? 'accepted' : 'open', parent: id, revisions,
         generated: { by: m.decision && m.decision.summary ? (m.decision.model ? `mindbough-demo/${m.decision.model}` : 'human:me') : (m.role === 'model' && m.model ? `mindbough-demo/${m.model}` : 'human:me'),
           at: new Date((m.decision && m.decision.at) || m.ts).toISOString().replace(/\.\d+Z$/, 'Z') },
         sources: [{ resource: `/${session}#${m.id}`, title: 'The flagged message', author: m.role === 'model' ? `mindbough-demo/${m.model || 'unknown'}` : 'human:me' }], body: (m.text || '').trim() });
@@ -2675,7 +2683,6 @@ function thinkingStateFiles(c) {
   }
   const root = nodes[0];
   // the facts remembered from this conversation (F-23) are its project memory: one OKF document per item (spec §9)
-  const iso = t => new Date(t || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z');
   const items = db.memory.filter(x => x.text && x.src && x.src.cid === c.id).map(x => {
     const iid = keep(x.itemId, x.at);
     if (x.itemId !== iid) { x.itemId = iid; given = true; }
@@ -2844,9 +2851,14 @@ function bundleToConvo(r, files) {
     const text = [`**${type} · ${status}** — ${title(node)}`, desc && desc !== title(node) ? `_${desc}_` : '',
       node.id === rootId && memory ? `**Project memory**\n\n${memory}` : '', node.body,
       linkLine ? `Links: ${linkLine}` : '', srcs.length ? `Sources: ${srcs.join(', ')}` : ''].filter(Boolean).join('\n\n');
-    const accepted = type === 'Decision' && status === 'accepted';
+    const accepted = type === 'Decision' && status === 'accepted', parked = type === 'Decision' && status === 'parked';
+    const history = (Array.isArray(t.revisions) ? t.revisions : []).filter(r => r && r.description).slice(0, 10).map(r => {
+      const by = r.generated && String(r.generated.by || ''), when = Date.parse(r.generated && r.generated.at);
+      return { summary: String(r.description).slice(0, 300), at: Number.isFinite(when) ? when : now, ...(by.startsWith('mindbough-demo/') ? { model: by.slice(15) } : {}) };
+    });
+    const decision = (accepted || parked) ? { decision: { summary: (desc || title(node)).slice(0, 300), at: now, ...(history.length ? { history } : {}) } } : {};
     convo.messages[mid] = { id: mid, role: 'user', text, branchId: bid, ts: now, node: { id: node.id, type, status, title: title(node), description: desc, links },
-      ...(accepted ? { flagged: true, decision: { summary: (desc || title(node)).slice(0, 300), at: now } } : {}) };
+      ...(accepted || (type === 'Decision' && status === 'open') ? { flagged: true } : {}), ...decision }; // an open Decision is a flag waiting for its summary (spec §7.1)
     convo.branches[bid] = { id: bid, parentId: parentBranch, forkMsgId: parentMsg, msgIds: [mid], n: parentBranch ? ++n : 0, name: title(node).slice(0, 60), created: now,
       ...(['rejected', 'superseded', 'parked'].includes(status) ? { collapsed: true } : {}) };
     (kids.get(node.id) || []).forEach(k => visit(k, bid, mid));
