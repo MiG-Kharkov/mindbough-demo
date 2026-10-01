@@ -625,7 +625,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 59ed46f'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 742d028'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -3363,7 +3363,8 @@ const WHATS_NEW = [
     'A sample says what works without a key; a key that works says so in Settings, with <b>Send your message</b>. On a phone, <b>Share</b> opens the share sheet.',
     'The export says who did what: <code>log.md</code> lists your decisions and status changes, and every node says who worded it, the model or you, with its earlier names. The first branch keeps a name you give it.',
     'Words that say what things do: <b>⋯</b> under an answer offers <b>Regenerate</b>, the button that previews your next prompt says <b>Prompt</b>, and the menu has a Help row.',
-    'Fixed: a comparison no longer says it changed when you choose, or go on in the branch you chose.'] },
+    'Fixed: a comparison no longer says it changed when you choose, or go on in the branch you chose.',
+    'The samples are recorded again: they show why each option lost, the log and who worded each node, and the database sample remembers a fact about the person.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -3531,13 +3532,15 @@ function zipFiles(files, when = Date.now()) {
 // A JSON string is a valid YAML double-quoted scalar, once the characters YAML treats as line breaks or forbids are escaped
 const yq = v => JSON.stringify(String(v)).replace(/[\u007f-\u009f\u2028\u2029\ufeff\ufffe\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
 const TS_TYPES = ['Thought', 'Question', 'Hypothesis', 'Finding', 'Decision', 'Assumption', 'Constraint', 'Reference', 'Memory', 'Thinking State'];
-const sentenceOf = (t, max) => { const x = firstSentence(plain(t || '')); return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x; };
+// a text cut to size ends at a word when there is one near the end, so a title doesn't end "and 50% o…"
+const cutText = (x, max) => { if (x.length <= max) return x; const s = x.slice(0, max - 1), k = s.lastIndexOf(' '); return (k > max * 0.7 ? s.slice(0, k) : s).replace(/[\s,;:–—-]+$/, '') + '…'; };
+const sentenceOf = (t, max) => cutText(firstSentence(plain(t || '')), max);
 // no regex lookbehind: it is a syntax error before iOS 16.4 and would stop the whole app (CI checks for it)
 // A memory item's earlier wordings, newest first, as thinking.revisions lines of its document (spec §9.2, W11)
 const memRevisions = x => (Array.isArray(x.history) ? x.history : []).filter(h => h && h.text).slice(0, 10).map(h => { const t = h.text.replace(/\s+/g, ' ').trim(); return `    - { title: ${yq(shortTitle(t))}, description: ${yq(t)}, generated: { by: "human:me", at: ${yq(isoOf(h.at))} } }`; });
 const memThinking = x => { const r = memRevisions(x); return r.length ? ['thinking:', '  revisions:', ...r] : []; };
 const shortTitle = t => { const w = plain(t).replace(/([.!?])\s/, '$1\n').split(/\n|[:;]\s| [—–-] /)[0].replace(/\.$/, '').split(/\s+/).filter(Boolean); return w.slice(0, 10).join(' ') + (w.length > 10 ? '…' : ''); };
-const snippetOf = (t, max) => { const x = plain(t || ''); return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x; };
+const snippetOf = (t, max) => cutText(plain(t || ''), max);
 // A time as ISO seconds; one out of range reads as now
 const MAX_T = 8.64e15, okTime = v => Number.isFinite(v) && Math.abs(v) <= MAX_T;
 function isoOf(t) { const d = new Date(t || Date.now()); return (isNaN(d.getTime()) ? new Date() : d).toISOString().replace(/\.\d+Z$/, 'Z'); }
@@ -4161,7 +4164,10 @@ function sessionToConvo(r, files, nodes, rootId, own) {
       convo.messages[m.id] = m; b.msgIds.push(m.id);
     }
     const title = String(node.meta.title || ''), first = b.msgIds.map(x => convo.messages[x]).find(x => x.role === 'user') || convo.messages[b.msgIds[0]];
-    if (nid !== rootId && title && title !== (first ? sentenceOf(first.text || first.error || '', 80) : '')) b.name = title.slice(0, 60); // a name given by someone, not the automatic one (B03)
+    // a name given by someone, not the automatic one (B03), which earlier versions cut mid-word: a cut title that starts the line is it too
+    const line = first ? firstSentence(plain(first.text || first.error || '')) : '';
+    const auto = title === (first ? sentenceOf(first.text || first.error || '', 80) : '') || (title.endsWith('…') && line.startsWith(title.slice(0, -1).trimEnd()));
+    if (nid !== rootId && title && !auto) b.name = title.slice(0, 60);
     // who worded the node (P3), and the names it had (W11); the root node is worded by the conversation's title. A name a helper
     // or another tool gave comes back when you clear yours
     const gen = isObj(node.meta.generated) ? node.meta.generated : {}, actor = v => typeof v === 'string' && /^[a-z][a-z0-9_.-]*[:/][^\s]{1,100}$/i.test(v) ? v : '';
