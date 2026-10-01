@@ -127,7 +127,8 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .side-tools{display:flex;gap:6px;margin:0 14px 12px}
 .side-tools button{flex:1;display:flex;gap:6px;align-items:center;justify-content:center;border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:7px 8px;font-size:13px}
 .side-tools button:hover{border-color:var(--accent);color:var(--accent)}
-.sample-link{display:block;margin:-4px 14px 12px;padding:4px 2px;border:0;background:none;color:var(--accent);font-size:13px;text-align:left;text-decoration:underline;text-underline-offset:3px}
+.sample-link,.side-help{display:block;margin:-4px 14px 12px;padding:4px 2px;border:0;background:none;color:var(--accent);font-size:13px;text-align:left;text-decoration:underline;text-underline-offset:3px}
+.side-help{margin-top:-10px}
 #roBanner{display:none;margin:4px 14px 14px;padding:12px;border-radius:12px;background:var(--panel);border:1px solid var(--line);font-size:13px;color:var(--muted)}
 #roBanner b{display:block;color:var(--ink);font-size:14px;margin-bottom:4px}
 .robar{display:none;align-items:center;gap:10px;justify-content:space-between;border-top:1px solid var(--line);background:var(--panel);padding:10px 14px calc(10px + env(safe-area-inset-bottom));font-size:13px;color:var(--muted)}
@@ -155,7 +156,7 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 #apiKey{flex:1;min-width:0;border:0;background:none;padding:9px 8px;color:var(--ink);font:inherit;outline:none}
 .keywrap button{border:0;background:none;padding:8px 10px;color:var(--muted)}
 #model{border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);padding:3px 6px;font:inherit;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px;max-width:100%;min-width:0}
-#promptPreview{margin-left:auto}
+#promptPreview{margin-left:auto;border:1px solid var(--line);border-radius:999px;padding:3px 9px 3px 7px;font-size:12px;flex:none}
 .modelpick{display:inline-flex;min-width:0;max-width:230px}
 #toLabel{display:inline-flex;gap:6px;align-items:center;min-width:0;white-space:nowrap;overflow:hidden;flex:0 1 auto}
 #toLabel>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
@@ -235,8 +236,7 @@ body.readonly #webSearch{display:none}
 .sample-row:hover,.sample-row:focus-visible{border-color:var(--accent);outline:none}
 .sr-title{display:block;font-weight:600;font-size:15px}
 .sr-what{display:block;font-size:13px;color:var(--muted);margin-top:2px}
-.sr-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
-.sr-tags span{font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-soft);border-radius:999px;padding:2px 8px}
+.sr-tags{display:block;margin-top:6px;font-size:12px;color:var(--muted)}
 .mem-tools{display:flex;gap:8px;align-items:center;margin:0 0 8px}
 .mem-search{flex:1;min-width:0;font:inherit;font-size:16px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
 .mem-sum{font-size:12.5px;color:var(--muted);margin:0 0 8px}
@@ -395,6 +395,7 @@ button.decision:not(:disabled):hover{box-shadow:0 0 0 3px var(--flag-soft)}
 .actions{display:flex;gap:2px;margin-top:3px;opacity:0;transition:opacity .15s}
 .msg.user .actions{justify-content:flex-end}
 .msg:hover .actions,.msg:focus-within .actions,.msg.flagged .actions,.msg.hidden .actions{opacity:1}
+.col.focused .col-body>.msg:last-child:not(:hover,:focus-within,.flagged,.hidden) .actions{opacity:.6}
 @media (hover:none){.actions{opacity:1}}
 @media (max-width:440px){.actions{gap:0}.actions .ib{padding:5px 4px}.col-head .back .lbl{display:none}.col-head .name small{display:none}}
 @media (max-width:380px){.actions .ib{padding:5px 3px}}
@@ -521,7 +522,7 @@ button.model-chip svg.i{width:11px;height:11px}
   .actions{gap:4px}.actions .ib{min-width:40px;min-height:40px;justify-content:center}
   .model-chip,.bstat,.kid,.conv .rowbtn,.side-foot .linkbtn{position:relative}
   .model-chip::after,.bstat::after,.kid::after,.side-foot .linkbtn::after{content:"";position:absolute;inset:-7px -3px}
-  .conv .rowbtn{min-width:40px;min-height:40px}
+  .conv .rowbtn{min-width:40px;min-height:40px}.sample-link,.side-help{min-height:40px}
   .col-head .ib{min-width:40px;min-height:40px;justify-content:center}
   #model{font-family:inherit}}
 </style>
@@ -537,9 +538,10 @@ button.model-chip svg.i{width:11px;height:11px}
       <input type="file" id="importFile" accept=".json,.html,.htm,.zip,application/json,text/html,application/zip" hidden>
     </div>
     <button id="sampleBtn" class="sample-link" type="button">Try a sample conversation (no API key needed)</button>
+    <button class="side-help" type="button" data-open-help>Help: how it works, and what's new</button>
     <div id="roBanner"><b>Shared conversation · read-only</b>You can explore every branch here. To continue it, download its Thinking State and import it in the Mindbough demo.<button id="roDownload"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>Download Thinking State</button></div>
     <div id="convList"></div>
-    <div class="side-foot"><span class="hint-desk">Drag the canvas or scroll with <kbd>Shift</kbd>. Drag a column’s right edge to resize. <kbd>Alt</kbd>+<kbd>←</kbd> goes to the parent branch, <kbd>Alt</kbd>+<kbd>→</kbd> to the first child.</span><span class="hint-touch">Swipe left on the canvas to open the first branch that continues from here, and right to go back to its parent. <b>Back</b> and the ↳ badges jump between branches too.</span><div class="ver"><button type="button" class="linkbtn" id="openHelp" title="Help and what's new (?)">Help</button> · <span id="ver"></span></div></div>
+    <div class="side-foot"><span class="hint-desk">Drag the canvas or scroll with <kbd>Shift</kbd>. Drag a column’s right edge to resize. <kbd>Alt</kbd>+<kbd>←</kbd> goes to the parent branch, <kbd>Alt</kbd>+<kbd>→</kbd> into the branch you came back from, else an open one.</span><span class="hint-touch">Swipe left on the canvas to go into a branch that continues from here (the one you came back from, else an open one), and right to go back to its parent. <b>Back</b> and the ↳ badges jump between branches too.</span><div class="ver"><button type="button" class="linkbtn" id="openHelp" title="Help and what's new (?)">Help</button> · <span id="ver"></span></div></div>
   </aside>
   <main>
     <header class="topbar">
@@ -554,7 +556,7 @@ button.model-chip svg.i{width:11px;height:11px}
     <div id="roBar" class="robar"><span><b>Read-only copy.</b> Download it to continue in the demo or give it to an agent.</span><button type="button" id="roBarDl">Download Thinking State</button></div>
     <div class="composer">
       <div id="keyHint" class="keyhint" hidden>To chat, add a Gemini API key in <button type="button" data-open="settings">Settings</button>, or <button type="button" data-open="sample">try a sample conversation</button>.</div>
-      <div class="to"><span id="toLabel"></span><button id="promptPreview" class="ib" type="button" title="Preview the prompt your next message would send" aria-label="Preview the next prompt"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button><button id="webSearch" class="ib" type="button" aria-pressed="false" aria-label="Web search" title="Web search: the model may search Google when it needs fresh facts. Tap to turn it off or on"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg><span class="lbl">Web</span></button><label class="modelpick" title="Model for the next request"><select id="model" aria-label="Model for the next request"></select></label></div>
+      <div class="to"><span id="toLabel"></span><button id="promptPreview" class="ib" type="button" title="Preview the prompt your next message would send" aria-label="Preview the next prompt"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg><span class="lbl">Prompt</span></button><button id="webSearch" class="ib" type="button" aria-pressed="false" aria-label="Web search" title="Web search: the model may search Google when it needs fresh facts. Turn it off or on here"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg><span class="lbl">Web</span></button><label class="modelpick" title="Model for the next request"><select id="model" aria-label="Model for the next request"></select></label></div>
       <div class="box">
         <textarea id="input" rows="1" placeholder="Write a message…  (Enter to send, Shift+Enter for a new line)"></textarea>
         <button id="send"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>Send</span></button>
@@ -623,7 +625,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 36a15a7'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 4ce06ab'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1099,7 +1101,8 @@ function sourcesHTML(m) {
 function msgHTML(c, m) {
   const isEdit = editing && editing.cid === c.id && editing.mid === m.id;
   const cls = ['msg', m.role, m.hidden && 'hidden', m.flagged && 'flagged', m.error && 'error', isEdit && 'editing'].filter(Boolean).join(' ');
-  const who = m.srcRole ? (m.srcRole === 'system' ? 'System' : 'Tool') : m.role === 'user' ? 'You' : 'Gemini';
+  const ob = m.role === 'user' && !m.edited && c.branches[m.branchId], tpl = ob && ob.option && ob.msgIds[0] === m.id; // an option's opener, from a template (F-27)
+  const who = m.srcRole ? (m.srcRole === 'system' ? 'System' : 'Tool') : m.role === 'user' ? (tpl ? 'You · written by Mindbough' : 'You') : 'Gemini';
   const tags = (m.hidden ? '<span class="tag h">excluded from history</span>' : '') + (m.edited ? '<span class="tag e">edited</span>' : '') + (m.cut && !m.streaming ? `<span class="tag c" title="${esc(m.cut)}">${/^Stopped/.test(m.cut) ? 'stopped' : 'cut off'}</span>` : '');
   let chip = '';
   if (m.role === 'model' && !m.streaming) {
@@ -1135,7 +1138,7 @@ function msgHTML(c, m) {
           ${keyInput.value.trim() ? '<button class="btn" data-act="dec-auto" title="Let the model for summaries (Settings) write it">Write for me</button>' : ''}
           <button class="btn" data-act="dec-cancel">Cancel</button><button class="btn primary" data-act="dec-save">Save</button></div></div>`;
     } else {
-      const txt = d.summary ? esc(d.summary) : d.pending ? '<i>Writing a summary…</i>' : `<i>${RO ? 'No summary' : 'Tap to add a one-line summary'}</i>`;
+      const txt = d.summary ? esc(d.summary) : d.pending ? '<i>Writing a summary…</i>' : `<i>${RO ? 'No summary' : 'Add a one-line summary'}</i>`;
       dec = `<button class="decision" data-act="dec-edit" type="button"${RO ? ' disabled' : ' title="Edit the summary that goes into prompts"'}><span class="dlabel">${ICON.flagOn}Decision</span><span class="dtext">${txt}</span></button>`;
       const out = droppedAt(c, m.branchId);
       if (out && d.summary) dec += `<div class="dec-stale"><span>Not in prompts: “${esc(branchName(out, c))}” is ${esc(statusLabel(out).toLowerCase())}.</span></div>`;
@@ -1155,8 +1158,8 @@ function msgHTML(c, m) {
     acts = `<div class="actions">
       <button class="ib branch" data-act="branch" title="${m.role === 'user' ? 'Edit this message, or get another answer to it, in a new branch' : 'Continue the conversation in a new branch from here'}">${ICON.branch}Branch out</button>
       <button class="ib ${m.flagged ? 'on-flag' : ''}" data-act="flag" title="${m.flagged ? 'Remove the flag (the decision leaves prompts)' : 'Flag as a decision'}" aria-pressed="${!!m.flagged}">${m.flagged ? ICON.flagOn : ICON.flag}</button>
-      <button class="ib ${remembered ? 'on-mem' : ''}" data-act="remember" title="${remembered ? 'Remembered: edit the fact' : 'Remember this in all conversations'}" aria-pressed="${remembered}">${remembered ? ICON.bookmarkOn : ICON.bookmark}</button>
-      <button class="ib ${m.hidden ? 'on-hide' : ''}" data-act="hide" title="${m.hidden ? 'Excluded from history: tap to include it again' : m.flagged ? 'Exclude from history: the model won’t see the text, and its decision stays in the prompts' : 'Exclude from history: the model won’t see it'}" aria-label="Exclude from history" aria-pressed="${!!m.hidden}">${ICON.eyeOff}</button>
+      <button class="ib ${remembered ? 'on-mem' : ''}" data-act="remember" title="${remembered ? 'Remembered: edit or delete the fact' : 'Remember this in all conversations'}" aria-pressed="${remembered}">${remembered ? ICON.bookmarkOn : ICON.bookmark}</button>
+      <button class="ib ${m.hidden ? 'on-hide' : ''}" data-act="hide" title="${m.hidden ? 'Excluded from history: include it again' : m.flagged ? 'Exclude from history: the model won’t see the text, and its decision stays in the prompts' : 'Exclude from history: the model won’t see it'}" aria-label="Exclude from history" aria-pressed="${!!m.hidden}">${ICON.eyeOff}</button>
       <button class="ib more" data-act="more" title="More: ${m.role === 'model' ? 'the prompt, ' : ''}options, edit, copy, delete" aria-label="More actions" aria-haspopup="menu">${ICON.more}</button>
     </div>`;
   }
@@ -1183,7 +1186,7 @@ function renderCanvas() {
     if (parent) head += `<button class="ib back" data-act="back" title="Back to ${esc(branchName(parent))}" aria-label="Back to ${esc(branchName(parent))}">${ICON.left}<span class="lbl">Back</span></button>`;
     if (droppedAt(c, b.id)) col.classList.add('dropped');
     head += `<div class="name" title="${RO ? '' : 'Double-click to rename'}">${esc(branchName(b))}<small>${own} message${own === 1 ? '' : 's'}${flagged.length ? ` · ${flagged.length} decision${flagged.length === 1 ? '' : 's'}` : ''}</small></div>`;
-    if (parent) head += `<button class="bstat s-${statusOf(b)}" data-act="status" title="Status of this branch${RO ? '' : ': tap to change'}"${RO ? ' disabled' : ''}>${esc(statusLabel(b))}</button>`;
+    if (parent) head += `<button class="bstat s-${statusOf(b)}" data-act="status" title="Status of this branch${RO ? '' : ': change it'}"${RO ? ' disabled' : ''}>${esc(statusLabel(b))}</button>`;
     head += `<button class="ib colmore" data-act="colmore" title="Rename${parent ? ' or delete' : ''} this branch" aria-label="Branch actions" aria-haspopup="menu">${ICON.more}</button>`;
     const lastM = c.messages[b.msgIds[b.msgIds.length - 1]];
     const sum = lastM ? `${lastM.role === 'user' ? 'You' : 'Gemini'}: ${plain(unmark(lastM.text || lastM.error || '')).slice(0, 90)}` : 'Empty';
@@ -1212,7 +1215,7 @@ function renderCanvas() {
                  : `<div class="fork-note">${ICON.branch}<span>Continues from the start of ${esc(branchName(parent))}</span></div>`;
     }
     body += own ? b.msgIds.map(id => msgHTML(c, c.messages[id])).join('')
-      : `<div class="empty">${parent ? 'New branch. Write a message below: the model sees only this branch’s path of the conversation.' : '<b>Ask anything below.</b><br>Each branch sends the model only its own path, plus the decisions you flag and the facts you remember. The layers button above the message box shows exactly what is sent. This is the MVP of the Thinking State format: open files any app or agent can continue. <button type="button" class="linkbtn" data-open-help>Help</button>'}</div>`;
+      : `<div class="empty">${parent ? 'New branch. Write a message below: the model sees only this branch’s path of the conversation.' : '<b>Ask anything below.</b><br>Each branch sends the model only its own path, plus the decisions you flag and the facts you remember. <b>Prompt</b> above the message box shows exactly what is sent. This is the MVP of the Thinking State format: open files any app or agent can continue. <button type="button" class="linkbtn" data-open-help>Help</button>'}</div>`;
     col.innerHTML = `<div class="col-head">${head}</div><div class="col-body">${body}</div><div class="col-resize" title="Drag to resize · double-click to reset"></div>`;
     canvas.appendChild(col);
     colEls[b.id] = col;
@@ -1495,7 +1498,8 @@ function openMoreMenu(anchor, c, m) {
   const copies = item('copy', ICON.copy, 'Copy text') + item('copypath', ICON.copy, 'Copy the conversation up to here');
   const prompt = m.role === 'model' && !m.error ? item('prompt', ICON.layers, 'How the prompt was built') + '<hr>' : '';
   menu.innerHTML = RO ? prompt + copies
-    : prompt + (m.error ? '' : item('options', ICON.options, 'Branch into options') + item('edit', ICON.pencil, m.role === 'user' ? 'Edit' : 'Edit this answer'))
+    : prompt + (m.role === 'model' && !m.srcRole ? item('regen', ICON.regen, answerTail(c, m) ? 'Answer again in a new branch…' : 'Regenerate with any model…') : '') // the model chip's menu, with words (ROW-2)
+      + (m.error ? '' : item('options', ICON.options, 'Branch into options') + item('edit', ICON.pencil, m.role === 'user' ? 'Edit this question' : 'Edit this answer'))
       + '<hr>' + copies + '<hr>' + item('delmsg', ICON.trash, m.role !== 'user' ? 'Delete this answer' : turnOf(c, m).length > 1 ? 'Delete this question and its answer' : 'Delete this question', ' danger');
   placeMenu(menu, anchor);
 }
@@ -1519,6 +1523,7 @@ function messageMore(c, m, act) {
   if (act === 'prompt') { openPromptView(c, m); return; }
   if (RO) return;
   if (act === 'options') openOptions(c, m);
+  else if (act === 'regen') { const at = document.querySelector(`.msg[data-mid="${m.id}"] [data-act="more"]`); if (at) openModelMenu(at, c, m, 'regen'); }
   else if (act === 'edit') startEdit(c, m);
   else if (act === 'delmsg') {
     const ids = turnOf(c, m);
@@ -1889,7 +1894,7 @@ async function summarize(c, m, force) {
     if (lm.decision && (force || !lm.decision.summary)) setDecision(lm, text.slice(0, 300), model, sig);
   } catch (err) {
     if (!/^empty$/.test(err.message)) recordCall(live()[0], { task: 'summary', model, prompt, mid: m.id, error: err.message });
-    toast('Couldn’t write the summary. Tap the decision to write it yourself.');
+    toast('Couldn’t write the summary. Write it yourself in the Decision box.');
   }
   finally {
     inflight--; setTimeout(settled);
@@ -2978,7 +2983,7 @@ function openPromptView(c, m) {
     rec.blocks = rec.blocks.filter(b => b.kind !== 'tools'); // today's web setting says nothing about then
     note = 'Reconstructed: this answer was made before prompts were recorded, so this is what the demo would send for it now.';
   }
-  showPrompt({ c, rec, note, title: 'Prompt of this answer', lookup: (id, sig) => { const x = sentVersion(c.messages[id], sig, rec.at); return x && x.hidden ? { ...x, hidden: false } : x; }, search: m.search, calls: (c.calls || []).filter(x => x.mid === m.id && (!rec.at || x.at >= rec.at)), // calls on this version (FLOW-20)
+  showPrompt({ c, rec, note, title: 'How the prompt was built', lookup: (id, sig) => { const x = sentVersion(c.messages[id], sig, rec.at); return x && x.hidden ? { ...x, hidden: false } : x; }, search: m.search, calls: (c.calls || []).filter(x => x.mid === m.id && (!rec.at || x.at >= rec.at)), // calls on this version (FLOW-20)
     path: historyFor(c, branchOf(c, m.id).id, m.id).slice(0, -1), mid: m.id });
 }
 function previewPrompt(backTo) {
@@ -3049,11 +3054,11 @@ function pvRender(pv) {
     const u = r.usage;
     const tokens = u ? `<span><b>${u.prompt.toLocaleString('en-US')}</b> tokens in · <b>${u.answer.toLocaleString('en-US')}</b> out${u.thoughts ? ` (+${u.thoughts.toLocaleString('en-US')} thinking)` : ''}${u.tools ? ` · ${tok(u.tools)} from the search` : ''}</span>`
                      : `<span>≈ ${Math.max(1, Math.round(total / 4)).toLocaleString('en-US')} tokens (estimate)</span>`;
-    const when = new Date(r.at).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const when = new Date(r.at).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
     return `${pv.note ? `<p class="pv-note">${esc(pv.note)}</p>` : ''}
-      <p class="pv-meta"><span><b>${esc(r.model || 'unknown model')}</b> · ${esc(when)}</span><span>${fmtChars(total)}</span>${tokens}</p>
+      <p class="pv-meta"><span><b>${esc(r.model || 'unknown model')}</b>${pv.preview ? '' : ` · ${esc(when)}`}</span><span>${fmtChars(total)}</span>${tokens}</p>
       <div class="pbar" role="list">${sized.map(([b, i]) => `<button class="pbar-seg k-${b.kind}" style="flex-grow:${Math.max(b.chars, 1)}" data-block="${i}" title="${esc(b.label)} · ${fmtChars(b.chars)}" aria-label="${esc(b.label)}"></button>`).join('')}</div>
-      <div>${sized.map(([b, i]) => `<button class="pb-row" data-block="${i}"><span class="pb-dot k-${b.kind}"></span><span class="pb-main"><span class="pb-name">${esc(b.label)}</span>${BLOCK_WHY[b.kind] ? `<span class="pb-why">${BLOCK_WHY[b.kind]}</span>` : ''}</span><span class="pb-size">${fmtChars(b.chars)} · ${Math.round(b.chars * 100 / total)}%</span>${ICON.chevRight}</button>`).join('')}</div>
+      <div>${sized.map(([b, i]) => `<button class="pb-row" data-block="${i}"><span class="pb-dot k-${b.kind}"></span><span class="pb-main"><span class="pb-name">${esc(b.label)}</span>${BLOCK_WHY[b.kind] ? `<span class="pb-why">${pv.preview && b.kind === 'message' ? 'What you have typed' : BLOCK_WHY[b.kind]}</span>` : ''}</span><span class="pb-size">${fmtChars(b.chars)} · ${Math.round(b.chars * 100 / total)}%</span>${ICON.chevRight}</button>`).join('')}</div>
       ${(() => { const ns = notSent(pv); return ns.length ? `<div class="pv-search pv-not"><b>Not in this prompt</b><ul>${ns.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="set-hint">Each branch sends only its own path, so the other lines of thinking don’t mix in.</p></div>` : ''; })()}
       ${web && !pv.search ? `<div class="pv-search pv-web"><b>${pv.preview ? 'Web search is on' : 'Web search was available'}</b><p class="set-hint">${pv.preview
         ? 'The model may search the web for the next answer. It decides itself whether it needs fresh facts, and what it finds is added inside the Gemini API.'
@@ -3102,7 +3107,7 @@ function renderDecCount() {
   $('#openDecisions').title = !all ? 'Decisions in force in this conversation' : `${on} decision${on === 1 ? '' : 's'} in prompts${all > on ? `, ${all - on} not` : ''}`;
   $('#memCount').textContent = db.memory.length || ''; refreshReask();
 }
-const shortDate = t => new Date(t).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const shortDate = t => new Date(t).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 function renderDecisionsPanel() {
   const c = cur(); if (!c) return '';
   const list = flaggedIn(c);
@@ -3270,14 +3275,14 @@ $('#keyHint').addEventListener('click', e => {
 // that every card of demo/FEATURES.md is covered and that WHATS_NEW has the current version.
 const HELP = [
   { id: 'what', title: 'What this is', cards: ['F-01', 'F-16'], body: `
-    <p>AI chats force thinking into one long line: alternatives get mixed, the model forgets what you decided, and your work stays locked in one app. Mindbough keeps your thinking as a <b>tree you own</b>. Each idea gets a branch, and a request sends the model only that branch's path, your decisions and your memory.</p>
+    <p>AI chats force thinking into one long thread: alternatives get mixed, the model forgets what you decided, you can't see what each step costs, and your work stays locked in one app. Mindbough keeps your thinking as a <b>tree you own</b>. Each idea gets a branch, and a request sends the model only that branch's path, your decisions and your memory. Every answer keeps a receipt: its model, its prompt and its tokens.</p>
     <p>Everything is kept as a <b>Thinking State</b>: open files that any app or agent can read and continue. This app is the MVP of that format.</p>
     <ul><li>The version, the format it writes and the build are at the bottom of the menu and in Settings → About.</li></ul>` },
   { id: 'tour', title: 'The first 2 minutes', cards: [], body: `
     <ol><li>No key? Menu → <b>Try a sample conversation</b>, and pick one of three. Have one? <b>Settings</b> (the gear) → paste it.</li>
     <li>Ask something, then tap <b>Branch out</b> under the answer and ask a follow-up: the new column sees only its own path.</li>
     <li>Tap the <b>flag</b> under an answer you agree with: it becomes a decision that every prompt of the conversation carries.</li>
-    <li>Tap the <b>layers</b> button above the message box: your next prompt, block by block. The decision is in it; the other branch isn't.</li>
+    <li>Tap <b>Prompt</b> above the message box: your next prompt, block by block. The decision is in it; the other branch isn't.</li>
     <li>Tap the <b>bookmark</b> under a message and <b>Save</b>: that fact now goes into every conversation.</li>
     <li>Menu → <b>⋯</b> on a conversation → <b>Export as a Thinking State</b>: a .zip any app or agent can read.</li></ol>` },
   { id: 'start', title: 'Getting started', cards: ['F-02', 'F-03', 'F-15', 'F-18'], body: `
@@ -3307,8 +3312,8 @@ const HELP = [
     <ul><li>The <b>flag</b> under a message makes it a decision: a one-line summary that every prompt of the conversation carries. Tap the Decision box to edit it, or <b>Write for me</b>. When the message changes (a regeneration, an edit, a Restore), a summary the helper wrote is written again; yours says it was written for an earlier version, with <b>Update</b> and <b>Keep</b>.</li>
     <li><b>⚑</b> in the top bar opens this conversation's decisions, with history and restore; <b>🔖</b> next to it opens your memory. <b>Go to</b> jumps to a message, and <b>← Back</b> above the composer returns to where you were.</li>
     <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) drafts one that you write about yourself (under your message, from its first sentence), saved when you tap <b>Save</b>. Tap a fact to edit or delete it; with many facts, search them.</li>
-    <li>The <b>eye</b> under a message excludes it from history: the model doesn't see it, on this branch and the ones that continue from it. Tap it again to include it.</li>
-    <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. The layers button above the message box previews your next prompt.</li>
+    <li>The <b>eye</b> under a message excludes it from history: the model doesn't see it, on this branch and the ones that continue from it. Tap it again to include it. A flagged message keeps its decision in the prompts: only its text leaves the history.</li>
+    <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. <b>Prompt</b> above the message box previews your next prompt.</li>
     <li>An answer written before later decisions, or before a message above it changed, says so: <b>Re-ask</b> writes it again with them. Re-asking in the middle of a chain opens a new branch, which says what it asks again, and the old answer says where it was asked.</li></ul>` },
   { id: 'models', title: 'Models and web search', cards: ['F-30', 'F-33'], body: `
     <p class="help-why">A cheap model for small jobs, and the tokens in view.</p>
@@ -3348,7 +3353,8 @@ const WHATS_NEW = [
     'On a phone a column head has room for its name: Rename and Delete branch are under <b>⋯</b>, the breadcrumbs show where you are, and Fold all moved to the Branches panel.',
     'On a phone, Back closes a sheet or a panel instead of leaving the app; a swipe no longer opens a rejected, folded branch first.',
     'A sample says what works without a key; a key that works says so in Settings, with <b>Send your message</b>. On a phone, <b>Share</b> opens the share sheet.',
-    'The export says who did what: <code>log.md</code> lists your decisions and status changes, and every node says who worded it, the model or you, with its earlier names. The first branch keeps a name you give it.'] },
+    'The export says who did what: <code>log.md</code> lists your decisions and status changes, and every node says who worded it, the model or you, with its earlier names. The first branch keeps a name you give it.',
+    'Words that say what things do: <b>⋯</b> under an answer offers <b>Regenerate</b>, the button that previews your next prompt says <b>Prompt</b>, and the menu has a Help row.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -4581,7 +4587,7 @@ const SAMPLES = [
 function openSamples() {
   openSheet({ title: 'Try a sample', onClick: e => { const b = e.target.closest('[data-sample]'); if (b) openSample(SAMPLES[+b.dataset.sample]); },
     render: () => `<p class="pv-note">Conversations the demo recorded, each a Thinking State: everything works without a key, and nothing is added to your memory.</p>`
-      + SAMPLES.map((x, i) => `<button class="sample-row" type="button" data-sample="${i}"><span class="sr-title">${x.title}</span><span class="sr-what">${x.what}</span><span class="sr-tags">${x.shows.map(t => `<span>${t}</span>`).join('')}</span></button>`).join('') });
+      + SAMPLES.map((x, i) => `<button class="sample-row" type="button" data-sample="${i}"><span class="sr-title">${x.title}</span><span class="sr-what">${x.what}</span><span class="sr-tags">Shows ${x.shows.join(' · ')}</span></button>`).join('') });
 }
 async function openSample(x) {
   closeSheet();
