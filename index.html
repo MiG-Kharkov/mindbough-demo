@@ -606,7 +606,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 10b5cca'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 041c3e5'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1256,6 +1256,7 @@ $('#foldAll').onclick = () => {
 };
 function renderChrome() {
   const c = cur(); if (!c) return;
+  paintSend();
   updateFoldAll();
   renderDecCount();
   const path = ancestry(c, c.focus);
@@ -1503,7 +1504,7 @@ document.addEventListener('keydown', e => {
   }
 }, true);
 function canGenerate() {
-  if (busy) { toast('Wait for the current response to finish'); return false; }
+  if (busy || fanOut) { busyNote(); return false; }
   if (needKey()) return false;
   return true;
 }
@@ -1645,7 +1646,7 @@ function saveEdit(c, m, el) {
 function editAsBranch(c, m, el) {
   const text = editValue(el);
   if (!text) { toast('Message can’t be empty'); return; }
-  if (busy) { toast('Wait for the current response to finish'); return; }
+  if (busy || fanOut) { busyNote(); return; }
   if (needKey()) return;
   const b = branchOf(c, m.id); if (!b) return;
   const i = b.msgIds.indexOf(m.id);
@@ -1910,7 +1911,7 @@ async function createOptionBranches() {
   const picked = optionsReady().map(x => ({ title: clean(x.title, 80), why: x.why, manual: !!x.manual })), call = opt.call;
   if (!b || !picked.length) return;
   const answer = opt.answer && !!keyInput.value.trim();
-  if (answer && busy) { toast('Wait for the current response to finish'); return; }
+  if (answer && (busy || fanOut)) { busyNote(); return; }
   opt = null; closeSheet();
   const now = Date.now(), made = [];
   picked.forEach((it, i) => {
@@ -1927,14 +1928,14 @@ async function createOptionBranches() {
   });
   c.updated = Date.now(); save(); renderCanvas(); renderSidebar();
   if (!answer) { goTo(made[0], 'top'); toast(`${made.length} branch${made.length === 1 ? '' : 'es'} created`); return; }
-  fanOut = { cancel: false };
+  fanOut = { cancel: false, cid: c.id }; paintSend();
   let done = 0;
   for (const bid of made) {
     if (fanOut.cancel || !db.convos[c.id] || !c.branches[bid]) break;
     await sendToBranch(c, bid, null);
     done++;
   }
-  const stopped = fanOut.cancel; fanOut = null;
+  const stopped = fanOut.cancel; fanOut = null; paintSend();
   if (db.current === c.id && c.branches[made[0]]) goTo(made[0], 'top');
   toast(stopped ? `Stopped: ${made.length - done} branch${made.length - done === 1 ? '' : 'es'} left unanswered` : `${made.length} branches answered`);
 }
@@ -2150,7 +2151,7 @@ function versionsClick(e) {
   const x = e.target.closest('[data-vers]'); if (!x || !versFor) return;
   const c = db.convos[versFor.cid], m = c && c.messages[versFor.mid];
   if (!m || m.streaming || RO) return;
-  if (busy) { toast('Wait for the current response to finish'); return; }
+  if (busy || fanOut) { busyNote(); return; }
   const i = +x.dataset.vers, v = m.versions && m.versions[i]; if (!v) return;
   const now = versionOf(m);
   m.versions.splice(i, 1); m.versions.push(now);
@@ -2507,12 +2508,24 @@ input.addEventListener('keydown', e => {
   if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
   if (e.ctrlKey || e.metaKey || (!e.shiftKey && !touchScreen())) { e.preventDefault(); send(); }
 });
-sendBtn.onclick = () => { if (fanOut) fanOut.cancel = true; if (busy) busy.controller.abort(); else if (!fanOut) send(); };
+// Stop belongs to the conversation an answer is coming in; elsewhere Send stays Send and says where it is (F-03)
+function busyHere() { return (busy && busy.convoId === db.current) || (fanOut && fanOut.cid === db.current); }
+function paintSend() {
+  const on = !!busyHere();
+  sendBtn.classList.toggle('stop', on);
+  sendBtn.innerHTML = on ? `${ICON.stop}<span>Stop</span>` : `${ICON.send}<span>Send</span>`;
+}
+// One answer at a time: say whose it is, with a way there when it is another conversation's
+function busyNote() {
+  const cid = (busy && busy.convoId) || (fanOut && fanOut.cid), c = cid && db.convos[cid];
+  if (!c || cid === db.current) { toast('Wait for the current answer to finish'); return; }
+  toast(`An answer is still coming in “${c.title}”`, { label: 'Go there', fn: () => { if (db.convos[cid]) { db.current = cid; save(); renderAll(false); } } });
+}
+sendBtn.onclick = () => { if (busyHere()) { if (fanOut) fanOut.cancel = true; if (busy) busy.controller.abort(); } else if (busy || fanOut) busyNote(); else send(); };
 function setBusy(b) {
   busy = b;
   if (b) touched.add(b.convoId); else setTimeout(settled);
-  sendBtn.classList.toggle('stop', !!b);
-  sendBtn.innerHTML = b ? `${ICON.stop}<span>Stop</span>` : `${ICON.send}<span>Send</span>`;
+  paintSend();
 }
 
 function updateMsgEl(c, m, full) {
@@ -2526,7 +2539,8 @@ function updateMsgEl(c, m, full) {
 
 async function send() {
   const text = input.value.trim();
-  if (RO || busy || fanOut) return;
+  if (RO) return;
+  if (busy || fanOut) { busyNote(); return; }
   if (!text) {
     const c = cur(), b = c && c.branches[c.focus], last = b && c.messages[b.msgIds[b.msgIds.length - 1]];
     if (last && waiting(c, last) && !needKey()) sendToBranch(c, b.id, null);
@@ -3062,7 +3076,7 @@ const HELP = [
   { id: 'start', title: 'Getting started', cards: ['F-02', 'F-03', 'F-15', 'F-18'], body: `
     <ul><li><b>Settings</b> (the gear, top right): paste a Gemini API key. It stays in this browser and goes only to Google's Gemini API.</li>
     <li>No key yet? Menu → <b>Try a sample conversation</b>: three recorded ones, a decision, a troubleshooting session and a pricing plan, with options, comparisons and choices, branch statuses, decisions, web searches, formulas, and every prompt with its tokens.</li>
-    <li>On a desktop, Enter sends and Shift+Enter adds a line. On a phone, Enter adds a line: tap <b>Send</b>. <b>Stop</b> ends an answer and keeps what arrived. Answers show Markdown, code and formulas.</li>
+    <li>On a desktop, Enter sends and Shift+Enter adds a line. On a phone, Enter adds a line: tap <b>Send</b>. <b>Stop</b> ends an answer and keeps what arrived; it shows in the conversation the answer is coming in, and one answer comes at a time. Answers show Markdown, code and formulas.</li>
     <li>Menu → <b>New conversation</b> starts one. Its first answer gives it a short title. <b>⋯</b> on a conversation in the menu renames, exports, shares or deletes it.</li>
     <li>On a phone, add it to the home screen: iPhone Safari → Share → <b>Add to Home Screen</b>; Android Chrome → ⋮ → <b>Add to Home screen</b>.</li></ul>` },
   { id: 'branches', title: 'Branches', cards: ['F-04', 'F-05', 'F-06', 'F-07', 'F-10', 'F-11', 'F-12', 'F-19', 'F-24', 'F-29', 'F-32'], body: `
@@ -3110,7 +3124,8 @@ const WHATS_NEW = [
   { version: 'Unreleased', items: ['Fixed: on a phone, the branch you write in and the model are no longer cut mid-letter, the buttons under a message are bigger, and toasts no longer cover the message box.',
     'Fixed: the app opens again on iPhones with iOS older than 16.4, where it showed nothing at all.',
     'Fixed: a shared read-only page no longer holds your memory facts in the earlier versions of a regenerated answer.',
-    'Fixed: choosing again among branches, after a reload too, leaves only the new choice in prompts; Choose asks before it takes the place of your own decision.'] },
+    'Fixed: choosing again among branches, after a reload too, leaves only the new choice in prompts; Choose asks before it takes the place of your own decision.',
+    'Fixed: <b>Stop</b> shows only in the conversation an answer is coming in. Elsewhere <b>Send</b> says where it is, with <b>Go there</b>.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
