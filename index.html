@@ -213,6 +213,8 @@ body.readonly #webSearch{display:none}
 .pb-row:last-child{border-bottom:0}
 .pb-dot{width:11px;height:11px;border-radius:3px;flex:none}
 .pb-name{flex:1;min-width:0;font-weight:600}
+.pb-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.pb-why{font-size:12px;color:var(--muted);font-weight:400}
 .pb-role{font-weight:600;flex:none;min-width:56px}
 .pb-snip{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
 .pb-size{color:var(--muted);font-size:12.5px;white-space:nowrap}
@@ -578,7 +580,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.3.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main b58ac99'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 8053a0f'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2616,14 +2618,15 @@ function openPromptView(c, m) {
     rec.blocks = rec.blocks.filter(b => b.kind !== 'tools'); // today's web setting says nothing about then
     note = 'Reconstructed: this answer was made before prompts were recorded, so this is what the demo would send for it now.';
   }
-  showPrompt({ c, rec, note, title: 'Prompt of this answer', lookup: id => c.messages[id], search: m.search, calls: (c.calls || []).filter(x => x.mid === m.id) });
+  showPrompt({ c, rec, note, title: 'Prompt of this answer', lookup: id => c.messages[id], search: m.search, calls: (c.calls || []).filter(x => x.mid === m.id),
+    path: historyFor(c, branchOf(c, m.id).id, m.id).slice(0, -1), mid: m.id });
 }
 function previewPrompt() {
   const c = cur(); if (!c) return;
   const draft = input.value.trim();
   const msgs = historyFor(c, c.focus).concat(draft ? [{ id: '__draft', role: 'user', text: draft }] : []);
   const rec = requestRecord(buildRequest(c, msgs), modelSel.value || db.model);
-  showPrompt({ c, rec, title: 'Next prompt', preview: true, lookup: id => id === '__draft' ? { id, role: 'user', text: draft } : c.messages[id],
+  showPrompt({ c, rec, title: 'Next prompt', preview: true, path: historyFor(c, c.focus), lookup: id => id === '__draft' ? { id, role: 'user', text: draft } : c.messages[id],
     note: 'Preview: what your next message would send right now' + (draft ? ', including what you have typed.' : '. Type a message to see it added.') });
 }
 function showPrompt(pv) {
@@ -2645,6 +2648,23 @@ function pvTurns(pv, b) {
   const msgs = b.ids.map(id => pv.lookup(id) || { id, role: 'user', text: '(deleted since this request)' });
   return mergeTurns(msgs);
 }
+// What each block of a prompt is, in a line (F-20)
+const BLOCK_WHY = { harness: 'The demo’s fixed instructions to the model', memory: 'Your facts, shared by all conversations',
+  decisions: 'The decisions in force in this conversation', history: 'This branch’s path: the turns before the message', message: 'The message being answered' };
+// What the model didn't see: the other lines of thinking, excluded messages, and (for the next prompt) decisions of dropped branches
+function notSent(pv) {
+  const c = pv.c, r = pv.rec;
+  if (!c || !r || !Array.isArray(r.blocks) || !pv.path) return [];
+  const sent = new Set(r.blocks.flatMap(b => Array.isArray(b.ids) ? b.ids : []));
+  const on = new Set(pv.path.map(x => x.id)); if (pv.mid) on.add(pv.mid);
+  const at = r.at || Date.now();
+  const outside = Object.values(c.messages).filter(x => !on.has(x.id) && (x.text || '').trim() && (x.ts || 0) <= at).length;
+  const excluded = pv.path.filter(x => x.hidden && !sent.has(x.id)).length;
+  const dropped = pv.preview ? Object.values(c.messages).filter(x => x.flagged && x.decision && x.decision.summary && droppedAt(c, x.branchId)).length : 0;
+  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  return [outside && n(outside, 'message outside this branch’s path', 'messages outside this branch’s path'), excluded && n(excluded, 'excluded message', 'excluded messages'),
+    dropped && n(dropped, 'decision of a parked or rejected branch', 'decisions of parked or rejected branches')].filter(Boolean);
+}
 function pvRender(pv) {
   const r = pv.rec;
   if (pv.level === 'overview') {
@@ -2659,7 +2679,8 @@ function pvRender(pv) {
     return `${pv.note ? `<p class="pv-note">${esc(pv.note)}</p>` : ''}
       <p class="pv-meta"><span><b>${esc(r.model || 'unknown model')}</b> · ${esc(when)}</span><span>${fmtChars(total)}</span>${tokens}</p>
       <div class="pbar" role="list">${sized.map(([b, i]) => `<button class="pbar-seg k-${b.kind}" style="flex-grow:${Math.max(b.chars, 1)}" data-block="${i}" title="${esc(b.label)} · ${fmtChars(b.chars)}" aria-label="${esc(b.label)}"></button>`).join('')}</div>
-      <div>${sized.map(([b, i]) => `<button class="pb-row" data-block="${i}"><span class="pb-dot k-${b.kind}"></span><span class="pb-name">${esc(b.label)}</span><span class="pb-size">${fmtChars(b.chars)} · ${Math.round(b.chars * 100 / total)}%</span>${ICON.chevRight}</button>`).join('')}</div>
+      <div>${sized.map(([b, i]) => `<button class="pb-row" data-block="${i}"><span class="pb-dot k-${b.kind}"></span><span class="pb-main"><span class="pb-name">${esc(b.label)}</span>${BLOCK_WHY[b.kind] ? `<span class="pb-why">${BLOCK_WHY[b.kind]}</span>` : ''}</span><span class="pb-size">${fmtChars(b.chars)} · ${Math.round(b.chars * 100 / total)}%</span>${ICON.chevRight}</button>`).join('')}</div>
+      ${(() => { const ns = notSent(pv); return ns.length ? `<div class="pv-search pv-not"><b>Not in this prompt</b><ul>${ns.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="set-hint">Each branch sends only its own path, so the other lines of thinking don’t mix in.</p></div>` : ''; })()}
       ${web && !pv.search ? `<div class="pv-search pv-web"><b>${pv.preview ? 'Web search is on' : 'Web search was available'}</b><p class="set-hint">${pv.preview
         ? 'The model may search the web for the next answer. It decides itself whether it needs fresh facts, and what it finds is added inside the Gemini API.'
         : 'The model didn’t search for this answer: it decides itself when it needs fresh facts.'}</p></div>` : ''}
@@ -2847,7 +2868,7 @@ const HELP = [
     <ul><li><b>Flag</b> a message to make it a decision: a one-line summary that goes into every prompt of the conversation. The flag button in the top bar lists all decisions, with history and restore.</li>
     <li><b>Remember</b> (the bookmark under a message) drafts a fact from it: edit it, then <b>Save</b>, and it goes into every request of every conversation. A remembered message shows a filled bookmark. Edit or delete facts any time on the Memory tab.</li>
     <li><b>⋯ → Exclude from history</b> leaves a message out of what the model sees, on this branch and the ones that continue from it.</li>
-    <li>The <b>layers</b> button shows how a prompt was built: harness, memory, decisions, history and your message, and whether the model searched the web. The one next to "Writing in …" previews the next prompt. In an exported copy the memory text is left out, but the prompt still says which memory items it used.</li>
+    <li>The <b>layers</b> button shows how a prompt was built: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is, and whether the model searched the web. <b>Not in this prompt</b> counts what it left out: the other branches, excluded messages, and decisions of parked or rejected branches. The one next to "Writing in …" previews the next prompt. In an exported copy the memory text is left out, but the prompt still says which memory items it used.</li>
     <li>An answer made before later decisions says so: <b>Re-ask</b> writes it again with them. Re-asking in the middle of a chain opens a new branch.</li></ul>` },
   { id: 'models', title: 'Models as compute', cards: ['F-30', 'F-33'], body: `
     <ul><li>Pick the model for the next request next to "Writing in …". Each answer shows the model that wrote it, and its prompt view shows the token counts.</li>
@@ -2864,7 +2885,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.', 'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.', '<b>Remember</b> drafts a fact that you save, and a remembered message shows it. On a phone the breadcrumbs show the branch you are in.'] },
+  { version: 'Unreleased', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.', 'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.', '<b>Remember</b> drafts a fact that you save, and a remembered message shows it. On a phone the breadcrumbs show the branch you are in.', 'The prompt view says what each block is, and what the prompt left out: the other branches, excluded messages, dropped decisions.'] },
   { version: '0.3.0', items: ['<b>Help</b>: this guide, and what changed in each version.',
     'Your conversations are stored as Thinking States, the same files an export holds. <b>Export all</b> saves them all with your memory, and an import brings back the whole conversation.',
     'More of what you do is data: helper calls with their tokens, options, comparisons and choices, branch statuses, earlier versions of an answer, and which memory each prompt used.',
