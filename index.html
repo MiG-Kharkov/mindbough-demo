@@ -596,7 +596,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.5.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 3628237'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 2a15ba4'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -3059,13 +3059,13 @@ const HELP = [
     <li>What you do is data too: options answer a question, a comparison is a finding, a choice sets statuses, an answer keeps its versions, helper calls keep their tokens, and a prompt names the facts it used. Exports and shared pages leave the memory text out of the prompts; a conversation's export includes only the facts remembered from it.</li>
     <li><b>Export all</b> saves one .zip: a Thinking State per conversation, and your memory as documents in <code>home/memory/</code>.</li>
     <li><b>⋯</b> → <b>Share as a read-only page</b> saves a read-only page of the conversation. On that page, <b>Download Thinking State</b> gets its .zip, to import and continue.</li>
-    <li><b>Import</b> opens a Thinking State or an Export all (.zip), a shared page, or a .json from an earlier version. The demo's own Thinking States come back whole; one made by another tool opens as a tree of cards to keep writing in.</li></ul>` },
+    <li><b>Import</b> opens a Thinking State or an Export all (.zip), a shared page, or a .json from an earlier version. The demo's own Thinking States come back whole; one made by another tool opens as a tree of cards to keep writing in. A Thinking State that brings memory facts you don't have asks before adding them, since memory goes into every request; an Export all doesn't ask.</li></ul>` },
   { id: 'help', title: 'About this help', cards: ['F-34'], body: `
     <p>This help changes with the app: every new feature adds itself here, and <b>What's new</b> lists what changed in this version, with earlier versions below it. Press <b>?</b> on a keyboard to open it.</p>` },
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Fixed: an answer’s prompt shows the text the model saw, even after you edit a message of its history in place, marked edited later.'] },
+  { version: 'Unreleased', items: ['Fixed: an answer’s prompt shows the text the model saw, even after you edit a message of its history in place, marked edited later.', 'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.'] },
   { version: '0.5.0', items: ['<b>🔖</b> next to <b>⚑</b> in the top bar opens your memory, which says what it adds to every request; facts are compact rows you tap to edit, with search. <b>← Back</b> returns after Go to.',
     'In the menu, <b>⋯</b> on a conversation holds Rename, Export as a Thinking State, Share and Delete, so its title has room.'] },
   { version: '0.4.0', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.',
@@ -4052,12 +4052,12 @@ function adoptConvo(src) {
   db.order.unshift(c.id);
   return c.id;
 }
-function finishImport(added, failed, sources, facts = 0) {
+function finishImport(added, failed, sources, facts = 0, left = 0) {
   if (added.length) {
     db.current = added[added.length - 1];
     save(); renderAll(false);
     $('#sidebar').classList.remove('open');
-    toast(`Imported ${added.length} conversation${added.length === 1 ? '' : 's'}${facts ? ` and ${facts} memory fact${facts === 1 ? '' : 's'}` : ''}${failed ? ` (${failed} skipped)` : ''}`);
+    toast(`Imported ${added.length} conversation${added.length === 1 ? '' : 's'}${facts ? ` and ${facts} memory fact${facts === 1 ? '' : 's'}` : ''}${failed ? ` (${failed} skipped)` : ''}${left ? `; ${left} memory fact${left === 1 ? '' : 's'} left out` : ''}`);
   } else if (facts) { save(); renderAll(false); toast(`Imported ${facts} memory fact${facts === 1 ? '' : 's'}`); }
   else if (failed && sources > 1) toast('Nothing could be imported');
 }
@@ -4065,7 +4065,8 @@ $('#importBtn').onclick = () => $('#importFile').click();
 // Opens the Thinking States of a zip (one, or an Export all): their conversations, and the facts that come with them (F-13, F-26);
 // `memory: false` leaves memory as it is (the sample doesn't add facts to yours)
 async function importZip(buf, { memory = true } = {}) {
-  let added = [], failed = 0, facts = 0;
+  let added = [], failed = 0, facts = 0, left = 0;
+  const fresh = []; // facts of the conversations that memory doesn't have yet
   const convos = await openThinkingStates(buf);
   if (!convos.length && !(convos.home || []).length) throw new Error('No Thinking State in this zip: it needs a README.md with type: Thinking State');
   convos.forEach(c => {
@@ -4076,33 +4077,39 @@ async function importZip(buf, { memory = true } = {}) {
       if (f.mid && !Object.prototype.hasOwnProperty.call(db.convos[id].messages, f.mid)) continue;
       const known = db.memory.find(x => (f.itemId && x.itemId === f.itemId) || x.text === f.text);
       if (known) { if (!(known.src && db.convos[known.src.cid])) known.src = { cid: id, mid: f.mid }; continue; } // a fact whose conversation is gone follows it here
-      db.memory.push({ id: uid(), text: f.text, at: f.at, ...(f.mid ? { src: { cid: id, mid: f.mid } } : {}), from: db.convos[id].title, ...(TS_ID.test(f.itemId) && !db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}) }); facts++;
+      if (!fresh.some(x => x.f.text === f.text)) fresh.push({ f, id });
     }
   });
+  // Export all is your own memory (home/memory/), so its facts come back as they are. Other Thinking States may be someone else's,
+  // and memory goes into every request, so their facts come only if you say so (F-23, F-26)
+  const n = fresh.length, quote = n ? `“${fresh[0].f.text.slice(0, 80)}${fresh[0].f.text.length > 80 ? '…' : ''}”` : '';
+  if (n && ((convos.home || []).length || confirm(`This Thinking State brings ${n === 1 ? `a memory fact: ${quote}` : `${n} memory facts, such as ${quote}`}\n\nAdd ${n === 1 ? 'it' : 'them'} to your memory? Memory is about you, and every request of every conversation carries it.`))) {
+    for (const { f, id } of fresh) { db.memory.push({ id: uid(), text: f.text, at: f.at, ...(f.mid ? { src: { cid: id, mid: f.mid } } : {}), from: db.convos[id].title, ...(TS_ID.test(f.itemId) && !db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}) }); facts++; }
+  } else left = n;
   for (const f of memory ? convos.home || [] : []) { // global memory from Export all
     const c = f.bundle && Object.values(db.convos).find(x => x.tsId === f.bundle && Object.prototype.hasOwnProperty.call(x.messages, f.mid));
     const known = db.memory.find(x => x.itemId === f.itemId || x.text === f.text);
     if (known) { if (c && !(known.src && db.convos[known.src.cid])) known.src = { cid: c.id, mid: f.mid }; continue; }
     db.memory.push({ id: uid(), text: f.text, at: f.at, ...(!db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}), ...(c ? { src: { cid: c.id, mid: f.mid }, from: c.title } : f.from ? { from: f.from } : {}) }); facts++;
   }
-  return { added, failed, facts };
+  return { added, failed, facts, left };
 }
 $('#importFile').addEventListener('change', async e => {
   const files = [...e.target.files]; e.target.value = '';
-  let added = [], failed = 0, facts = 0;
+  let added = [], failed = 0, facts = 0, left = 0;
   for (const f of files) {
     try {
       const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
       if (head[0] === 0x50 && head[1] === 0x4b && head[2] === 3 && head[3] === 4) { // "PK\3\4": a zip, so Thinking States
         const r = await importZip(await f.arrayBuffer());
-        added = added.concat(r.added); failed += r.failed; facts += r.facts;
+        added = added.concat(r.added); failed += r.failed; facts += r.facts; left += r.left;
         continue;
       }
       const list = parseImport(await f.text()); list.forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; }); facts += mergeMemory(list.memory);
     }
     catch (err) { failed++; toast(err.message || 'Import failed'); }
   }
-  finishImport(added, failed, files.length, facts);
+  finishImport(added, failed, files.length, facts, left);
 });
 // The sample (F-18): a Thinking State the demo recorded, published next to the app and opened like any other,
 // so everything it holds (prompts, tokens, helper calls, a comparison, a choice, versions, a web search) is there without a key.
