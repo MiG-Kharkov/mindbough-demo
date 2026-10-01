@@ -606,7 +606,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 274f024'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main a12560e'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -3105,7 +3105,8 @@ const HELP = [
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
   { version: 'Unreleased', items: ['Fixed: on a phone, the branch you write in and the model are no longer cut mid-letter, the buttons under a message are bigger, and toasts no longer cover the message box.',
-    'Fixed: the app opens again on iPhones with iOS older than 16.4, where it showed nothing at all.'] },
+    'Fixed: the app opens again on iPhones with iOS older than 16.4, where it showed nothing at all.',
+    'Fixed: a shared read-only page no longer holds your memory facts in the earlier versions of a regenerated answer.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -3184,10 +3185,12 @@ const stamp = () => new Date().toISOString().slice(0, 10);
 const omitMemory = r => { if (r && Array.isArray(r.blocks)) r.blocks.forEach(b => { if (b.kind === 'memory') { b.text = ''; b.omitted = true; } }); };
 function cleanConvo(c) {
   const x = JSON.parse(JSON.stringify(c));
+  // every request the copy keeps loses its memory text: an answer's, its earlier versions', a comparison's
+  const walk = o => { if (!o || typeof o !== 'object') return; if (Array.isArray(o.blocks)) omitMemory(o); Object.values(o).forEach(walk); };
   Object.values(x.messages).forEach(m => {
-    delete m.streaming;
-    omitMemory(m.request);
-    if (m.compare) omitMemory(m.compare.request);
+    if (m.streaming && m.prev) Object.assign(m, m.prev); // a shared page holds the answer being replaced, as an export does
+    delete m.streaming; delete m.prev;
+    walk(m);
   });
   return x;
 }
