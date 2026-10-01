@@ -612,7 +612,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main a70f709'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main dd57b26'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -944,8 +944,8 @@ function md(src) {
     const code = [];
     let s = src.replace(/```[\s\S]*?(?:```|$)|`[^`\n]+`/g, m => { code.push(m); return `\u0001C${code.length - 1}\u0001`; });
     // 2) pull math out so markdown doesn't mangle it
-    const math = [];
-    const put = (tex, display) => { math.push({ tex, display }); return `MATHPH${math.length - 1}ENDPH`; };
+    const math = [], PH = 'MATHPH' + uid().replace(/[^a-z0-9]/gi, '') + 'N'; // a token per render, which no text can forge (B20)
+    const put = (tex, display) => { math.push({ tex, display }); return `${PH}${math.length - 1}Z`; };
     // (inline $…$ avoids regex lookbehind, which is a syntax error before iOS 16.4 and would stop the whole app)
     s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_, t) => put(t, true))
          .replace(/\\\[([\s\S]+?)\\\]/g, (_, t) => put(t, true))
@@ -956,11 +956,15 @@ function md(src) {
     let html = DOMPurify.sanitize(marked.parse(s, { renderer: getRenderer(), gfm: true, breaks: true, async: false }), PURIFY)
       .split(COPY_MARK).join('<button data-act="copycode">Copy</button>');
     // 4) render math
-    if (math.length) html = html.replace(/MATHPH(\d+)ENDPH/g, (_, i) => {
-      const m = math[i];
-      if (window.katex) { try { return katex.renderToString(m.tex, { displayMode: m.display, throwOnError: false, output: 'html' }); } catch (e) {} }
-      return esc(m.display ? `$$${m.tex}$$` : `$${m.tex}$`);
-    });
+    if (math.length) {
+      const render = m => { if (window.katex) { try { return katex.renderToString(m.tex, { displayMode: m.display, throwOnError: false, output: 'html' }); } catch (e) {} } return esc(m.display ? `$$${m.tex}$$` : `$${m.tex}$`); };
+      const re = new RegExp(`${PH}(\\d+)Z`, 'g'), box = document.createElement('template'); box.innerHTML = html;
+      const walk = document.createTreeWalker(box.content, NodeFilter.SHOW_TEXT), hits = [];
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) if (n.nodeValue.includes(PH) && !(n.parentElement && n.parentElement.closest('code, pre'))) hits.push(n);
+      hits.forEach(n => { const t = document.createElement('template'); t.innerHTML = esc(n.nodeValue).replace(re, (_, i) => math[i] ? render(math[i]) : ''); n.replaceWith(t.content); });
+      // a token left in an attribute (math inside a link's address) gets back its own text, escaped, never markup
+      html = box.innerHTML.replace(re, (_, i) => math[i] ? esc(math[i].display ? `$$${math[i].tex}$$` : `$${math[i].tex}$`) : '');
+    }
     return html;
   } catch (e) { return mdBasic(src); }
 }
@@ -974,7 +978,7 @@ function renderSidebar() {
     const nb = Object.keys(c.branches).length;
     const d = new Date(c.updated || c.created);
     const when = d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
-    return `<div class="conv ${id === db.current ? 'active' : ''}" data-cid="${id}" tabindex="0">
+    return `<div class="conv ${id === db.current ? 'active' : ''}" data-cid="${id}" tabindex="0" role="button" aria-label="Open “${esc(c.title)}”"${id === db.current ? ' aria-current="true"' : ''}>
       <div class="t"><b>${esc(c.title)}</b><small>${when}, ${nb} branch${nb === 1 ? '' : 'es'}</small></div>
       <button class="rowbtn" data-conv-more="${id}" title="Rename, export, share or delete" aria-label="Actions for this conversation" aria-haspopup="menu">${ICON.more}</button></div>`;
   }).join('');
@@ -1010,6 +1014,9 @@ $('#convList').addEventListener('click', e => {
   if (more) { openConvMenu(more, more.dataset.convMore); return; }
   const row = e.target.closest('[data-cid]');
   if (row) { db.current = row.dataset.cid; save(); renderAll(false); $('#sidebar').classList.remove('open'); }
+});
+$('#convList').addEventListener('keydown', e => { // a row takes focus, so Enter or Space opens it, as a click does (B21)
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('#convList .conv[data-cid]')) { e.preventDefault(); e.target.click(); }
 });
 $('#convList').addEventListener('scroll', () => { if (menuFor && menuFor.mode === 'conv') closeModelMenu(); });
 $('#newChat').onclick = () => { newConvo(); $('#sidebar').classList.remove('open'); };
@@ -3251,7 +3258,8 @@ const WHATS_NEW = [
     'Deleting a branch, a fact, or unflagging a decision in the panel happens at once, with <b>Undo</b>, like deleting a message. Only a whole conversation still asks first.',
     'The <b>⚑</b> count is the decisions in prompts, a parked or rejected branch says so where you write, and an excluded flagged message keeps its decision in the prompts.',
     '<b>Remember</b> drafts a fact about you, never a decision. A reworded fact keeps its earlier wordings, also in Export all.',
-    'A sample or a Thinking State you have already opens again instead of adding a copy. Another tool’s session keeps who wrote what.'] },
+    'A sample or a Thinking State you have already opens again instead of adding a copy. Another tool’s session keeps who wrote what.',
+    'Fixed: text pasted from a PDF no longer breaks an export, and the menu’s conversations open with Enter or Space.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -3691,7 +3699,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
   for (const x of (c.calls || []).slice().sort((a, b) => a.at - b.at)) {
     const m = x.mid && c.messages[x.mid], chars = x.chars | 0;
     lines.push({ id: x.id, kind: 'call', task: x.task, node: byBranch[m ? m.branchId : c.root], by: `mindbough-demo/${x.model || 'unknown'}`, at: iso(x.at),
-      request: { at: iso(x.at), chars, ...(PROMPT_IDS[x.task] ? { prompt: PROMPT_IDS[x.task] } : {}), blocks: [{ kind: 'prompt', chars }] },
+      request: { at: iso(x.at), chars, ...(Object.prototype.hasOwnProperty.call(PROMPT_IDS, x.task) ? { prompt: PROMPT_IDS[x.task] } : {}), blocks: [{ kind: 'prompt', chars }] },
       ...(x.usage ? { usage: { input: x.usage.prompt | 0, output: x.usage.answer | 0, ...(x.usage.thoughts ? { reasoning: x.usage.thoughts | 0 } : {}) } } : {}),
       ...(x.output ? { output: x.output } : {}), ...(x.error ? { error: x.error } : {}), ...(m ? { ext: { 'mindbough-demo': { message: m.id } } } : {}) });
   }
@@ -3708,7 +3716,8 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
     src.author = m.role === 'model' && !v.edited ? `mindbough-demo/${v.model || 'unknown'}` : 'human:me';
     n.body = (v.text || '').trim();
   }
-  return lines.map(x => JSON.stringify(x)).join('\n') + '\n';
+  // JSON.stringify leaves U+2028, U+2029 and U+0085 as they are, and a reader splitting on every line break would cut the line (B09)
+  return lines.map(x => JSON.stringify(x).replace(/[\u2028\u2029\u0085]/g, ch => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'))).join('\n') + '\n';
 }
 /* ---------------- open a Thinking State (.zip) ---------------- */
 const ENTRY_ID = /^[0-9a-z][0-9a-z_-]{3,31}$/; // a session entry's id (spec §10.3)
