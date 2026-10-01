@@ -611,7 +611,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main b175952'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 8d10bd8'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -744,7 +744,7 @@ function repairConvo(c) {
   });
 }
 Object.values(db.convos).forEach(repairConvo);
-Object.values(db.convos).forEach(c => { if (c.title === 'Нова розмова') c.title = 'New conversation'; Object.values(c.branches || {}).forEach(b => { delete b.regenOf; }); });
+Object.values(db.convos).forEach(c => { if (c.title === 'Нова розмова') c.title = 'New conversation'; });
 let saving = Promise.resolve();
 const save = () => {
   if (RO) return;
@@ -1163,11 +1163,11 @@ function renderCanvas() {
         const t = eo.text.replace(/\s+/g, ' ');
         body += `<div class="fork-note">${ICON.pencil}<span>Edited version of: “${esc(t.slice(0, 60))}${t.length > 60 ? '…' : ''}”</span></div>`;
       }
-      const ro = false;
+      const ro = !eo && b.regenOf && c.messages[b.regenOf];
       if (ro) {
         const q = c.messages[b.forkMsgId];
-        const t = q ? q.text.replace(/\s+/g, ' ') : '';
-        body += `<div class="fork-note">${ICON.regen}<span>${q ? `Alternative answer to: “${esc(t.slice(0, 60))}${t.length > 60 ? '…' : ''}”` : 'Alternative answer'}</span></div>`;
+        const t = q ? plain(q.text || '').replace(/\s+/g, ' ') : '';
+        body += `<div class="fork-note">${ICON.regen}<span>${q ? `Asked again: “${esc(t.slice(0, 60))}${t.length > 60 ? '…' : ''}”. The earlier answer stays in “${esc(branchName(parent, c))}”.` : 'Asked again'}</span></div>`;
       }
       const fm = (eo || ro) ? null : c.messages[b.forkMsgId];
       const said = fm ? plain(fm.text || '').replace(/\s+/g, ' ').trim() : '';
@@ -1585,12 +1585,22 @@ function answerWaiting(c, m) {
 function reaskHTML(c, m) {
   const b = c.branches[m.branchId];
   if (RO || m.role !== 'model' || m.streaming || m.error || !b || b.collapsed || b.msgIds[b.msgIds.length - 1] !== m.id) return '';
+  // asked again already: say where, rather than offer it once more (FLOW-09)
+  const again = Object.values(c.branches).filter(k => k.regenOf === m.id).sort((x, y) => y.created - x.created)[0];
+  if (again) return `<div class="reask" data-sig="again:${again.id}"><span>${ICON.regen}Asked again in “${esc(branchName(again, c))}”</span><button class="btn" data-act="goto" data-bid="${again.id}">Go to</button></div>`;
   const later = laterDecisions(c, m);
-  if (!later.length) return '';
-  const last = later[later.length - 1], n = later.length, changed = later.filter(d => d.changed).length, fresh = n - changed;
-  const pl = k => `${k} decision${k === 1 ? '' : 's'}`;
-  const what = !changed ? `Made before ${pl(n)}` : !fresh ? `${pl(n)} changed after this answer` : `Made before ${pl(fresh)}, and ${changed} changed after it`;
-  return `<div class="reask" data-sig="${esc(later.map(d => d.id + d.decision.summary.length).join())}"><span>${ICON.flagOn}${what}: “${esc(snippetOf(last.decision.summary, 80))}”${n > 1 ? ` and ${n - 1} more` : ''}</span><button class="btn" data-act="reask" title="Ask again: the new answer gets every current decision">Re-ask</button></div>`;
+  // messages it was sent that changed since: edited, restored or deleted (FLOW-07)
+  const rec = m.request && Array.isArray(m.request.blocks) ? m.request.blocks : [];
+  const moved = rec.filter(k => (k.kind === 'history' || k.kind === 'message') && Array.isArray(k.ids) && Array.isArray(k.sigs))
+    .flatMap(k => k.ids.map((id, j) => [id, k.sigs[j]])).filter(([id, sig]) => sig && (!c.messages[id] || sigOf(c.messages[id].text || '') !== sig)).length;
+  if (!later.length && !moved) return '';
+  const changed = later.filter(d => d.changed).length, fresh = later.length - changed, last = later[later.length - 1];
+  const pl = (k, one) => `${k} ${one}${k === 1 ? '' : 's'}`, quote = last ? `: “${esc(snippetOf(last.decision.summary, 80))}”` : '';
+  const what = fresh && !changed && !moved ? `${pl(fresh, 'decision')} came after this answer${fresh > 1 ? ', the latest' : ''}`
+    : changed && !fresh && !moved ? `${pl(changed, 'decision')} changed after this answer`
+    : moved && !later.length ? `${pl(moved, 'message')} above changed after this answer`
+    : `Since this answer: ${[fresh && pl(fresh, 'new decision'), changed && pl(changed, 'changed decision'), moved && `${pl(moved, 'message')} above changed`].filter(Boolean).join(', ')}`;
+  return `<div class="reask" data-sig="${esc(later.map(d => d.id + d.decision.summary.length).join() + '|' + moved)}"><span>${ICON.flagOn}${what}${quote}</span><button class="btn" data-act="reask" title="Ask again: the new answer gets the current decisions and messages">Re-ask</button></div>`;
 }
 // Decisions changed: update those lines, leaving alone a message you are working in
 function refreshReask() {
@@ -1615,15 +1625,15 @@ function reask(c, m, model) {
   if (!answerTail(c, m) || !prev) { regenerateInPlace(c, m, model); return; }
   if (!canGenerate()) return;
   const was = branchOf(c, m.id);
-  answerInNewBranch(c, prev, model);
+  answerInNewBranch(c, prev, model, m.id);
   toast(`Answered in a new branch. “${branchName(was, c)}” stays as it was`);
 }
 // Branch out from your own message: new branch that starts with Gemini's answer
-function answerInNewBranch(c, m, model) {
+function answerInNewBranch(c, m, model, regenOf) {
   if (model && !canGenerate()) return;
   const b = branchOf(c, m.id); if (!b) return;
   c.counter = (c.counter || 0) + 1;
-  const nb = { id: uid(), parentId: b.id, forkMsgId: m.id, msgIds: [], n: c.counter, created: Date.now() };
+  const nb = { id: uid(), parentId: b.id, forkMsgId: m.id, msgIds: [], n: c.counter, created: Date.now(), ...(regenOf ? { regenOf } : {}) }; // regenOf: the answer asked again
   c.branches[nb.id] = nb;
   c.focus = nb.id;
   if (!model) {
@@ -1664,7 +1674,7 @@ function saveEdit(c, m, el) {
     const before = m.text;
     addVersion(m, m); m.editedAt = Date.now(); delete m.restores; delete m.restoredAt; // a message edited in place keeps the text it had, so the prompts that sent it stay true (F-06)
     m.text = text; m.edited = true; c.updated = Date.now(); save(); renderOutline();
-    stopEdit(); textChanged(c, m, before); return;
+    stopEdit(); textChanged(c, m, before); refreshReask(); return; // the answers below it may now say a message above changed
   }
   stopEdit();
 }
@@ -2611,7 +2621,7 @@ async function sendToBranch(c, bid, text, modelOverride) {
   const picked = modelSel.value || db.model;
   let model = modelOverride || picked;
 
-  const req = buildRequest(c, historyFor(c, bid));
+  const req = buildRequest(c, historyFor(c, bid), b.msgIds.length === 0 ? b.regenOf : null);
   const end = req.turns[req.turns.length - 1];
   if (!end || end.role !== 'user') { save(); renderCanvas(); toast('Nothing to answer: the question is excluded from history. Include it again first.'); return; } // FLOW-05
   const am = { id: uid(), role: 'model', text: '', branchId: bid, ts: Date.now(), streaming: true, model, request: requestRecord(req, model) };
@@ -2946,13 +2956,13 @@ function pvRender(pv) {
   const turns = pvTurns(pv, b);
   if (pv.level === 'block') {
     const gone = turns.some(t => t.deleted), now = turns.reduce((n, t) => n + (t.deleted ? 0 : t.text.length), 0), lost = turns.some(t => t.lost) || (!pv.preview && !gone && now !== b.chars && !turns.some(t => t.later));
-    const note = [gone && 'A message sent here was deleted after this answer: its text is gone.', turns.some(t => t.ids && t.ids.length > 1) && 'Messages of one role next to each other go to the model as one turn.', lost ? 'Edited after this answer, and the earlier text wasn’t kept: this shows the current text.' : turns.some(t => t.later) ? 'Edited after this answer: this shows the text the model saw.' : ''].filter(Boolean).join(' ');
+    const note = [gone && 'A message sent here was deleted after this answer: its text is gone.', turns.some(t => t.ids && t.ids.length > 1) && 'Messages of one role next to each other go to the model as one turn.', lost ? 'Changed after this answer, and the earlier text wasn’t kept: this shows the current text.' : turns.some(t => t.later) ? 'Changed after this answer: this shows the text the model saw.' : ''].filter(Boolean).join(' ');
     return `${note ? `<p class="pv-note">${note}</p>` : ''}
-      <div>${turns.map((t, j) => `<button class="pb-row" data-part="${j}"><span class="pb-role">${roleName(t.role)}${t.later ? '<span class="pb-later">edited later</span>' : ''}${!t.deleted && t.ids && t.ids.length > 1 ? `<span class="pb-later">${t.ids.length} messages</span>` : ''}</span><span class="pb-snip">${esc(plain(t.text).slice(0, 140))}</span><span class="pb-size">${t.deleted ? '' : fmtChars(t.text.length)}</span>${ICON.chevRight}</button>`).join('')}</div>`;
+      <div>${turns.map((t, j) => `<button class="pb-row" data-part="${j}"><span class="pb-role">${roleName(t.role)}${t.later ? '<span class="pb-later">changed later</span>' : ''}${!t.deleted && t.ids && t.ids.length > 1 ? `<span class="pb-later">${t.ids.length} messages</span>` : ''}</span><span class="pb-snip">${esc(plain(t.text).slice(0, 140))}</span><span class="pb-size">${t.deleted ? '' : fmtChars(t.text.length)}</span>${ICON.chevRight}</button>`).join('')}</div>`;
   }
   const t = turns[pv.part];
   if (t.deleted) return `<p class="pv-note">Deleted after this answer, so its text is gone. The request still names it: it was sent.</p>`;
-  return `${t.later ? `<p class="pv-note">${t.lost ? 'Edited after this answer, and the earlier text wasn’t kept: this is the current text.' : 'Edited after this answer: this is the text the model saw.'}</p>` : ''}<p class="pv-meta"><span><b>${roleName(t.role)}</b></span><span>${fmtChars(t.text.length)}</span></p><pre class="pv-text">${esc(t.text)}</pre>`;
+  return `${t.later ? `<p class="pv-note">${t.lost ? 'Changed after this answer, and the earlier text wasn’t kept: this is the current text.' : 'Changed after this answer: this is the text the model saw.'}</p>` : ''}<p class="pv-meta"><span><b>${roleName(t.role)}</b></span><span>${fmtChars(t.text.length)}</span></p><pre class="pv-text">${esc(t.text)}</pre>`;
 }
 function pvClick(pv, e) {
   const blk = e.target.closest('[data-block]'), part = e.target.closest('[data-part]');
@@ -3149,7 +3159,7 @@ const HELP = [
     <ul><li><b>Branch out</b> under an answer: a new column that continues from there. The model sees only that branch's path, so dead ends don't pollute the context. Under your own message, <b>Branch out</b> offers <b>Edit in a new branch</b> or an answer from any model.</li>
     <li>Under a message: <b>Branch out</b>, the flag (a decision), the bookmark (<b>Remember</b>) and the eye (<b>Exclude from history</b>): what the next prompts carry. <b>⋯</b> holds the rest: how the prompt of an answer was built, branch into options, edit, copy the message or the conversation up to here, and delete.</li>
     <li><b>Delete</b>: your question goes with its answer; an answer goes alone, and its question waits with <b>Answer</b>. <b>Undo</b> in the toast brings it back.</li>
-    <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place too. Either way the earlier text is kept, so an answer's prompt still shows what the model saw, marked <b>edited later</b>.</li>
+    <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place too. Either way the earlier text is kept, so an answer's prompt still shows what the model saw, marked <b>changed later</b>.</li>
     <li>Tap an answer's model chip to regenerate it with any model. The old answer stays as a version (<b>N versions</b> next to the model); in the middle of a chain the new one opens in a new branch. Every version is kept, and <b>Restore</b> puts an earlier one back as a new version.</li>
     <li>The <b>status</b> chip on a branch: Open, Accepted, Parked or Rejected. The decisions of a parked or rejected branch, and of the branches under it, leave the prompts.</li>
     <li>Branches name themselves; the pencil on a column renames it (on a desktop, a double-click too). The × on a column deletes it, with the branches under it, after asking.</li>
@@ -3167,7 +3177,7 @@ const HELP = [
     <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) drafts one from the message, saved when you tap <b>Save</b>. Tap a fact to edit or delete it; with many facts, search them.</li>
     <li>The <b>eye</b> under a message excludes it from history: the model doesn't see it, on this branch and the ones that continue from it. Tap it again to include it.</li>
     <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. The layers button above the message box previews your next prompt.</li>
-    <li>An answer written before later decisions says so: <b>Re-ask</b> writes it again with them. Re-asking in the middle of a chain opens a new branch.</li></ul>` },
+    <li>An answer written before later decisions, or before a message above it changed, says so: <b>Re-ask</b> writes it again with them. Re-asking in the middle of a chain opens a new branch, which says what it asks again, and the old answer says where it was asked.</li></ul>` },
   { id: 'models', title: 'Models and web search', cards: ['F-30', 'F-33'], body: `
     <p class="help-why">A cheap model for small jobs, and the tokens in view.</p>
     <ul><li>Pick the model for your next request above the message box. Each answer shows the model that wrote it, and its prompt view the tokens.</li>
@@ -3195,7 +3205,8 @@ const WHATS_NEW = [
     'Every version of an answer is kept, and <b>Restore</b> puts an earlier one back as a new version. A prompt shows a message deleted since as deleted.',
     'An answer you stop or that is cut off keeps what arrived, tagged <b>stopped</b> or <b>cut off</b>, and the app’s own words are never sent to the model as the answer.',
     'Under your own message, <b>Branch out</b> offers <b>Edit in a new branch</b>. A prompt view says when messages go to the model as one turn.',
-    'Fixed: a saved comparison says it has changed when any branch, the conversation up to them or the decisions change, and a branch left empty no longer counts in <b>Compare N</b>.'] },
+    'Fixed: a saved comparison says it has changed when any branch, the conversation up to them or the decisions change, and a branch left empty no longer counts in <b>Compare N</b>.',
+    'An answer asked again in a new branch is linked to the old one, here and in the export; a last answer says when a message above it changed.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -3574,7 +3585,8 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       // a message's earlier versions come first: the first as it was written, each later one replacing the one before;
       // a version edited in place is by you, without a request (spec §14.5, S4)
       const vs = (m.versions || []).filter(v => v && typeof v.text === 'string'), ids = [];
-      const variant = i === 0 && b.editOf && c.messages[b.editOf] ? { variant_of: b.editOf } : {};
+      const variant = i === 0 && b.editOf && c.messages[b.editOf] ? { variant_of: entryAt(b.editOf, null, b.created) }
+        : i === 0 && m.role === 'model' && b.regenOf && c.messages[b.regenOf] ? { variant_of: entryAt(b.regenOf, null, b.created) } : {}; // spec §14.5
       let prev = null;
       vs.forEach((v, k) => {
         const id = k === 0 ? m.id : derive(`${m.id}r${k}`), src = srcOf(v.search);
@@ -3874,8 +3886,9 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     }
     if (Array.isArray(b.entries) && (b.kind === 'history' || b.kind === 'message')) {
       // an entry that replaces another names the exact version sent; an id no entry has was deleted since, and stays (spec S6)
-      const sent = b.entries.map(String).filter(x => ENTRY_ID.test(x)).slice(0, 2000), exact = sent.some(x => toMsg.has(x) && toMsg.get(x) !== x);
-      return { ...out, ids: sent.map(x => toMsg.get(x) || x), ...(exact ? { sigs: sent.map(x => toMsg.has(x) && toMsg.get(x) !== x ? sigOf(entryText.get(x) || '') : null) } : {}) };
+      // each entry named is the exact version sent, so its text gives the signature that tells, later, whether that message changed
+      const sent = b.entries.map(String).filter(x => ENTRY_ID.test(x)).slice(0, 2000);
+      return { ...out, ids: sent.map(x => toMsg.get(x) || x), sigs: sent.map(x => toMsg.has(x) ? sigOf(entryText.get(x) || '') : null) };
     }
     if (b.kind === 'decisions' && Array.isArray(b.nodes)) return { ...out, text: typeof b.text === 'string' ? b.text : '', nodes: b.nodes.map(String).filter(x => TS_ID.test(x)).slice(0, 200) };
     return { ...out, text: typeof b.text === 'string' ? b.text : '' };
@@ -3938,7 +3951,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
         const found = webSearchOf({ webSearchQueries: ws && isObj(ws.input) ? ws.input.queries : [], groundingChunks: (Array.isArray(sv.sources) ? sv.sources : ws && Array.isArray(ws.sources) ? ws.sources : []).filter(isObj).map(x => ({ web: { uri: x.resource, title: x.title } })) });
         if (found) m.search = found;
       }
-      if (b.msgIds.length === 0 && slot.variant_of && toMsg.has(slot.variant_of)) b.editOf = toMsg.get(slot.variant_of);
+      if (b.msgIds.length === 0 && slot.variant_of && toMsg.has(slot.variant_of)) { if (role === 'model') b.regenOf = toMsg.get(slot.variant_of); else b.editOf = toMsg.get(slot.variant_of); }
       convo.messages[m.id] = m; b.msgIds.push(m.id);
     }
     const title = String(node.meta.title || ''), first = b.msgIds.map(x => convo.messages[x]).find(x => x.role === 'user');
@@ -4183,6 +4196,7 @@ function adoptConvo(src) {
     const fork = mid.get(b.forkMsgId);
     if (nb.parentId && fork && c.branches[nb.parentId].msgIds.includes(fork)) nb.forkMsgId = fork;
     if (mid.has(b.editOf)) nb.editOf = mid.get(b.editOf);
+    if (mid.has(b.regenOf)) nb.regenOf = mid.get(b.regenOf);
   }
   // an answer's prompt record points at other messages, so its ids are remapped as well
   const count = v => Math.max(0, Math.floor(Number(v)) || 0);
