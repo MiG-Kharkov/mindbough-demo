@@ -377,6 +377,7 @@ button.decision:not(:disabled):hover{box-shadow:0 0 0 3px var(--flag-soft)}
 .decision .dtext i{color:var(--muted)}
 .dec-stale{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;margin:4px 2px 0;font-size:12.5px;color:var(--muted)}
 .dec-stale .linkbtn{font-size:13px;padding:6px 0}
+.to-out{color:var(--flag);font-weight:600}
 .decision.editing{flex-direction:column;align-items:stretch}
 .dec-area{width:100%;min-height:46px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font:inherit;padding:6px 8px;resize:vertical}
 .msg.flagged .bubble{box-shadow:inset 3px 0 0 var(--flag);background:linear-gradient(var(--flag-soft),var(--flag-soft)),var(--ai)}
@@ -611,7 +612,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 9e73a20'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main dbdf42e'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1101,6 +1102,8 @@ function msgHTML(c, m) {
     } else {
       const txt = d.summary ? esc(d.summary) : d.pending ? '<i>Writing a summary…</i>' : `<i>${RO ? 'No summary' : 'Tap to add a one-line summary'}</i>`;
       dec = `<button class="decision" data-act="dec-edit" type="button"${RO ? ' disabled' : ' title="Edit the summary that goes into prompts"'}><span class="dlabel">${ICON.flagOn}Decision</span><span class="dtext">${txt}</span></button>`;
+      const out = droppedAt(c, m.branchId);
+      if (out && d.summary) dec += `<div class="dec-stale"><span>Not in prompts: “${esc(branchName(out, c))}” is ${esc(statusLabel(out).toLowerCase())}.</span></div>`;
       if (!RO && decisionStale(m)) dec += `<div class="dec-stale"><span>Written for an earlier version of this message.</span>${keyInput.value.trim() ? '<button class="linkbtn" data-act="dec-auto" title="Let the model for summaries write it for this version">Update</button>' : ''}<button class="linkbtn" data-act="dec-keep" title="The summary still holds: keep it">Keep</button></div>`;
     }
   }
@@ -1118,7 +1121,7 @@ function msgHTML(c, m) {
       <button class="ib branch" data-act="branch" title="${m.role === 'user' ? 'Edit this message, or get another answer to it, in a new branch' : 'Continue the conversation in a new branch from here'}">${ICON.branch}Branch out</button>
       <button class="ib ${m.flagged ? 'on-flag' : ''}" data-act="flag" title="${m.flagged ? 'Remove the flag (the decision leaves prompts)' : 'Flag as a decision'}" aria-pressed="${!!m.flagged}">${m.flagged ? ICON.flagOn : ICON.flag}</button>
       <button class="ib ${remembered ? 'on-mem' : ''}" data-act="remember" title="${remembered ? 'Remembered: edit the fact' : 'Remember this in all conversations'}" aria-pressed="${remembered}">${remembered ? ICON.bookmarkOn : ICON.bookmark}</button>
-      <button class="ib ${m.hidden ? 'on-hide' : ''}" data-act="hide" title="${m.hidden ? 'Excluded from history: tap to include it again' : 'Exclude from history: the model won’t see it'}" aria-label="Exclude from history" aria-pressed="${!!m.hidden}">${ICON.eyeOff}</button>
+      <button class="ib ${m.hidden ? 'on-hide' : ''}" data-act="hide" title="${m.hidden ? 'Excluded from history: tap to include it again' : m.flagged ? 'Exclude from history: the model won’t see the text, and its decision stays in the prompts' : 'Exclude from history: the model won’t see it'}" aria-label="Exclude from history" aria-pressed="${!!m.hidden}">${ICON.eyeOff}</button>
       <button class="ib more" data-act="more" title="More: ${m.role === 'model' ? 'the prompt, ' : ''}options, edit, copy, delete" aria-label="More actions" aria-haspopup="menu">${ICON.more}</button>
     </div>`;
   }
@@ -1276,8 +1279,9 @@ function renderChrome() {
     `${i ? '<span>›</span>' : ''}<button data-crumb="${b.id}" class="${b.id === c.focus ? 'here' : ''}">${esc(branchName(b))}</button>`).join('');
   $('#crumbs').scrollLeft = $('#crumbs').scrollWidth; // on a narrow screen the end of the path, where you are, stays in view
   const b = c.branches[c.focus];
-  $('#toLabel').innerHTML = `${ICON.branch}<span><span class="wl">Writing in </span><b>${esc(branchName(b))}</b></span>`;
-  $('#toLabel').title = `Writing in ${branchName(b)}`;
+  const out = droppedAt(c, b.id), st = out ? statusLabel(out).toLowerCase() : '';
+  $('#toLabel').innerHTML = `${ICON.branch}<span><span class="wl">Writing in </span><b>${esc(branchName(b))}</b>${out ? ` <span class="to-out">· ${esc(st)}</span>` : ''}</span>`;
+  $('#toLabel').title = `Writing in ${branchName(b)}${out ? `: ${out === b ? 'it is' : `“${branchName(out, c)}” is`} ${st}, so decisions here don’t go into prompts` : ''}`;
   renderOutline();
 }
 $('#crumbs').addEventListener('click', e => { const t = e.target.closest('[data-crumb]'); if (t) goTo(t.dataset.crumb); });
@@ -1479,7 +1483,7 @@ function messageMore(c, m, act) {
   else if (act === 'hide') {
     m.hidden = !m.hidden; save();
     rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline(); renderDecCount();
-    toast(m.hidden ? 'Excluded: the model no longer sees this message' : 'Included in the history again');
+    toast(m.hidden ? (m.flagged && m.decision && m.decision.summary ? 'Excluded from history. Its decision still goes into every prompt' : 'Excluded: the model no longer sees this message') : 'Included in the history again');
   }
 }
 function closeModelMenu() { $('#modelMenu').classList.remove('show'); menuFor = null; }
@@ -1717,7 +1721,7 @@ function startDecisionEdit(c, m) {
   decEdit = { cid: c.id, mid: m.id };
   rerenderMsg(c.id, m.id); scheduleLayout();
   const ta = document.querySelector(`.msg[data-mid="${m.id}"] .dec-area`);
-  if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); setTimeout(() => ta.closest('.decision').scrollIntoView({ block: 'nearest' }), 50); }
 }
 // Every change keeps the previous text (newest first, up to 10), so a decision can be rolled back
 function setDecision(m, summary, model, sig) {
@@ -2265,7 +2269,7 @@ function statusClick(e) {
 function setStatus(c, b, st) {
   if (st === 'open' || !BRANCH_STATUS.some(x => x.id === st)) delete b.status; else b.status = st;
   c.updated = Date.now(); save();
-  if (db.current === c.id) { renderCanvas(); renderSidebar(); renderDecCount(); }
+  if (db.current === c.id) { renderCanvas(); renderChrome(); renderSidebar(); renderDecCount(); }
 }
 
 /* ---------------- branch names ---------------- */
@@ -2519,13 +2523,19 @@ const factsHere = new Set(); // facts this tab added while writing
 // save at the same moment each keep their fact, and both end with both (F-17, F-23)
 let memOps = [];
 const MEM_OPS_MS = 10000;
-function memOp(op, x) { if (x) memOps = memOps.filter(o => Date.now() - o.at < MEM_OPS_MS).concat({ op, id: x.id, fact: op === 'del' ? null : { ...x }, at: Date.now() }); }
+function memOp(op, x) {
+  if (!x) return;
+  memOps = memOps.filter(o => Date.now() - o.at < MEM_OPS_MS).concat({ op, id: x.id, fact: op === 'del' ? null : { ...x }, at: Date.now() });
+  // a deletion travels with the save as a tombstone, so another tab doesn't put back a fact it added just before (B13)
+  db.memoryGone = (Array.isArray(db.memoryGone) ? db.memoryGone : []).filter(g => g && Date.now() - g.at < 6 * MEM_OPS_MS && g.id !== x.id).concat(op === 'del' ? [{ id: x.id, at: Date.now() }] : []);
+}
 function reapplyMemOps() {
   memOps = memOps.filter(o => Date.now() - o.at < MEM_OPS_MS);
   let changed = false;
   for (const o of memOps) {
     const i = db.memory.findIndex(y => y.id === o.id);
     if (o.op === 'del') { if (i >= 0) { db.memory.splice(i, 1); changed = true; } }
+    else if ((Array.isArray(db.memoryGone) ? db.memoryGone : []).some(g => g && g.id === o.id && g.at >= o.at)) continue; // deleted since, in another tab
     else if (i < 0) { db.memory.unshift({ ...o.fact }); changed = true; }
     else if (db.memory[i].text !== o.fact.text && (db.memory[i].at || 0) <= o.fact.at) { db.memory[i] = { ...db.memory[i], text: o.fact.text, at: o.fact.at }; changed = true; }
   }
@@ -2830,6 +2840,7 @@ let sheetView = null; // { title, settings?: true, render?: () => html, onClick?
 function openSheet(view) {
   sheetView = view;
   closeModelMenu();
+  $('#toast').classList.remove('show', 'act'); // an earlier toast would sit over the sheet; one raised from the sheet shows above it
   $('#sidebar').classList.remove('open');
   $('#sheetTitle').textContent = view.title;
   $('#settingsView').hidden = !view.settings;
@@ -2992,8 +3003,13 @@ $('#promptPreview').onclick = previewPrompt;
 
 /* ---------------- decisions panel: read, edit, roll back ---------------- */
 let panelEdit = null, panelHist = null; // message ids
-function flaggedIn(c) { return Object.values(c.messages).filter(m => m.flagged).sort((a, b) => b.ts - a.ts); }
-function renderDecCount() { const c = cur(); $('#decCount').textContent = (c && flaggedIn(c).length) || ''; $('#memCount').textContent = db.memory.length || ''; refreshReask(); }
+function flaggedIn(c) { return Object.values(c.messages).filter(m => m.flagged).sort((a, b) => a.ts - b.ts); } // in the order the prompts carry them
+function renderDecCount() {
+  const c = cur(), all = c ? flaggedIn(c).length : 0, on = c ? decisionsIn(c).length : 0;
+  $('#decCount').textContent = on || '';
+  $('#openDecisions').title = !all ? 'Decisions in force in this conversation' : `${on} decision${on === 1 ? '' : 's'} in prompts${all > on ? `, ${all - on} not` : ''}`;
+  $('#memCount').textContent = db.memory.length || ''; refreshReask();
+}
 const shortDate = t => new Date(t).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 function renderDecisionsPanel() {
   const c = cur(); if (!c) return '';
@@ -3010,11 +3026,11 @@ function renderDecisionsPanel() {
            <div class="dp-actions"><button class="btn" data-dp="cancel">Cancel</button><button class="btn primary" data-dp="save">Save</button></div>`
         : `<div class="dp-text">${d.summary ? esc(d.summary) : d.pending ? '<i>Writing a summary…</i>' : '<i>No summary yet, so it is not in prompts.</i>'}</div>
            <div class="dp-meta">${esc(meta)}</div>
-           <div class="dp-actions"><button class="btn" data-dp="goto">Go to</button><button class="btn" data-dp="edit">Edit</button>
-             ${keyInput.value.trim() ? '<button class="btn" data-dp="auto">Write for me</button>' : ''}
+           <div class="dp-actions"><button class="btn" data-dp="goto">Go to</button>${RO ? '' : '<button class="btn" data-dp="edit">Edit</button>'}
+             ${keyInput.value.trim() && !RO ? '<button class="btn" data-dp="auto">Write for me</button>' : ''}
              ${hist.length ? `<button class="btn" data-dp="hist" aria-expanded="${panelHist === m.id}">History (${hist.length})</button>` : ''}
-             <button class="btn danger" data-dp="remove" title="It leaves the prompts; the summary is kept">Unflag</button></div>`;
-      const versions = panelHist === m.id && hist.length ? `<ol class="dp-hist">${hist.map((h, i) => `<li><span>${esc(h.summary)}</span><small>${esc(shortDate(h.at))}${h.model ? ' · ' + esc(h.model) : ' · by you'}</small><button class="btn" data-dp="restore" data-i="${i}">Restore</button></li>`).join('')}</ol>` : '';
+             ${RO ? '' : '<button class="btn danger" data-dp="remove" title="It leaves the prompts; the summary is kept">Unflag</button>'}</div>`;
+      const versions = panelHist === m.id && hist.length ? `<ol class="dp-hist">${hist.map((h, i) => `<li><span>${esc(h.summary)}</span><small>${esc(shortDate(h.at))}${h.model ? ' · ' + esc(h.model) : ' · by you'}</small>${RO ? '' : `<button class="btn" data-dp="restore" data-i="${i}">Restore</button>`}</li>`).join('')}</ol>` : '';
       return `<article class="dp-card" data-mid="${m.id}">${body}${versions}</article>`;
     }).join('');
 }
@@ -3036,17 +3052,18 @@ const factFrom = x => { const c = x.src && db.convos[x.src.cid]; return c ? `fro
 const factSource = x => { const c = x.src && db.convos[x.src.cid]; return !!(c && Object.prototype.hasOwnProperty.call(c.messages, x.src.mid)); };
 const factMatches = (x, q) => !q || x.text.toLowerCase().includes(q);
 function renderMemoryPanel() {
+  if (db.memory.length <= MEM_SEARCH_FROM) memQuery = ''; // no search box, so no filter left over from one
   const n = db.memory.length, chars = db.memory.reduce((k, x) => k + (x.text ? x.text.length + 3 : 0), 0), q = memQuery.trim().toLowerCase();
   const note = `<p class="pv-note">Memory is about you: your role, your preferences and the answers you want. It is shared by all conversations, so every request carries it. <button class="linkbtn" type="button" data-dp="preview">See the next prompt</button></p>`;
-  const tools = memEdit || memDraft ? '' : `<div class="mem-tools"><button class="btn primary" data-mem="add">+ Add a fact</button>${n > MEM_SEARCH_FROM ? `<input class="mem-search" type="search" data-mem-search placeholder="Search memory" aria-label="Search memory" value="${esc(memQuery)}">` : ''}</div>`;
+  const tools = RO || memEdit || memDraft ? '' : `<div class="mem-tools"><button class="btn primary" data-mem="add">+ Add a fact</button>${n > MEM_SEARCH_FROM ? `<input class="mem-search" type="search" data-mem-search placeholder="Search memory" aria-label="Search memory" value="${esc(memQuery)}">` : ''}</div>`;
   const sum = n ? `<p class="mem-sum">${n} fact${n === 1 ? '' : 's'} in every request · about ${Math.max(1, Math.round(chars / 4)).toLocaleString('en-US')} tokens</p>` : '';
-  const editor = (x, draft) => `<article class="dp-card mem" data-id="${x.id}"><textarea class="dp-area" rows="2" maxlength="300" aria-label="Fact" placeholder="One fact about you, or how you want answers">${esc(x.text)}</textarea>
-      <div class="dp-meta">${draft ? `${x.src ? 'From this message. ' : ''}Not saved yet: Save adds it to every request.` : `${esc(factFrom(x))} · ${esc(shortDate(x.at))}`}</div>
+  const editor = (x, draft) => `<article class="dp-card mem" data-id="${x.id}"><textarea class="dp-area" rows="2" maxlength="300" aria-label="Fact" placeholder="What should every conversation know about you? Your role, or how you want answers">${esc(x.text)}</textarea>
+      <div class="dp-meta">${draft ? `${x.src ? `From “${esc(x.hint || '')}”. ` : ''}Not saved yet: Save adds it to every request.` : `${esc(factFrom(x))} · ${esc(shortDate(x.at))}${(x.history || []).length ? ` · reworded ${x.history.length} time${x.history.length === 1 ? '' : 's'}` : ''}`}</div>
       <div class="dp-actions">${draft ? '' : `<button class="btn danger" data-mem="delete">Delete</button>${factSource(x) ? '<button class="btn" data-mem="goto">Go to source</button>' : ''}`}<button class="btn" data-mem="cancel">Cancel</button><button class="btn primary" data-mem="save">Save</button></div></article>`;
   const draft = memDraft ? editor(memDraft, true) : '';
-  if (!n) return note + draft + (memDraft ? '' : `<p class="pv-empty">Nothing yet. Add who you are, your role or how you like answers, or use <b>Remember</b> under a message.</p>`) + tools;
+  if (!n) return note + tools + draft + (memDraft ? '' : `<p class="pv-empty">Nothing yet. Add who you are, your role or how you like answers, or use <b>Remember</b> under a message.</p>`);
   const rows = db.memory.map(x => memEdit === x.id ? editor(x, false)
-    : `<article class="dp-card mem row" data-id="${x.id}"${factSource(x) ? ' data-source' : ''}${factMatches(x, q) ? '' : ' hidden'}><button class="mem-row" type="button" data-mem="edit" aria-label="Edit this fact"><span class="dp-text">${esc(x.text)}</span><span class="dp-meta">${esc(factFrom(x))} · ${esc(shortDate(x.at))}</span></button></article>`).join('');
+    : `<article class="dp-card mem row" data-id="${x.id}"${factSource(x) ? ' data-source' : ''}${factMatches(x, q) ? '' : ' hidden'}><button class="mem-row" type="button" data-mem="edit" aria-label="Edit this fact"><span class="dp-text">${esc(x.text)}</span><span class="dp-meta">${esc(factFrom(x))} · ${esc(shortDate(x.at))}${(x.history || []).length ? ` · reworded ${x.history.length} time${x.history.length === 1 ? '' : 's'}` : ''}</span></button></article>`).join('');
   const none = `<p class="pv-empty" data-mem-none${db.memory.some(x => factMatches(x, q)) ? ' hidden' : ''}>No fact matches.</p>`;
   return note + tools + draft + sum + rows + none;
 }
@@ -3086,11 +3103,12 @@ function openContextPanel(tab) {
 const firstSentence = t => { const m = t.match(/^(.{12,240}?[.!?])(\s|$)/); return (m ? m[1] : t.slice(0, 240)).trim(); };
 // Remember: a fact from the message (its decision summary, or its first sentence), opened for editing
 function rememberFrom(c, m) {
-  panelEdit = panelHist = null;
+  panelEdit = panelHist = null; memQuery = '';
   const known = db.memory.find(x => x.src && x.src.cid === c.id && x.src.mid === m.id);
   if (known) { memDraft = null; memEdit = known.id; openContextPanel('memory'); toast('Already remembered: edit it here'); return; }
-  const text = (m.decision && m.decision.summary) || firstSentence(plain(m.text || ''));
-  memDraft = { id: uid(), text: text.slice(0, 300), at: Date.now(), src: { cid: c.id, mid: m.id }, from: c.title };
+  // memory is about you, so a draft is never a decision's summary, nor an answer's opening: it is your message's first sentence
+  const text = m.role === 'user' ? firstSentence(plain(m.text || '')) : '';
+  memDraft = { id: uid(), text: text.slice(0, 300), at: Date.now(), src: { cid: c.id, mid: m.id }, from: c.title, hint: snippetOf(m.text || '', 70) };
   memEdit = null;
   openContextPanel('memory');
 }
@@ -3101,6 +3119,7 @@ function contextPanelClick(e) {
   if (tabBtn) { ctxTab = tabBtn.dataset.tab; memEdit = panelEdit = panelHist = null; $('#sheetDyn').innerHTML = renderContextPanel(); return; }
   const mb = e.target.closest('[data-mem]');
   if (!mb) { decisionsPanelClick(e); return; }
+  if (RO && mb.dataset.mem !== 'goto') return; // a shared read-only page doesn't change memory
   const card = mb.closest('.dp-card'), x = card && (memDraft && card.dataset.id === memDraft.id ? memDraft : db.memory.find(y => y.id === card.dataset.id));
   const drop = id => { db.memory = db.memory.filter(y => y.id !== id); };
   switch (mb.dataset.mem) {
@@ -3109,7 +3128,7 @@ function contextPanelClick(e) {
     case 'cancel': if (x === memDraft) memDraft = null; memEdit = null; break;
     case 'save': { const text = card.querySelector('.dp-area').value.replace(/\s+/g, ' ').trim().slice(0, 300);
       if (x === memDraft) { if (text) { db.memory.unshift({ ...memDraft, text, at: Date.now() }); memOp('add', db.memory[0]); if (writing()) factsHere.add(memDraft.id); } memDraft = null; }
-      else if (text) { Object.assign(x, { text, at: Date.now() }); memOp('edit', x); } else { drop(x.id); memOp('del', x); }
+      else if (text) { if (text !== x.text) x.history = [{ text: x.text, at: x.at }, ...(x.history || [])].slice(0, 10); Object.assign(x, { text, at: Date.now() }); memOp('edit', x); } else { drop(x.id); memOp('del', x); }
       memEdit = null; save(); paintFactSource(x); break; }
     case 'delete': { const at = db.memory.indexOf(x); drop(x.id); memOp('del', x); memEdit = null; save(); paintFactSource(x);
       toast('Deleted the fact', { label: 'Undo', fn: () => { if (db.memory.some(y => y.id === x.id)) return; db.memory.splice(Math.min(at, db.memory.length), 0, x); memOp('add', x); save(); refreshContextPanel(); paintFactSource(x); renderDecCount(); toast('Fact restored'); } });
@@ -3122,6 +3141,7 @@ function contextPanelClick(e) {
 }
 function decisionsPanelClick(e) {
   const btn = e.target.closest('[data-dp]'); if (!btn) return;
+  if (RO && !['goto', 'hist', 'preview'].includes(btn.dataset.dp)) return; // read-only: look, don't change
   const c = cur(); if (!c) return;
   if (btn.dataset.dp === 'preview') { previewPrompt(); return; }
   const card = btn.closest('.dp-card'), m = card && c.messages[card.dataset.mid];
@@ -3194,7 +3214,7 @@ const HELP = [
     <p class="help-why">Say it once: every request carries it.</p>
     <ul><li>The <b>flag</b> under a message makes it a decision: a one-line summary that every prompt of the conversation carries. Tap the Decision box to edit it, or <b>Write for me</b>. When the message changes (a regeneration, an edit, a Restore), a summary the helper wrote is written again; yours says it was written for an earlier version, with <b>Update</b> and <b>Keep</b>.</li>
     <li><b>⚑</b> in the top bar opens this conversation's decisions, with history and restore; <b>🔖</b> next to it opens your memory. <b>Go to</b> jumps to a message, and <b>← Back</b> above the composer returns to where you were.</li>
-    <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) drafts one from the message, saved when you tap <b>Save</b>. Tap a fact to edit or delete it; with many facts, search them.</li>
+    <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) drafts one that you write about yourself (under your message, from its first sentence), saved when you tap <b>Save</b>. Tap a fact to edit or delete it; with many facts, search them.</li>
     <li>The <b>eye</b> under a message excludes it from history: the model doesn't see it, on this branch and the ones that continue from it. Tap it again to include it.</li>
     <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. The layers button above the message box previews your next prompt.</li>
     <li>An answer written before later decisions, or before a message above it changed, says so: <b>Re-ask</b> writes it again with them. Re-asking in the middle of a chain opens a new branch, which says what it asks again, and the old answer says where it was asked.</li></ul>` },
@@ -3227,7 +3247,9 @@ const WHATS_NEW = [
     'Under your own message, <b>Branch out</b> offers <b>Edit in a new branch</b>. A prompt view says when messages go to the model as one turn.',
     'Fixed: a saved comparison says it has changed when any branch, the conversation up to them or the decisions change, and a branch left empty no longer counts in <b>Compare N</b>.',
     'An answer asked again in a new branch is linked to the old one, here and in the export; a last answer says when a message above it changed.',
-    'Deleting a branch, a fact, or unflagging a decision in the panel happens at once, with <b>Undo</b>, like deleting a message. Only a whole conversation still asks first.'] },
+    'Deleting a branch, a fact, or unflagging a decision in the panel happens at once, with <b>Undo</b>, like deleting a message. Only a whole conversation still asks first.',
+    'The <b>⚑</b> count is the decisions in prompts, a parked or rejected branch says so where you write, and an excluded flagged message keeps its decision in the prompts.',
+    '<b>Remember</b> drafts a fact about you, never a decision. A reworded fact keeps its earlier wordings, also in Export all.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -3337,18 +3359,21 @@ function exportAllStates() {
     taken.add(x.itemId);
     const c = x.src && db.convos[x.src.cid], m = c && c.messages[x.src.mid];
     const text = x.text.replace(/\s+/g, ' ').trim();
-    items.push({ id: x.itemId, title: shortTitle(text), description: text, at: isoOf(x.at),
+    items.push({ id: x.itemId, title: shortTitle(text), description: text, at: isoOf(x.at), thinking: memThinking(x),
       source: m && c.tsId && c.sessionId ? { resource: `mindbough://${c.tsId}/sessions/${c.sessionId}.jsonl#${m.id}`, title: c.title } : null });
   }
   items.sort((a, b) => (a.id < b.id ? -1 : 1));
   files.push({ name: 'home/memory/index.md', text: '# Memory\n\n' + (items.length ? items.map(x => `* [${x.title}](${x.id}.md) - ${x.description}`).join('\n') : '_Nothing remembered yet._') + '\n' });
   items.forEach(x => files.push({ name: `home/memory/${x.id}.md`, text: ['---', 'type: Memory', `title: ${yq(x.title)}`, `description: ${yq(x.description)}`, `generated: { by: "human:me", at: ${yq(x.at)} }`,
-    ...(x.source ? ['sources:', `  - { resource: ${yq(x.source.resource)}, title: ${yq(x.source.title)} }`] : []), '---', ''].join('\n') }));
+    ...(x.source ? ['sources:', `  - { resource: ${yq(x.source.resource)}, title: ${yq(x.source.title)} }`] : []), ...x.thinking, '---', ''].join('\n') }));
   save(); // ids given on the way are kept
   download(`mindbough-${stamp()}.zip`, zipFiles(files, latest || Date.now()), 'application/zip');
-  toast(`Exported ${ids.length} conversation${ids.length === 1 ? '' : 's'} and ${items.length} memory item${items.length === 1 ? '' : 's'} (.zip)`);
+  toast(`Exported ${ids.length} conversation${ids.length === 1 ? '' : 's'}${items.length ? ` and ${items.length} fact${items.length === 1 ? '' : 's'} of memory` : ''} (.zip)`);
 }
 // A Mindbough home in a zip (home/memory/<id>.md): global memory items, linked to the conversations they came from when those are here
+// A memory item's earlier wordings (thinking.revisions), newest first, as the demo keeps them
+const memHistoryOf = fm => (fm.meta.thinking && typeof fm.meta.thinking === 'object' && Array.isArray(fm.meta.thinking.revisions) ? fm.meta.thinking.revisions : [])
+  .filter(r => r && typeof r === 'object' && r.description).slice(0, 10).map(r => { const at = Date.parse(r.generated && r.generated.at); return { text: String(r.description).replace(/\s+/g, ' ').trim().slice(0, 300), at: Number.isFinite(at) ? at : 0 }; });
 function homeFacts(files) {
   const out = [];
   for (const f of files) {
@@ -3357,7 +3382,8 @@ function homeFacts(files) {
     const fm = frontmatter(f.text); if (!fm || !fm.meta.description) continue;
     const src = (Array.isArray(fm.meta.sources) ? fm.meta.sources : []).find(x => x && /^mindbough:\/\/[0-9]{8}-[0-9a-z]{6}\/sessions\/[^#]+#./.test(String(x.resource || '')));
     const at = Date.parse(fm.meta.generated && fm.meta.generated.at);
-    out.push({ text: String(fm.meta.description).replace(/\s+/g, ' ').trim().slice(0, 300), at: Number.isFinite(at) ? at : Date.now(), itemId: m[2],
+    const history = memHistoryOf(fm);
+    out.push({ text: String(fm.meta.description).replace(/\s+/g, ' ').trim().slice(0, 300), at: Number.isFinite(at) ? at : Date.now(), itemId: m[2], ...(history.length ? { history } : {}),
       ...(src ? { bundle: String(src.resource).slice(12, 27), mid: String(src.resource).split('#')[1], ...(typeof src.title === 'string' && src.title ? { from: src.title.slice(0, 200) } : {}) } : {}) });
   }
   return out;
@@ -3393,6 +3419,9 @@ const yq = v => JSON.stringify(String(v)).replace(/[\u007f-\u009f\u2028\u2029\uf
 const TS_TYPES = ['Thought', 'Question', 'Hypothesis', 'Finding', 'Decision', 'Assumption', 'Constraint', 'Reference', 'Memory', 'Thinking State'];
 const sentenceOf = (t, max) => { const x = firstSentence(plain(t || '')); return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x; };
 // no regex lookbehind: it is a syntax error before iOS 16.4 and would stop the whole app (CI checks for it)
+// A memory item's earlier wordings, newest first, as thinking.revisions lines of its document (spec §9.2, W11)
+const memRevisions = x => (Array.isArray(x.history) ? x.history : []).filter(h => h && h.text).slice(0, 10).map(h => { const t = h.text.replace(/\s+/g, ' ').trim(); return `    - { title: ${yq(shortTitle(t))}, description: ${yq(t)}, generated: { by: "human:me", at: ${yq(isoOf(h.at))} } }`; });
+const memThinking = x => { const r = memRevisions(x); return r.length ? ['thinking:', '  revisions:', ...r] : []; };
 const shortTitle = t => { const w = plain(t).replace(/([.!?])\s/, '$1\n').split(/\n|[:;]\s| [—–-] /)[0].replace(/\.$/, '').split(/\s+/).filter(Boolean); return w.slice(0, 10).join(' ') + (w.length > 10 ? '…' : ''); };
 const snippetOf = (t, max) => { const x = plain(t || ''); return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x; };
 // A time as ISO seconds; one out of range reads as now
@@ -3544,7 +3573,7 @@ function thinkingStateFiles(c, quiet, mine) {
     const from = c.messages[x.src.mid], node = from && byBranch[from.branchId];
     const text = x.text.replace(/\s+/g, ' ').trim();
     const sources = [node && { resource: `/nodes/${node}.md`, title: branchName(c.branches[from.branchId], c) }, from && { resource: `/${session}#${from.id}`, title: 'The message it was remembered from' }].filter(Boolean);
-    return { id: iid, title: shortTitle(text), description: text, at: iso(x.at), sources };
+    return { id: iid, title: shortTitle(text), description: text, at: iso(x.at), sources, thinking: memThinking(x) };
   }).sort((a, b) => (a.id < b.id ? -1 : 1));
   const kids = {}; nodes.forEach(n => { if (n.parent) (kids[n.parent] = kids[n.parent] || []).push(n); });
   const tree = [], walked = new Set(); const walk = (n, d) => { if (walked.has(n.id)) return; walked.add(n.id); tree.push(`${'  '.repeat(d)}* [${n.title.replace(/[[\]]/g, '')}](${n.id}.md) - ${n.type} · ${n.status}: ${n.description}`); (kids[n.id] || []).forEach(k => walk(k, d + 1)); };
@@ -3555,7 +3584,7 @@ function thinkingStateFiles(c, quiet, mine) {
     { name: 'nodes/index.md', text: `# Thought tree\n\n${tree.join('\n')}\n` },
     { name: 'memory/index.md', text: '# Memory\n\n' + (items.length ? items.map(x => `* [${x.title}](${x.id}.md) - ${x.description}`).join('\n') : '_Nothing remembered yet: `mb.py remember <dir> "…" --by <actor>` adds an item._') + '\n' },
     ...items.map(x => ({ name: `memory/${x.id}.md`, text: ['---', 'type: Memory', `title: ${yq(x.title)}`, `description: ${yq(x.description)}`, `generated: { by: "human:me", at: ${yq(x.at)} }`,
-      ...(x.sources.length ? ['sources:', ...x.sources.map(y => `  - { resource: ${yq(y.resource)}, title: ${yq(y.title)} }`)] : []), '---', ''].join('\n') })),
+      ...(x.sources.length ? ['sources:', ...x.sources.map(y => `  - { resource: ${yq(y.resource)}, title: ${yq(y.title)} }`)] : []), ...x.thinking, '---', ''].join('\n') })),
     { name: 'log.md', text: `# Thinking log\n\n## ${at.slice(0, 10)}\n* **Creation**: Exported from the Mindbough demo conversation “${c.title}”.\n` },
     { name: '.gitignore', text: '# raw interaction logs may hold private data\nsessions/\n.mindbough/\n' },
     { name: session, text: sessionLines(c, byBranch, nodes, iso, mine) },
@@ -4028,7 +4057,8 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     const fm = frontmatter(f.text); if (!fm || !fm.meta.description) continue;
     const src = (Array.isArray(fm.meta.sources) ? fm.meta.sources : []).filter(isObj).map(x => String(x.resource || '')).find(x => x.startsWith(`/sessions/${sid}.jsonl#`));
     const mid = src && toMsg.get(src.split('#')[1]);
-    convo.facts.push({ text: String(fm.meta.description).slice(0, 300), at: time(isObj(fm.meta.generated) ? fm.meta.generated.at : null, now), itemId: rel.slice(7, -3), ...(mid ? { mid } : {}) });
+    const history = memHistoryOf(fm);
+    convo.facts.push({ text: String(fm.meta.description).slice(0, 300), at: time(isObj(fm.meta.generated) ? fm.meta.generated.at : null, now), itemId: rel.slice(7, -3), ...(mid ? { mid } : {}), ...(history.length ? { history } : {}) });
   }
   // nodes the session doesn't cover stay cards, under the nearest branch above them
   for (const [nid, node] of nodes) {
@@ -4317,14 +4347,14 @@ async function importZip(buf, { memory = true } = {}) {
   // Export all is your own memory (home/memory/), so its facts come back as they are. Other Thinking States may be someone else's,
   // and memory goes into every request, so their facts come only if you say so (F-23, F-26)
   const n = fresh.length, quote = n ? `“${fresh[0].f.text.slice(0, 80)}${fresh[0].f.text.length > 80 ? '…' : ''}”` : '';
-  if (n && ((convos.home || []).length || confirm(`This Thinking State brings ${n === 1 ? `a memory fact: ${quote}` : `${n} memory facts, such as ${quote}`}\n\nAdd ${n === 1 ? 'it' : 'them'} to your memory? Memory is about you, and every request of every conversation carries it.`))) {
-    for (const { f, id } of fresh) { db.memory.push({ id: uid(), text: f.text, at: f.at, ...(f.mid ? { src: { cid: id, mid: f.mid } } : {}), from: db.convos[id].title, ...(TS_ID.test(f.itemId) && !db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}) }); facts++; }
+  if (n && ((convos.home || []).length || confirm(`This Thinking State brings ${n === 1 ? `a memory fact: ${quote}` : `${n} memory facts, such as ${quote}`}\n\nAdd ${n === 1 ? 'it' : 'them'} to your memory? Memory is about you, and every request of every conversation carries it.\n\nOK adds ${n === 1 ? 'it' : 'them'}. Cancel imports the conversation without ${n === 1 ? 'it' : 'them'}.`))) {
+    for (const { f, id } of fresh) { db.memory.push({ id: uid(), text: f.text, at: f.at, ...(f.mid ? { src: { cid: id, mid: f.mid } } : {}), from: db.convos[id].title, ...(TS_ID.test(f.itemId) && !db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}), ...(f.history ? { history: f.history } : {}) }); facts++; }
   } else left = n;
   for (const f of memory ? convos.home || [] : []) { // global memory from Export all
     const c = f.bundle && Object.values(db.convos).find(x => x.tsId === f.bundle && Object.prototype.hasOwnProperty.call(x.messages, f.mid));
     const known = db.memory.find(x => x.itemId === f.itemId || x.text === f.text);
     if (known) { if (c && !(known.src && db.convos[known.src.cid])) known.src = { cid: c.id, mid: f.mid }; continue; }
-    db.memory.push({ id: uid(), text: f.text, at: f.at, ...(!db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}), ...(c ? { src: { cid: c.id, mid: f.mid }, from: c.title } : f.from ? { from: f.from } : {}) }); facts++;
+    db.memory.push({ id: uid(), text: f.text, at: f.at, ...(!db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}), ...(c ? { src: { cid: c.id, mid: f.mid }, from: c.title } : f.from ? { from: f.from } : {}), ...(f.history ? { history: f.history } : {}) }); facts++;
   }
   return { added, failed, facts, left };
 }
