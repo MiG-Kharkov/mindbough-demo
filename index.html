@@ -582,7 +582,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.3.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main c9e94fd'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main a98c898'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -641,6 +641,14 @@ function idbDo(conn, mode, fn) {
     tx.onerror = tx.onabort = () => reject(tx.error);
   });
 }
+// A signature of the mirror text: a tab that saved the mirror again with the same rev changed it (F-17)
+const sigOf = t => { let h = 2166136261; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36) + ':' + t.length; };
+let mirrorSig = '';
+// Writing (an answer streaming, a helper call on its way): a save from another tab is merged in around what this tab writes (mergeFrom)
+let busy = null; // {controller, convoId, msgId}: the answer being written
+let inflight = 0;
+const touched = new Set(); // conversations this tab wrote into while it was writing
+const writing = () => !!busy || inflight > 0;
 async function loadStored() {
   try {
     if (!window.indexedDB) throw new Error('no IndexedDB');
@@ -659,7 +667,7 @@ async function loadStored() {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); // ask the browser to keep it
     savedChars = text ? text.length : 0; nativeChars = ts ? ts.length : 0;
     let v2 = null; try { v2 = ts ? JSON.parse(ts) : null; } catch (e) { v2 = null; }
-    return { v1: text ? JSON.parse(text) : null, v2: v2 && v2.v === 2 ? v2 : null };
+    return { v1: text ? JSON.parse(text) : null, v1Text: text || '', v2: v2 && v2.v === 2 ? v2 : null };
   } catch (e) {
     storage = 'localStorage'; // e.g. a private mode without IndexedDB: work as before
     try { const text = localStorage.getItem(LS); savedChars = text ? text.length : 0; return { v1: JSON.parse(text), v2: null }; } catch (err) { return { v1: null, v2: null }; }
@@ -678,7 +686,8 @@ if (RO) {
 // one release as a mirror. The bundles win unless the mirror was saved later (rev). The settings and memory are read now,
 // and the bundles are opened at start, once the reader is defined.
 // A mirror without rev was saved by a tab of an older version after the bundles, so its changes win
-const NATIVE = stored.v2 && (!stored.v1 || (typeof stored.v1.rev === 'number' && (stored.v2.rev | 0) >= stored.v1.rev)) ? stored.v2 : null;
+const NATIVE = stored.v2 && (!stored.v1 || (typeof stored.v1.rev === 'number' && ((stored.v2.rev | 0) > stored.v1.rev
+  || ((stored.v2.rev | 0) === stored.v1.rev && !(stored.v2.mirror && stored.v1Text && sigOf(stored.v1Text) !== stored.v2.mirror))))) ? stored.v2 : null;
 if (NATIVE) {
   const st = NATIVE.settings || {}, ws = NATIVE.workspace || {};
   db = { convos: {}, order: Array.isArray(ws.order) ? ws.order.slice() : [], current: ws.current || null, key: st.key || '', model: st.model || '',
@@ -695,7 +704,7 @@ db.web = !db.webOff;
 let repaired = false; // saved at start, so the repair is stored at once
 function repairConvo(c) {
   Object.values(c.messages).forEach(m => {
-    if (m.streaming) { repaired = true; m.streaming = false; if (m.prev && !m.text) Object.assign(m, m.prev); else if (!m.text) m.text = '(response interrupted)'; }
+    if (m.streaming) { repaired = true; m.streaming = false; if (m.prev) Object.assign(m, m.prev); else if (!m.text) m.text = '(response interrupted)'; } // a half-written regeneration is dropped
     delete m.prev;
     if (m.decision) delete m.decision.pending;
   });
@@ -706,12 +715,13 @@ let saving = Promise.resolve();
 const save = () => {
   if (RO) return;
   db.rev = (db.rev | 0) + 1;
+  if (writing()) touched.add(db.current); // kept if another tab saves meanwhile (mergeFrom)
   scheduleNative();
   const text = JSON.stringify(db);
-  savedChars = text.length;
+  savedChars = text.length; mirrorSig = sigOf(text);
   if (storage === 'localStorage') { try { localStorage.setItem(LS, text); } catch (e) { toast('Couldn’t save: browser storage is full'); } return; }
   // writes are queued so they land in order; then the other tabs reload
-  saving = saving.then(() => idbDo(idbConn, 'readwrite', st => st.put(text, 'db'))).then(() => { if (tabs) tabs.postMessage('saved'); })
+  saving = saving.then(() => idbDo(idbConn, 'readwrite', st => st.put(text, 'db'))).then(() => { if (tabs) tabs.postMessage({ saved: text }); })
     .catch(err => toast(err && err.name === 'QuotaExceededError' ? 'Couldn’t save: browser storage is full' : 'Couldn’t save to browser storage'));
 };
 const cur = () => db.convos[db.current];
@@ -721,17 +731,21 @@ let nativeT = null, backedUp = false;
 function scheduleNative() { if (storage !== 'IndexedDB') return; clearTimeout(nativeT); nativeT = setTimeout(writeNative, 400); }
 function nativeRecord() {
   const bundles = {}, view = {};
+  let given = false;
   for (const c of Object.values(db.convos)) {
     try {
-      const { files } = thinkingStateFiles(c, true, true);
+      const out = thinkingStateFiles(c, true, true), files = out.files;
+      if (out.given) given = true;
       bundles[c.id] = { files: Object.fromEntries(files.map(f => [f.name.slice(f.name.indexOf('/') + 1), f.text])) };
     } catch (err) { console.error(err); continue; }
     const bs = Object.values(c.branches);
     view[c.id] = { focus: c.focus, collapsed: bs.filter(b => b.collapsed).map(b => b.id), ofold: bs.filter(b => b.ofold).map(b => b.id), ...(c.named ? { named: c.named } : {}) };
   }
-  return { v: 2, rev: db.rev | 0, savedAt: Date.now(), settings: { key: db.key || '', model: db.model || '', helpers: db.helpers || {}, web: !!db.web, ...(db.webOff ? { webOff: true } : {}) },
+  if (given) idsGiven = true;
+  return { v: 2, rev: db.rev | 0, mirror: mirrorSig, savedAt: Date.now(), settings: { key: db.key || '', model: db.model || '', helpers: db.helpers || {}, web: !!db.web, ...(db.webOff ? { webOff: true } : {}) },
     workspace: { order: db.order, current: db.current }, view, memory: db.memory || [], bundles };
 }
+let idsGiven = false;
 function writeNative() {
   clearTimeout(nativeT); nativeT = null;
   if (RO || storage !== 'IndexedDB' || !idbConn) return;
@@ -744,6 +758,7 @@ function writeNative() {
       if (old == null && stored.v1 && !stored.v2) await idbDo(idbConn, 'readwrite', st => st.put(JSON.stringify(stored.v1), 'db-v1'));
     }
     await idbDo(idbConn, 'readwrite', st => st.put(text, 'ts'));
+    if (idsGiven) { idsGiven = false; save(); } // the ids these bundles got reach the mirror too, so another tab keeps them
   }).catch(err => toast(err && err.name === 'QuotaExceededError' ? 'Couldn’t save: browser storage is full' : 'Couldn’t save to browser storage'));
 }
 // Opens the stored bundles at start; a bundle that can't be read falls back to its copy in the mirror
@@ -776,7 +791,6 @@ function restoreNative() {
 }
 
 let panX = 0;
-let busy = null; // {controller, convoId, msgId}
 const colEls = {};
 let pos = {};
 
@@ -1264,7 +1278,7 @@ $('#canvas').addEventListener('click', async e => {
     const sub = []; const walk = id => { sub.push(id); childrenOf(c, id).forEach(k => walk(k.id)); }; walk(bid);
     const extra = sub.length > 1 ? ` and ${sub.length - 1} nested branch${sub.length === 2 ? '' : 'es'}` : '';
     if (!confirm(`Delete ${branchName(b)}${extra}?`)) return;
-    if (busy && sub.includes(c.messages[busy.msgId]?.branchId)) busy.controller.abort();
+    if (busy && busy.convoId === c.id && sub.includes(c.messages[busy.msgId]?.branchId)) busy.controller.abort();
     sub.forEach(id => { c.branches[id].msgIds.forEach(mid => delete c.messages[mid]); delete c.branches[id]; });
     if (!c.branches[c.focus]) c.focus = b.parentId;
     save(); renderCanvas(); renderSidebar(); focusBranch(c.focus);
@@ -1702,7 +1716,7 @@ async function summarize(c, m, force) {
   const q = m.role === 'model' ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
   const prompt = 'Write the decision or key point of the message below as one short sentence (at most 25 words), in the language of the message. Reply with the sentence only.\n\n'
     + (q ? `Question it answers:\n${q.text.slice(0, 1500)}\n\n` : '') + `Message:\n${(m.text || '').slice(0, 6000)}`;
-  m.decision.pending = true;
+  m.decision.pending = true; inflight++; touched.add(c.id);
   rerenderMsg(c.id, m.id); scheduleLayout();
   try {
     const r = await fetch(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
@@ -1721,6 +1735,7 @@ async function summarize(c, m, force) {
     toast('Couldn’t write the summary. Tap the decision to write it yourself.');
   }
   finally {
+    inflight--; setTimeout(settled);
     if (m.decision) delete m.decision.pending;
     save();
     if (db.current === c.id) { rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline(); renderDecCount(); }
@@ -1733,6 +1748,7 @@ async function summarize(c, m, force) {
 async function helperJSON(prompt, schema, task, at) {
   const model = helperModel(task);
   let usage = null;
+  inflight++; if (at && at.c) touched.add(at.c.id);
   try {
     const r = await fetch(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': keyInput.value.trim() },
@@ -1751,7 +1767,7 @@ async function helperJSON(prompt, schema, task, at) {
   } catch (err) {
     if (at) recordCall(at.c, { task, model, prompt, mid: at.mid, usage, error: err.message });
     throw err;
-  }
+  } finally { inflight--; setTimeout(settled); }
 }
 let opt = null, fanOut = null; // the options sheet; the queue answering new branches one by one ({ cancel })
 const clean = (v, max) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, max);
@@ -2204,7 +2220,7 @@ function deleteMessages(c, ids) {
 }
 // Delete messages with an Undo option
 function removeMessages(c, ids, what) {
-  if (busy && ids.has(busy.msgId)) busy.controller.abort();
+  if (busy && busy.convoId === c.id && ids.has(busy.msgId)) busy.controller.abort();
   const snapshot = JSON.stringify(c);
   const moved = Object.values(c.branches).filter(k => ids.has(k.forkMsgId)).length; // they continue from the message before
   if (editing && ids.has(editing.mid)) editing = null;
@@ -2343,6 +2359,22 @@ $('#showKey').onclick = () => { keyInput.type = keyInput.type === 'password' ? '
 if (!RO) loadModels();
 
 // Another tab saved: take its data, otherwise our next save would silently overwrite it
+// While this tab writes (an answer streaming, a helper call on its way), another tab's save is merged in at once: its data,
+// except the conversations this tab is writing into, whose objects the writing still holds; facts added here stay too
+function mergeFrom(next) {
+  if (!next || !next.convos || !Array.isArray(next.order)) return;
+  for (const [cid, c] of Object.entries(next.convos)) if (!touched.has(cid)) db.convos[cid] = c;
+  for (const cid of Object.keys(db.convos)) if (!next.convos[cid] && !touched.has(cid)) delete db.convos[cid]; // deleted there
+  db.order = next.order.filter(id => db.convos[id]).concat(db.order.filter(id => touched.has(id) && !next.order.includes(id) && db.convos[id]));
+  const theirs = Array.isArray(next.memory) ? next.memory : [];
+  db.memory = theirs.concat(db.memory.filter(f => factsHere.has(f.id) && !theirs.some(x => x.id === f.id)));
+  for (const k of ['key', 'model', 'helpers', 'web', 'webOff']) { if (next[k] !== undefined) db[k] = next[k]; else delete db[k]; }
+  db.rev = Math.max(db.rev | 0, next.rev | 0);
+  if (!db.convos[db.current]) db.current = db.order[0] || null;
+  renderSidebar(); if (db.current && !touched.has(db.current)) renderAll(false);
+}
+const factsHere = new Set(); // facts this tab added while writing
+function settled() { if (!writing()) { touched.clear(); factsHere.clear(); } }
 function takeFrom(next) {
   if (!next || !next.convos || !Array.isArray(next.order)) return;
   db = next;
@@ -2355,12 +2387,19 @@ function takeFrom(next) {
   if (db.current) renderAll(false); else newConvo();
 }
 window.addEventListener('storage', e => {
-  if (RO || storage !== 'localStorage' || e.key !== LS || !e.newValue || busy) return;
-  try { takeFrom(JSON.parse(e.newValue)); } catch (err) {}
+  if (RO || storage !== 'localStorage' || e.key !== LS || !e.newValue) return;
+  try { const next = JSON.parse(e.newValue); if (writing()) mergeFrom(next); else takeFrom(next); } catch (err) {}
 });
-if (tabs) tabs.onmessage = async () => {
-  if (RO || busy || storage !== 'IndexedDB') return;
-  try { const text = await idbDo(idbConn, 'readonly', st => st.get('db')); if (text) { savedChars = text.length; takeFrom(JSON.parse(text)); } } catch (err) {}
+if (tabs) tabs.onmessage = async e => {
+  if (RO || storage !== 'IndexedDB') return;
+  try {
+    // a tab of an earlier version says only 'saved': read what it wrote
+    const text = e && e.data && typeof e.data.saved === 'string' ? e.data.saved : await idbDo(idbConn, 'readonly', st => st.get('db'));
+    if (!text) return;
+    savedChars = text.length;
+    const next = JSON.parse(text);
+    if (writing()) mergeFrom(next); else takeFrom(next);
+  } catch (err) {}
 };
 // Phones kill background tabs without warning: save whatever is pending when the page is hidden
 window.addEventListener('pagehide', () => { save(); writeNative(); });
@@ -2380,6 +2419,7 @@ input.addEventListener('keydown', e => {
 sendBtn.onclick = () => { if (fanOut) fanOut.cancel = true; if (busy) busy.controller.abort(); else if (!fanOut) send(); };
 function setBusy(b) {
   busy = b;
+  if (b) touched.add(b.convoId); else setTimeout(settled);
   sendBtn.classList.toggle('stop', !!b);
   sendBtn.innerHTML = b ? `${ICON.stop}<span>Stop</span>` : `${ICON.send}<span>Send</span>`;
 }
@@ -2838,7 +2878,7 @@ function contextPanelClick(e) {
     case 'edit': memDraft = null; memEdit = x.id; break;
     case 'cancel': if (x === memDraft) memDraft = null; memEdit = null; break;
     case 'save': { const text = card.querySelector('.dp-area').value.replace(/\s+/g, ' ').trim().slice(0, 300);
-      if (x === memDraft) { if (text) db.memory.unshift({ ...memDraft, text, at: Date.now() }); memDraft = null; }
+      if (x === memDraft) { if (text) { db.memory.unshift({ ...memDraft, text, at: Date.now() }); if (writing()) factsHere.add(memDraft.id); } memDraft = null; }
       else if (text) Object.assign(x, { text, at: Date.now() }); else drop(x.id);
       memEdit = null; save(); paintFactSource(x); break; }
     case 'delete': drop(x.id); save(); paintFactSource(x); break;
@@ -2939,7 +2979,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.', 'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.', '<b>Remember</b> drafts a fact that you save, and a remembered message shows it. On a phone the breadcrumbs show the branch you are in.', 'The prompt view says what each block is, and what the prompt left out: the other branches, excluded messages, dropped decisions.', 'Help starts with what this is and the first 2 minutes; What’s new is at the end, with earlier versions.', 'Conversations name themselves after the first answer, and the pencil in the menu renames them.', 'The sample is a recorded Thinking State: options, a comparison and a choice, versions, a web search, and every prompt with its tokens.', 'Fixed: an empty conversation no longer comes back as a card after a reload.'] },
+  { version: 'Unreleased', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.', 'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.', '<b>Remember</b> drafts a fact that you save, and a remembered message shows it. On a phone the breadcrumbs show the branch you are in.', 'The prompt view says what each block is, and what the prompt left out: the other branches, excluded messages, dropped decisions.', 'Help starts with what this is and the first 2 minutes; What’s new is at the end, with earlier versions.', 'Conversations name themselves after the first answer, and the pencil in the menu renames them.', 'The sample is a recorded Thinking State: options, a comparison and a choice, versions, a web search, and every prompt with its tokens.', 'Fixed: an empty conversation no longer comes back as a card after a reload.', 'Fixed: with two tabs open, one tab no longer overwrites the other while it writes an answer; a reload during a regeneration brings back the original answer.'] },
   { version: '0.3.0', items: ['<b>Help</b>: this guide, and what’s new in each version.',
     'Your conversations are stored as Thinking States, the same files an export holds. <b>Export all</b> saves them all with your memory, and an import brings back the whole conversation.',
     'More of what you do is data: helper calls with their tokens, options, comparisons and choices, branch statuses, earlier versions of an answer, and which memory each prompt used.',
@@ -3118,7 +3158,7 @@ function thinkingStateFiles(c, quiet, mine) {
   taken.add(c.sessionId);
   const folder = slug(c.title), session = `sessions/${c.sessionId}.jsonl`, at = new Date(c.updated || c.created || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z');
   const who = m => m.role === 'user' ? '**You:**' : `**Gemini**${m.model ? ` (\`${m.model}\`)` : ''}:`;
-  const transcript = ids => ids.map(id => c.messages[id]).filter(Boolean).map(m => `${who(m)}${m.hidden ? ' _(excluded from history)_' : ''}\n\n${(m.text || m.error || '').trim()}`).join('\n\n');
+  const transcript = ids => ids.map(id => c.messages[id]).filter(Boolean).map(m => (!mine && m.streaming && m.prev ? { ...m, ...m.prev } : m)).map(m => `${who(m)}${m.hidden ? ' _(excluded from history)_' : ''}\n\n${(m.text || m.error || '').trim()}`).join('\n\n');
   for (const b of dfs(c)) {
     const msgs = b.msgIds.map(id => c.messages[id]).filter(Boolean);
     const first = msgs.find(m => m.role === 'user');
@@ -3228,7 +3268,7 @@ function thinkingStateFiles(c, quiet, mine) {
     ...nodes.map(n => ({ name: `nodes/${n.id}.md`, text: nodeDoc(n, new Set(nodes.map(x => x.id))) })),
   ];
   if (given && !quiet) save(); // the new ids are kept for the next export
-  return { folder, at, files: files.map(f => ({ name: `${folder}/${f.name}`, text: f.text })) };
+  return { folder, at, given, files: files.map(f => ({ name: `${folder}/${f.name}`, text: f.text })) };
 }
 // The conversation as a profile 0.2 session (spec §10): one entry per message and branch point, each answer with its request
 function sessionLines(c, byBranch, nodes, iso, mine) {
@@ -3260,6 +3300,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
     const useOf = r => r.usage ? { usage: { input: r.usage.prompt | 0, output: r.usage.answer | 0, ...(r.usage.thoughts ? { reasoning: r.usage.thoughts | 0 } : {}) } } : {};
     const srcOf = x => (x && x.sources || []).map(y => ({ resource: y.uri, title: y.title }));
     b.msgIds.map(id => c.messages[id]).filter(Boolean).forEach((m, i) => {
+      if (!mine && m.streaming && m.prev) m = { ...m, ...m.prev, streaming: false, prev: undefined }; // an export holds the answer being replaced
       // an answer's earlier versions come first: the first as it was written, each later one replacing the one before;
       // a version edited in place is by you, without a request (spec §14.5, S4)
       const vs = m.role === 'model' ? (m.versions || []).filter(v => v && typeof v.text === 'string') : [];
