@@ -623,7 +623,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main fbc1018'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 36a15a7'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -863,6 +863,8 @@ const autoBranchName = (b, c = cur()) => {
   return (first && first.text && sentenceOf(first.text.slice(0, 300), 32)) || defaultBranchName(b);
 };
 const branchName = (b, c) => (b.name && b.name.trim()) || autoBranchName(b, c);
+// who gave a branch the name it has (P3): the helper, while it keeps the helper's title, else you
+const nameByOf = b => b.name && b.modelName && b.name === b.modelName ? b.modelBy || 'mindbough-demo/unknown' : 'human:me';
 function depthOf(c, bid) { let d = 0, b = c.branches[bid]; const seen = new Set(); while (b && b.parentId && !seen.has(b.id)) { seen.add(b.id); d++; b = c.branches[b.parentId]; } return d; }
 function childrenOf(c, bid) {
   const p = c.branches[bid];
@@ -1414,7 +1416,9 @@ function inlineRename(b, targetEl, small) {
     if (done) return; done = true;
     if (commit) {
       const v = input.value.trim();
+      const was = b.name, wasBy = nameByOf(b);
       if (!v || v === autoBranchName(b)) { if (b.modelName) b.name = b.modelName; else delete b.name; } else b.name = v; // empty: the model's title, else the automatic one
+      if (b.name !== was) { if (was && b.parentId) b.titles = [{ title: was, at: b.namedAt || b.created, by: wasBy }, ...(b.titles || [])].slice(0, 10); b.namedAt = Date.now(); } // the name it had (W11)
       c.updated = Date.now();
       save();
     }
@@ -1723,7 +1727,9 @@ function saveEdit(c, m, el) {
     const before = m.text;
     addVersion(m, m); m.editedAt = Date.now(); delete m.restores; delete m.restoredAt; delete m.by; // a message edited in place keeps the text it had, so the prompts that sent it stay true (F-06)
     m.text = text; m.edited = true; c.updated = Date.now(); save(); renderOutline();
-    stopEdit(); textChanged(c, m, before); refreshReask(); return; // the answers below it may now say a message above changed
+    stopEdit(); textChanged(c, m, before); refreshReask(); // the answers below it may now say a message above changed
+    const b = branchOf(c, m.id); if (b && b.parentId && !b.name && b.msgIds[0] === m.id) paintBranchName(c, b); // it is called by this line (FLOW-20)
+    return;
   }
   stopEdit();
 }
@@ -1945,8 +1951,8 @@ async function findOptions() {
   const mine = opt;
   mine.loading = true; mine.error = ''; renderOptionsIfOpen();
   try {
-    const { data, call } = await helperJSON(prompt, schema, 'options', { c, mid: m.id, output: d => (d.options || []).map(o => o && o.title).filter(Boolean).join('; ') });
-    mine.call = call;
+    const { data, model, call } = await helperJSON(prompt, schema, 'options', { c, mid: m.id, output: d => (d.options || []).map(o => o && o.title).filter(Boolean).join('; ') });
+    mine.call = call; mine.model = model;
     const found = (Array.isArray(data.options) ? data.options : []).map(o => ({ title: clean(o && o.title, 80), why: clean(o && o.why, 200), on: true })).filter(o => o.title).slice(0, 6);
     mine.items = found.concat(mine.items.filter(x => x.manual && x.title.trim()));
     if (found.length < 2) mine.error = 'No distinct options found here. Add your own below.';
@@ -2010,7 +2016,7 @@ document.addEventListener('keydown', e => {
 // Each ticked option becomes a branch from the message, opening with "Let's explore this option: …"; optionally answered one by one
 async function createOptionBranches() {
   const c = db.convos[opt.cid], m = c && c.messages[opt.mid], b = m && branchOf(c, m.id);
-  const picked = optionsReady().map(x => ({ title: clean(x.title, 80), why: x.why, manual: !!x.manual })), call = opt.call;
+  const picked = optionsReady().map(x => ({ title: clean(x.title, 80), why: x.why, manual: !!x.manual })), call = opt.call, by = opt.model ? `mindbough-demo/${opt.model}` : null;
   if (!b || !picked.length) return;
   const answer = opt.answer && !!keyInput.value.trim();
   if (answer && (busy || fanOut)) { busyNote(); return; }
@@ -2019,8 +2025,9 @@ async function createOptionBranches() {
   picked.forEach((it, i) => {
     c.counter = (c.counter || 0) + 1;
     // an option branch answers the choice at its fork (spec §14.2): why it differs, and the helper call that proposed it
+    // a title the helper proposed is its name for the branch (P3): clearing a name you give later brings it back
     const nb = { id: uid(), parentId: b.id, forkMsgId: m.id, msgIds: [], n: c.counter, name: it.title.slice(0, 60), created: now + i,
-      option: { ...(it.why ? { why: it.why } : {}), ...(call && !it.manual ? { call } : {}) } };
+      ...(by && !it.manual ? { modelName: it.title.slice(0, 60), modelBy: by } : {}), option: { ...(it.why ? { why: it.why } : {}), ...(call && !it.manual ? { call } : {}) } };
     const others = picked.filter(x => x !== it).map(x => `“${x.title}”`);
     const text = `Let's explore this option: “${it.title}”${it.why ? ` — ${it.why}` : ''}`
       + (others.length ? `\n\nFocus on this option only: the others (${others.join(', ')}) are explored in separate branches.` : '');
@@ -2220,8 +2227,8 @@ function chooseBranch(c, m, bid) {
   target.flagged = true;
   setDecision(target, clean(`Chose ${branchName(win, c)}${over}${why ? `: ${/[.!?…]$/.test(why.trim()) ? why.trim() : why.trim() + '.'}` : '.'}`, 300));
   target.decision.choice = m.id; // the choice at this fork (spec §14.4)
-  others.forEach(b => { b.collapsed = true; if (!cmp.relation || cmp.relation === 'alternatives') b.status = 'rejected'; });
-  win.collapsed = false; win.status = 'accepted';
+  others.forEach(b => { b.collapsed = true; if (!cmp.relation || cmp.relation === 'alternatives') { b.status = 'rejected'; b.statusAt = Date.now(); } });
+  win.collapsed = false; win.status = 'accepted'; win.statusAt = Date.now();
   m.compare = { ...cmp, chosen: bid };
   c.updated = Date.now(); save();
   cmpView = null; closeSheet();
@@ -2311,7 +2318,7 @@ function statusClick(e) {
   if (was !== statusOf(b)) toast(`“${branchName(b, c)}” is ${statusLabel(b).toLowerCase()}`, { label: 'Undo', fn: () => { const lc = db.convos[cid], lb = lc && lc.branches[bid]; if (!lb) return; setStatus(lc, lb, was); toast(`“${branchName(lb, lc)}” is ${statusLabel(lb).toLowerCase()} again`); } });
 }
 function setStatus(c, b, st) {
-  if (st === 'open' || !BRANCH_STATUS.some(x => x.id === st)) delete b.status; else b.status = st;
+  if (st === 'open' || !BRANCH_STATUS.some(x => x.id === st)) { delete b.status; delete b.statusAt; } else { b.status = st; b.statusAt = Date.now(); } // when, for the log (W9)
   c.updated = Date.now(); save();
   if (db.current === c.id) { renderCanvas(); renderChrome(); renderSidebar(); renderDecCount(); }
 }
@@ -2326,11 +2333,11 @@ async function nameBranch(c, am) {
   const prompt = 'Give this branch of a conversation a short title of 2 to 5 words, in the language of the conversation, like a heading. No quotes and no final period.'
     + `\n\nQuestion:\n${(q ? q.text : '').slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
   try {
-    const { data } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, output: d => d.title });
+    const { data, model } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, output: d => d.title });
     const name = clean(data && data.title, 60).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim();
     const lc = db.convos[c.id], lb = lc && lc.branches[b.id]; // the live ones: an Undo or another tab may have replaced them
     if (!name || !lb || lb.name) return;
-    lb.name = name; lb.modelName = name; // kept, so clearing a name you give later brings this one back (NAV-9)
+    lb.name = name; lb.modelName = name; lb.modelBy = `mindbough-demo/${model}`; lb.namedAt = Date.now(); // kept, so clearing a name you give later brings this one back (NAV-9)
     save();
     if (db.current === c.id) paintBranchName(lc, lb);
   } catch (err) {} // the name taken from the first message stays
@@ -2344,11 +2351,11 @@ async function nameConvo(c, am) {
   const prompt = 'Give this conversation a short title of 2 to 6 words, in the language of the conversation, like a heading. No quotes and no final period.'
     + `\n\nQuestion:\n${(q ? q.text : '').slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
   try {
-    const { data } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, output: d => d.title });
+    const { data, model } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, output: d => d.title });
     const name = clean(data && data.title, 80).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim();
     const lc = db.convos[c.id]; // the live one: an Undo or another tab may have replaced it
     if (!name || !lc || lc.named) return;
-    lc.title = name; lc.named = 'model';
+    lc.title = name; lc.named = 'model'; lc.titleBy = `mindbough-demo/${model}`; lc.namedAt = Date.now(); // the root node's producer (P3)
     save(); renderSidebar();
   } catch (err) {} // the first words of the message stay
 }
@@ -2363,7 +2370,11 @@ function renameConvo(id) {
   const finish = commit => {
     if (done) return; done = true;
     const v = input.value.replace(/\s+/g, ' ').trim();
-    if (commit && v && v !== c.title) { c.title = v.slice(0, 80); c.named = 'you'; c.updated = Date.now(); save(); }
+    if (commit && v && v !== c.title) {
+      // a name someone gave is the root node's wording, and the next one keeps it (W11); the first words of the message are not one
+      if (c.named) c.titles = [{ title: c.title, at: c.namedAt || c.created, by: c.named === 'model' ? c.titleBy || 'mindbough-demo/unknown' : 'human:me' }, ...(c.titles || [])].slice(0, 10);
+      c.title = v.slice(0, 80); c.named = 'you'; delete c.titleBy; c.namedAt = Date.now(); c.updated = Date.now(); save();
+    }
     if (document.activeElement === input) input.blur();
     if (input.isConnected) input.remove(); setTimeout(settled); // so the list repaints now (B15)
     renderSidebar();
@@ -2402,16 +2413,30 @@ function deleteMessages(c, ids) {
 }
 // A delete you can take back for a few seconds (UI-4): Undo puts the conversation back as it was. It refuses once anything changed
 // since (a flag, a summary, an exclusion: B06), or while an answer or a helper is still writing into it (FLOW-13), so nothing is lost
+// What a save as a Thinking State gives a conversation, its ids and its root's type (spec W3), is no change made in it: an Undo
+// doesn't count it, and keeps it
+const GIVEN = new Set(['tsId', 'sessionId', 'nodeId', 'choiceId', 'rootType']);
+const changeSig = c => sigOf(JSON.stringify(c, (k, v) => GIVEN.has(k) ? undefined : v));
+function keepGiven(from, to) {
+  for (const k of ['tsId', 'sessionId', 'rootType']) if (from[k] && !to[k]) to[k] = from[k];
+  for (const [id, b] of Object.entries(to.branches)) { const f = from.branches[id]; if (f && f.nodeId && !b.nodeId) b.nodeId = f.nodeId; }
+  for (const [id, m] of Object.entries(to.messages)) {
+    const f = from.messages[id]; if (!f) continue;
+    if (f.nodeId && !m.nodeId) m.nodeId = f.nodeId;
+    if (f.choiceId && !m.choiceId) m.choiceId = f.choiceId;
+    if (f.compare && m.compare && f.compare.nodeId && !m.compare.nodeId) m.compare.nodeId = f.compare.nodeId;
+  }
+}
 function undoable(c, msg, apply) {
   const snapshot = JSON.stringify(c), cid = c.id;
   apply();
-  const after = sigOf(JSON.stringify(c));
+  const after = changeSig(c);
   toast(msg, { label: 'Undo', fn: () => {
     const now = db.convos[cid];
     if (!now) return;
     const writing = (busy && busy.convoId === cid) || (fanOut && fanOut.cid === cid) || Object.values(now.messages).some(x => x.decision && x.decision.pending);
-    if (writing || sigOf(JSON.stringify(now)) !== after) { toast('Can’t undo: the conversation has changed since'); return; }
-    const back = JSON.parse(snapshot); repairConvo(back); // an answer stopped by the delete comes back as stopped
+    if (writing || changeSig(now) !== after) { toast('Can’t undo: the conversation has changed since'); return; }
+    const back = JSON.parse(snapshot); repairConvo(back); keepGiven(now, back); // an answer stopped by the delete comes back as stopped
     db.convos[cid] = back;
     save(); renderAll(false); renderDecCount();
     toast('Restored');
@@ -2953,7 +2978,7 @@ function openPromptView(c, m) {
     rec.blocks = rec.blocks.filter(b => b.kind !== 'tools'); // today's web setting says nothing about then
     note = 'Reconstructed: this answer was made before prompts were recorded, so this is what the demo would send for it now.';
   }
-  showPrompt({ c, rec, note, title: 'Prompt of this answer', lookup: (id, sig) => { const x = sentVersion(c.messages[id], sig, rec.at); return x && x.hidden ? { ...x, hidden: false } : x; }, search: m.search, calls: (c.calls || []).filter(x => x.mid === m.id),
+  showPrompt({ c, rec, note, title: 'Prompt of this answer', lookup: (id, sig) => { const x = sentVersion(c.messages[id], sig, rec.at); return x && x.hidden ? { ...x, hidden: false } : x; }, search: m.search, calls: (c.calls || []).filter(x => x.mid === m.id && (!rec.at || x.at >= rec.at)), // calls on this version (FLOW-20)
     path: historyFor(c, branchOf(c, m.id).id, m.id).slice(0, -1), mid: m.id });
 }
 function previewPrompt(backTo) {
@@ -3269,7 +3294,7 @@ const HELP = [
     <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place too. Either way the earlier text is kept, so an answer's prompt still shows what the model saw, marked <b>changed later</b>.</li>
     <li>Tap an answer's model chip to regenerate it with any model. The old answer stays as a version (<b>N versions</b> next to the model); in the middle of a chain the new one opens in a new branch. Every version is kept, and <b>Restore</b> puts an earlier one back as a new version.</li>
     <li>The <b>status</b> chip on a branch: Open, Accepted, Parked or Rejected. The decisions of a parked or rejected branch, and of the branches under it, leave the prompts.</li>
-    <li>Branches name themselves; <b>⋯</b> on a column renames it (on a desktop, a double-click too) or deletes it, with the branches under it; <b>Undo</b> in the toast brings them back. <b>Fold all</b> is in the Branches panel.</li>
+    <li>Branches name themselves; <b>⋯</b> on a column renames it (on a desktop, a double-click too; clear your name and the model's comes back) or deletes it, with the branches under it; <b>Undo</b> in the toast brings them back. <b>Fold all</b> is in the Branches panel.</li>
     <li>Fold a column with its chevron, or all of them with the top-bar button: a folded column shows its last message and its decisions.</li>
     <li>Move around: <b>Back</b>, the ↳ badges and the breadcrumbs. On a phone, swipe left and right; on a desktop, drag the canvas or use Alt+← / Alt+→. The <b>Branches panel</b> (right) shows the tree and a filter.</li></ul>` },
   { id: 'choose', title: 'Options, compare and choose', cards: ['F-27', 'F-28'], body: `
@@ -3294,7 +3319,7 @@ const HELP = [
     <p class="help-why">Yours: open files that any tool can read.</p>
     <ul><li>Everything is saved in this browser only (IndexedDB), as Thinking States: the same files an export holds. It survives reloads, closed tabs and crashes, but clearing the site's data deletes it, so <b>Export all</b> is your backup.</li>
     <li>Menu → <b>⋯</b> on a conversation → <b>Export as a Thinking State</b>: a .zip with its thoughts, decisions and the facts remembered from it, and the session with the model, prompt and tokens of every answer.</li>
-    <li>What you do is data too: options answer a question, a comparison is a finding, a choice sets statuses, an answer keeps its versions, helper calls keep their tokens, and a prompt names the facts it used. Exports and shared pages leave the memory text out of the prompts; a conversation's export includes only the facts remembered from it.</li>
+    <li>What you do is data too: options answer a question, a comparison is a finding, a choice sets statuses, an answer keeps its versions, helper calls keep their tokens, a prompt names the facts it used, every node says who worded it, and <code>log.md</code> lists your decisions and status changes. Exports and shared pages leave the memory text out of the prompts; a conversation's export includes only the facts remembered from it.</li>
     <li><b>Export all</b> saves one .zip: a Thinking State per conversation, and your memory as documents in <code>home/memory/</code>.</li>
     <li><b>⋯</b> → <b>Share as a read-only page</b> saves a read-only page of the conversation. On that page, <b>Download Thinking State</b> gets its .zip, to import and continue.</li>
     <li><b>Import</b> opens a Thinking State or an Export all (.zip), a shared page, or a .json from an earlier version. The demo's own Thinking States come back whole; one made by another tool opens as a tree of cards to keep writing in. A Thinking State that brings memory facts you don't have asks before adding them, since memory goes into every request; an Export all doesn't ask.</li></ul>` },
@@ -3322,7 +3347,8 @@ const WHATS_NEW = [
     'Fixed: with two tabs open, one no longer pulls the other to its conversation or closes what you are typing there.',
     'On a phone a column head has room for its name: Rename and Delete branch are under <b>⋯</b>, the breadcrumbs show where you are, and Fold all moved to the Branches panel.',
     'On a phone, Back closes a sheet or a panel instead of leaving the app; a swipe no longer opens a rejected, folded branch first.',
-    'A sample says what works without a key; a key that works says so in Settings, with <b>Send your message</b>. On a phone, <b>Share</b> opens the share sheet.'] },
+    'A sample says what works without a key; a key that works says so in Settings, with <b>Send your message</b>. On a phone, <b>Share</b> opens the share sheet.',
+    'The export says who did what: <code>log.md</code> lists your decisions and status changes, and every node says who worded it, the model or you, with its earlier names. The first branch keeps a name you give it.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -3516,7 +3542,7 @@ function nodeDoc(n, ids) {
   for (const [k, v] of Object.entries(n.links || {})) { const to = v.filter(x => ids.has(x)); if (to.length) out.push(`  ${k}: [${to.join(', ')}]`); }
   if (n.revisions && n.revisions.length) {
     out.push('  revisions:');
-    n.revisions.forEach(r => out.push(`    - { title: ${yq(r.title)}, description: ${yq(r.description)}, generated: { by: ${yq(r.generated.by)}, at: ${yq(r.generated.at)} } }`));
+    n.revisions.forEach(r => out.push(`    - { ${['title', 'description'].filter(k => r[k] != null).map(k => `${k}: ${yq(r[k])}, `).join('')}generated: { by: ${yq(r.generated.by)}, at: ${yq(r.generated.at)} } }`)); // the fields that changed (§8.5)
   }
   if (n.ext) out.push('  ext:', '    mindbough-demo:', ...Object.entries(n.ext).map(([k, v]) => `      ${k}: ${yq(String(v))}`)); // spec §5.3
   return out.concat('---', '', n.body || '').join('\n').trimEnd() + '\n';
@@ -3550,8 +3576,22 @@ function thinkingStateFiles(c, quiet, mine) {
     // and described by its first message, not by the conversation that happens to be open (B03)
     const lead = first || msgs[0], cardStatus = nd && (nd.status === 'superseded' ? 'rejected' : nd.status);
     const title = nd ? (b.name && b.name.trim() && b.name !== String(nd.title || '').slice(0, 60) ? b.name.trim() : nd.title) : isRoot ? c.title : (b.name && b.name.trim()) || (lead ? sentenceOf(lead.text || lead.error || '', 80) : branchName(b, c));
-    nodes.push({ id, type: nd ? nd.type : isRoot && first && /\?\s*$/.test(first.text.trim()) ? 'Question' : 'Thought', title: (title || id).slice(0, 120),
-      description: nd ? nd.description || nd.title : eo ? `Edited version of: ${snippetOf(eo.text, 200)}` : lead ? sentenceOf(lead.text || lead.error || '', 240) || 'A branch.' : 'An empty branch.',
+    if (isRoot && first && !c.rootType) { c.rootType = /\?\s*$/.test(first.text.trim()) ? 'Question' : 'Thought'; given = true; } // set once: editing the question later doesn't flip it
+    // who gave the node its words (P1–P3): the helper whose title it has, else you; a branch called by its first line, whoever wrote
+    // that line. Each earlier name, and each first line a message edited in place had, is a revision, newest first (W11)
+    const named = isRoot ? !!c.named : !!(b.name && b.name.trim()), titles = Array.isArray(isRoot ? c.titles : b.titles) ? (isRoot ? c.titles : b.titles) : [];
+    const titleBy = isRoot ? (c.named === 'model' ? c.titleBy || 'mindbough-demo/unknown' : 'human:me') : named ? nameByOf(b)
+      : lead ? lead.by || (lead.role === 'model' ? `mindbough-demo/${lead.model || 'unknown'}` : 'human:me') : 'human:me';
+    const desc0 = lead ? sentenceOf(lead.text || lead.error || '', 240) || 'A branch.' : 'An empty branch.';
+    const firstLines = eo || b.option || !lead || lead.role !== 'user' ? [] : versionsOf(lead).slice(0, -1).map(v => ({ description: sentenceOf(v.text || '', 240) || 'A branch.',
+      ...(!named && !isRoot && !titles.length ? { title: sentenceOf(v.text || '', 80) } : {}), generated: { by: v.by || 'human:me', at: iso(v.editedAt || v.ts) } }))
+      .filter((r, k, all) => r.description !== (k + 1 < all.length ? all[k + 1].description : desc0)); // an edit that kept the first line rewords nothing
+    const revs = nd ? [] : [...titles.map(x => ({ title: String(x.title).slice(0, 120), generated: { by: x.by || 'human:me', at: iso(x.at) } })), ...firstLines]
+      .sort((x, y) => (x.generated.at < y.generated.at ? 1 : x.generated.at > y.generated.at ? -1 : 0)).slice(0, 10);
+    const wordedAt = Math.max((isRoot ? c.namedAt || c.created : b.namedAt || b.created) || 0, firstLines.length ? lead.editedAt || lead.ts || 0 : 0);
+    nodes.push({ id, type: nd ? nd.type : isRoot && c.rootType ? c.rootType : 'Thought', title: (title || id).slice(0, 120),
+      ...(nd ? {} : { generated: { by: titleBy, at: iso(wordedAt) } }), ...(revs.length ? { revisions: revs } : {}),
+      description: nd ? nd.description || nd.title : eo ? `Edited version of: ${snippetOf(eo.text, 200)}` : desc0,
       status: nd ? (b.parentId && statusOf(b) !== (cardStatus || 'open') ? statusOf(b) : nd.status) : b.parentId ? statusOf(b) : 'open', links: nd ? nd.links : null, parent: b.parentId ? byBranch[b.parentId] : null, sources: [{ resource: `/${session}#${b.parentId ? 'br' + b.id : (b.msgIds[0] || 'br' + b.id)}`, title: 'Where this branch starts in the session' }],
       body: msgs.length ? `## Conversation\n\n${transcript(b.msgIds)}` : '' });
     // a flag is an open Decision, a summary accepts it, and an unflagged one keeps its summary as a parked Decision (spec §7.1)
@@ -3592,13 +3632,13 @@ function thinkingStateFiles(c, quiet, mine) {
       if (k.option) {
         const call = k.option.call && (c.calls || []).find(x => x.id === k.option.call);
         if (k.option.why) n.description = k.option.why;
-        n.generated = { by: call ? `mindbough-demo/${call.model || 'unknown'}` : 'human:me', at: iso(k.created) };
+        if (call && !k.modelBy && !(k.titles || []).length) n.generated = { ...n.generated, by: `mindbough-demo/${call.model || 'unknown'}` }; // proposed before branches kept who named them
         if (call) n.sources.push({ resource: `/${session}#${call.id}`, title: 'The helper call that proposed it' });
       }
       if (dm && alt && k.id !== chosen && n.status === 'rejected') {
         // why it lost: the comparison's "In short" for it, else the option that won
         const col = cmp && cmp.cols.find(x => x.bid === k.id), short = col && String(col.summary || '').trim();
-        n.revisions = [{ title: n.title, description: n.description, generated: n.generated || { by: 'human:me', at: iso(k.created) } }];
+        n.revisions = [{ title: n.title, description: n.description, generated: n.generated || { by: 'human:me', at: iso(k.created) } }, ...(n.revisions || [])].slice(0, 10);
         n.description = short ? `Not chosen: ${/[.!?…]$/.test(short) ? short : short + '.'} ${name(chosen)} was chosen.` : `Not chosen: ${name(chosen)} was chosen instead.`;
       }
     }
@@ -3661,7 +3701,7 @@ function thinkingStateFiles(c, quiet, mine) {
     { name: 'memory/index.md', text: '# Memory\n\n' + (items.length ? items.map(x => `* [${x.title}](${x.id}.md) - ${x.description}`).join('\n') : '_Nothing remembered yet: `mb.py remember <dir> "…" --by <actor>` adds an item._') + '\n' },
     ...items.map(x => ({ name: `memory/${x.id}.md`, text: ['---', 'type: Memory', `title: ${yq(x.title)}`, `description: ${yq(x.description)}`, `generated: { by: "human:me", at: ${yq(x.at)} }`,
       ...(x.sources.length ? ['sources:', ...x.sources.map(y => `  - { resource: ${yq(y.resource)}, title: ${yq(y.title)} }`)] : []), ...x.thinking, '---', ''].join('\n') })),
-    { name: 'log.md', text: `# Thinking log\n\n## ${at.slice(0, 10)}\n* **Creation**: Exported from the Mindbough demo conversation “${c.title}”.\n` },
+    { name: 'log.md', text: logOf(c, nodes, byBranch, iso) },
     { name: '.gitignore', text: '# raw interaction logs may hold private data\nsessions/\n.mindbough/\n' },
     { name: session, text: sessionLines(c, byBranch, nodes, iso, mine) },
     ...nodes.map(n => ({ name: `nodes/${n.id}.md`, text: nodeDoc(n, new Set(nodes.map(x => x.id))) })),
@@ -3669,9 +3709,29 @@ function thinkingStateFiles(c, quiet, mine) {
   if (given && !quiet) save(); // the new ids are kept for the next export
   return { folder, at, given, files: files.map(f => ({ name: `${folder}/${f.name}`, text: f.text })) };
 }
+// The log of a conversation's Thinking State (OKF §9, spec W9): what the person decided and when, newest first. Decisions and choices
+// date from their first summary, a supersession from the later choice, a status from when it was set, and the start from the session
+function logOf(c, nodes, byBranch, iso) {
+  const link = n => `[${String(n.title).replace(/[[\]]/g, '')}](/nodes/${n.id}.md)`, byId = new Map(nodes.map(n => [n.id, n])), out = [];
+  for (const n of nodes) {
+    if (n.type === 'Decision' && ['accepted', 'superseded'].includes(n.status) && n.generated) {
+      const made = (n.revisions || []).length ? n.revisions[n.revisions.length - 1].generated.at : n.generated.at;
+      const q = n.links && (n.links.answers || [])[0] && byId.get(n.links.answers[0]);
+      out.push([made, `* **Decision**: ${link(n)}${q ? ` answers ${link(q)}` : ''}.`]);
+      for (const old of (n.links && n.links.supersedes) || []) if (byId.get(old)) out.push([made, `* **Supersession**: ${link(n)} supersedes ${link(byId.get(old))}.`]);
+    }
+  }
+  for (const b of Object.values(c.branches)) if (b.parentId && b.status && b.statusAt && byId.get(byBranch[b.id])) out.push([iso(b.statusAt), `* **Status**: ${link(byId.get(byBranch[b.id]))} is ${b.status}.`]);
+  out.push([iso(c.created), `* **Creation**: “${String(c.title).replace(/[[\]]/g, '')}”, a conversation in the Mindbough demo.`]);
+  out.forEach(x => { x[1] = x[1].replace(/([.!?…])\]\(([^)]*)\)\.$/, '$1]($2)'); }); // a title that ends a sentence ends the line
+  out.sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0));
+  const days = []; for (const [t, line] of out) { const d = t.slice(0, 10); if (!days.length || days[days.length - 1][0] !== d) days.push([d, []]); days[days.length - 1][1].push(line); }
+  return '# Thinking log\n\n' + days.map(([d, lines]) => `## ${d}\n${lines.join('\n')}\n`).join('\n');
+}
 // The conversation as a profile 0.2 session (spec §10): one entry per message and branch point, each answer with its request
 function sessionLines(c, byBranch, nodes, iso, mine) {
-  const lines = [{ type: 'Session', profile: '0.2', id: c.sessionId, node: byBranch[c.root], title: c.title, by: `mindbough-demo/${APP_VERSION}`, at: iso(c.created) }];
+  const main = c.branches[c.root] && c.branches[c.root].name; // the main branch's own name: its node is titled by the conversation
+  const lines = [{ type: 'Session', profile: '0.2', id: c.sessionId, node: byBranch[c.root], title: c.title, by: `mindbough-demo/${APP_VERSION}`, at: iso(c.created), ...(main ? { ext: { 'mindbough-demo': { name: main } } } : {}) }];
   const decisionOf = new Map(); nodes.filter(n => n.type === 'Decision').forEach(n => { decisionOf.set(n.description, n.id); }); // for requests recorded before they kept ids
   const who = m => m.role === 'user' ? 'human:me' : `mindbough-demo/${m.model || 'unknown'}`;
   const verIds = new Map(); // a message's entry ids, oldest version first
@@ -3700,7 +3760,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
     if (b.parentId) {
       const fork = b.forkMsgId && c.messages[b.forkMsgId] ? b.forkMsgId : null;
       const brId = derive('br' + b.id);
-      lines.push({ id: brId, kind: 'branch', node, after: fork, by: 'human:me', at: iso(b.created), ext: { 'mindbough-demo': { n: b.n, ...(b.option ? { option: b.option } : {}) } } });
+      lines.push({ id: brId, kind: 'branch', node, after: fork, by: 'human:me', at: iso(b.created), ext: { 'mindbough-demo': { n: b.n, ...(b.option ? { option: b.option } : {}), ...(b.status && b.statusAt ? { statusAt: iso(b.statusAt) } : {}) } } });
       after = brId;
     }
     const reqOf = r => ({ at: iso(r.at), chars: r.chars | 0, blocks: (r.blocks || []).map(x => block(x, r.at)) });
@@ -3761,7 +3821,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
   }
   for (const x of (c.calls || []).slice().sort((a, b) => a.at - b.at)) {
     const m = x.mid && c.messages[x.mid], chars = x.chars | 0;
-    lines.push({ id: x.id, kind: 'call', task: x.task, node: byBranch[m ? m.branchId : c.root], by: `mindbough-demo/${x.model || 'unknown'}`, at: iso(x.at),
+    lines.push({ id: x.id, kind: 'call', task: x.task, ...(m ? { node: byBranch[m.branchId] } : x.mid ? {} : { node: byBranch[c.root] }), by: `mindbough-demo/${x.model || 'unknown'}`, at: iso(x.at), // on a message deleted since: no node (FLOW-20)
       request: { at: iso(x.at), chars, ...(Object.prototype.hasOwnProperty.call(PROMPT_IDS, x.task) ? { prompt: PROMPT_IDS[x.task] } : {}), blocks: [{ kind: 'prompt', chars }] },
       ...(x.usage ? { usage: { input: x.usage.prompt | 0, output: x.usage.answer | 0, ...(x.usage.thoughts ? { reasoning: x.usage.thoughts | 0 } : {}) } } : {}),
       ...(x.output ? { output: x.output } : {}), ...(x.error ? { error: x.error } : {}), ...(m ? { ext: { 'mindbough-demo': { message: m.id } } } : {}) });
@@ -4033,6 +4093,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     { const st = th(node).status; if (nid !== rootId && ['accepted', 'parked', 'rejected', 'superseded'].includes(st)) b.status = st === 'superseded' ? 'rejected' : st; } // superseded is not in force either (B02)
     if (!own && (b.status === 'parked' || b.status === 'rejected')) b.collapsed = true; // an opened Thinking State shows its dropped lines folded
     if (isObj(bext.option)) b.option = { ...(typeof bext.option.why === 'string' ? { why: bext.option.why.slice(0, 200) } : {}), ...(typeof bext.option.call === 'string' ? { call: bext.option.call } : {}) };
+    if (b.status && typeof bext.statusAt === 'string' && Number.isFinite(Date.parse(bext.statusAt))) b.statusAt = Date.parse(bext.statusAt); // when, for the log (W9)
     for (const slot of mine) {
       const chain = [slot]; { let x = slot; const seen = new Set(); while (newest.has(x.id) && !seen.has(x.id)) { seen.add(x.id); x = newest.get(x.id); chain.push(x); } }
       const v = chain[chain.length - 1], role = slot.role === 'user' ? 'user' : 'model';
@@ -4086,9 +4147,25 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     }
     const title = String(node.meta.title || ''), first = b.msgIds.map(x => convo.messages[x]).find(x => x.role === 'user') || convo.messages[b.msgIds[0]];
     if (nid !== rootId && title && title !== (first ? sentenceOf(first.text || first.error || '', 80) : '')) b.name = title.slice(0, 60); // a name given by someone, not the automatic one (B03)
+    // who worded the node (P3), and the names it had (W11); the root node is worded by the conversation's title. A name a helper
+    // or another tool gave comes back when you clear yours
+    const gen = isObj(node.meta.generated) ? node.meta.generated : {}, actor = v => typeof v === 'string' && /^[a-z][a-z0-9_.-]*[:/][^\s]{1,100}$/i.test(v) ? v : '';
+    const titles = (Array.isArray(th(node).revisions) ? th(node).revisions : []).filter(x => isObj(x) && typeof x.title === 'string' && x.title.trim() && x.description == null).slice(0, 10)
+      .map(x => ({ title: x.title.trim().slice(0, nid === rootId ? 80 : 60), at: time(isObj(x.generated) ? x.generated.at : null, b.created), by: actor(isObj(x.generated) && x.generated.by) || 'human:me' }));
+    const holder = nid === rootId ? convo : b, gby = actor(gen.by), tool = gby && !gby.startsWith('human:');
+    if (titles.length) holder.titles = titles;
+    if (gen.at && (nid === rootId || b.name)) holder.namedAt = time(gen.at, b.created);
+    if (nid === rootId) {
+      if (tool) { convo.titleBy = gby; convo.named = 'model'; }
+      if (b.msgIds.length && /^[A-Z][A-Za-z]{1,30}$/.test(String(node.meta.type || ''))) convo.rootType = String(node.meta.type); // kept as it was (FLOW-16); an empty one gets it from its first message
+    } else {
+      const given = tool && b.name ? { title: b.name, by: gby } : titles.find(x => !x.by.startsWith('human:'));
+      if (given) { b.modelName = given.title; b.modelBy = given.by; }
+    }
     convo.branches[id] = b;
   }
   convo.root = bidOf(rootId); convo.focus = convo.root;
+  { const hx = isObj(head.ext) && isObj(head.ext['mindbough-demo']) ? head.ext['mindbough-demo'] : {}; if (typeof hx.name === 'string' && hx.name.trim()) convo.branches[convo.root].name = hx.name.trim().slice(0, 60); } // the main branch's own name
   convo.calls = entries.filter(e => e.kind === 'call' && typeof e.task === 'string').map(e => {
     const ext = isObj(e.ext) && isObj(e.ext['mindbough-demo']) ? e.ext['mindbough-demo'] : {}, mid = ext.message && toMsg.get(String(ext.message));
     return { id: e.id, task: e.task.slice(0, 40), at: time(e.at, now), model: modelOf(e.by), chars: isObj(e.request) ? Math.max(0, e.request.chars | 0) : 0, ...(mid ? { mid } : {}),
@@ -4290,6 +4367,13 @@ function adoptConvo(src) {
   // the ids a Thinking State export gave (spec W3); a bundle id already in use here is left for the next export to replace
   const tsIdOk = v => typeof v === 'string' && TS_ID.test(v);
   if (tsIdOk(src.tsId) && !Object.values(db.convos).some(o => o.tsId === src.tsId)) { c.tsId = src.tsId; if (tsIdOk(src.sessionId)) c.sessionId = src.sessionId; }
+  // who worded the names, and the names they replaced (P3, W11)
+  const actorOk = v => typeof v === 'string' && /^[a-z][a-z0-9_.-]*[:/][^\s]{1,100}$/i.test(v);
+  const titlesOf = (v, max) => (Array.isArray(v) ? v : []).filter(x => isObj(x) && typeof x.title === 'string' && x.title.trim()).slice(0, 10).map(x => ({ title: str(x.title, max).trim(), at: time(x.at), ...(actorOk(x.by) ? { by: x.by } : {}) }));
+  if (/^[A-Z][A-Za-z]{1,30}$/.test(String(src.rootType || ''))) c.rootType = src.rootType; // the root's type, set once (FLOW-16)
+  if (c.named === 'model' && actorOk(src.titleBy)) c.titleBy = src.titleBy;
+  if (titlesOf(src.titles, 80).length) c.titles = titlesOf(src.titles, 80);
+  if (okTime(src.namedAt)) c.namedAt = src.namedAt;
   for (const k of order) {
     const b = src.branches[k], id = bid.get(k), msgIds = [];
     for (const m of Array.isArray(b.msgIds) ? b.msgIds : []) {
@@ -4329,6 +4413,10 @@ function adoptConvo(src) {
     if (tsIdOk(b.nodeId)) c.branches[id].nodeId = b.nodeId;
     if (k !== src.root && ['accepted', 'parked', 'rejected'].includes(b.status)) c.branches[id].status = b.status;
     if (isObj(b.option)) c.branches[id].option = { ...(b.option.why ? { why: str(b.option.why, 200) } : {}), ...(typeof b.option.call === 'string' ? { call: b.option.call } : {}) };
+    if (c.branches[id].status && okTime(b.statusAt)) c.branches[id].statusAt = b.statusAt;
+    if (k !== src.root && typeof b.modelName === 'string' && b.modelName.trim()) { c.branches[id].modelName = b.modelName.trim().slice(0, 60); if (actorOk(b.modelBy)) c.branches[id].modelBy = b.modelBy; }
+    if (k !== src.root && titlesOf(b.titles, 60).length) c.branches[id].titles = titlesOf(b.titles, 60);
+    if (okTime(b.namedAt)) c.branches[id].namedAt = b.namedAt;
   }
   // fork points and edit origins may point into branches mapped later, so resolve them in a second pass
   for (const k of order) {
