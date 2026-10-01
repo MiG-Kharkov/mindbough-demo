@@ -576,11 +576,13 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 const typing = e => !!(e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable]'));
 const GAP = 90;
 const NEW_TITLE = 'New conversation';
+// The first words of a text, cut at a word, for a title
+const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return (cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.3.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 199597f'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 8307c39'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -725,7 +727,7 @@ function nativeRecord() {
       bundles[c.id] = { files: Object.fromEntries(files.map(f => [f.name.slice(f.name.indexOf('/') + 1), f.text])) };
     } catch (err) { console.error(err); continue; }
     const bs = Object.values(c.branches);
-    view[c.id] = { focus: c.focus, collapsed: bs.filter(b => b.collapsed).map(b => b.id), ofold: bs.filter(b => b.ofold).map(b => b.id) };
+    view[c.id] = { focus: c.focus, collapsed: bs.filter(b => b.collapsed).map(b => b.id), ofold: bs.filter(b => b.ofold).map(b => b.id), ...(c.named ? { named: c.named } : {}) };
   }
   return { v: 2, rev: db.rev | 0, savedAt: Date.now(), settings: { key: db.key || '', model: db.model || '', helpers: db.helpers || {}, web: !!db.web, ...(db.webOff ? { webOff: true } : {}) },
     workspace: { order: db.order, current: db.current }, view, memory: db.memory || [], bundles };
@@ -759,6 +761,7 @@ function restoreNative() {
       c.id = cid; delete c.facts;
       const v = (NATIVE.view || {})[cid] || {};
       if (v.focus && c.branches[v.focus]) c.focus = v.focus;
+      if (v.named === 'you' || v.named === 'model') c.named = v.named;
       (v.collapsed || []).forEach(b => { if (c.branches[b]) c.branches[b].collapsed = true; });
       (v.ofold || []).forEach(b => { if (c.branches[b]) c.branches[b].ofold = true; });
       db.convos[cid] = c;
@@ -923,12 +926,16 @@ function renderSidebar() {
     const when = d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
     return `<div class="conv ${id === db.current ? 'active' : ''}" data-cid="${id}" tabindex="0">
       <div class="t"><b>${esc(c.title)}</b><small>${when}, ${nb} branch${nb === 1 ? '' : 'es'}</small></div>
+      <button class="rowbtn" data-rename="${id}" title="Rename" aria-label="Rename conversation">${ICON.pencil}</button>
       <button class="rowbtn" data-share="${id}" title="Share as a read-only page (.html)" aria-label="Share read-only">${ICON.share}</button>
       <button class="rowbtn" data-ts="${id}" title="Export as a Thinking State (.zip) for agents and tools" aria-label="Export as a Thinking State">${ICON.bough}</button>
       <button class="del" data-del="${id}" aria-label="Delete conversation">${ICON.trash}</button></div>`;
   }).join('');
 }
 $('#convList').addEventListener('click', e => {
+  if (e.target.closest('.name-input')) return;
+  const rn = e.target.closest('[data-rename]');
+  if (rn) { renameConvo(rn.dataset.rename); return; }
   const sh = e.target.closest('[data-share]');
   if (sh) { exportReadOnly(sh.dataset.share); return; }
   const tsb = e.target.closest('[data-ts]');
@@ -1641,7 +1648,7 @@ function cheapModel() {
 // Helper tasks run on the model picked in Settings (F-30), else on the cheapest one; null = turned off
 const HELPER_TASKS = [
   { id: 'summary', label: 'Decision summaries', off: 'Off: write them yourself' },
-  { id: 'name', label: 'Branch names', off: 'Off: name after the first message' },
+  { id: 'name', label: 'Names of branches and conversations', off: 'Off: name after the first message' },
   { id: 'options', label: 'Finding options' },
   { id: 'compare', label: 'Comparing branches' },
 ];
@@ -2134,6 +2141,40 @@ async function nameBranch(c, am) {
     if (db.current === c.id) paintBranchName(c, b);
   } catch (err) {} // the name taken from the first message stays
 }
+// The first answer of a conversation gives it a title, unless someone named it (c.named)
+async function nameConvo(c, am) {
+  const b = c.branches[am.branchId];
+  if (!b || b.parentId || c.named || !keyInput.value.trim() || !helperModel('name')) return;
+  if (b.msgIds.map(id => c.messages[id]).find(x => x && x.role === 'model') !== am) return;
+  const q = historyFor(c, b.id, am.id).reverse().find(x => x.role === 'user');
+  const prompt = 'Give this conversation a short title of 2 to 6 words, in the language of the conversation, like a heading. No quotes and no final period.'
+    + `\n\nQuestion:\n${(q ? q.text : '').slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
+  try {
+    const { data } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, output: d => d.title });
+    const name = clean(data && data.title, 80).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim();
+    if (!name || c.named || !db.convos[c.id]) return;
+    c.title = name; c.named = 'model';
+    save(); renderSidebar();
+  } catch (err) {} // the first words of the message stay
+}
+// Rename a conversation in the menu: a name you give stays
+function renameConvo(id) {
+  const c = db.convos[id], row = document.querySelector(`#convList .conv[data-cid="${id}"] .t b`);
+  if (!c || !row || RO) return;
+  const input = document.createElement('input');
+  input.className = 'name-input'; input.value = c.title; input.maxLength = 80; input.setAttribute('aria-label', 'Conversation name');
+  row.replaceWith(input); input.focus(); input.select();
+  let done = false;
+  const finish = commit => {
+    if (done) return; done = true;
+    const v = input.value.replace(/\s+/g, ' ').trim();
+    if (commit && v && v !== c.title) { c.title = v.slice(0, 80); c.named = 'you'; c.updated = Date.now(); save(); }
+    renderSidebar();
+  };
+  input.addEventListener('click', e => e.stopPropagation());
+  input.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') { e.preventDefault(); finish(false); } });
+  input.addEventListener('blur', () => finish(true));
+}
 // Update the name where it is shown without re-rendering the canvas, which could be holding an edit in progress
 function paintBranchName(c, b) {
   const name = branchName(b, c), head = colEls[b.id] && colEls[b.id].querySelector('.col-head .name');
@@ -2374,7 +2415,7 @@ async function sendToBranch(c, bid, text, modelOverride) {
   if (text != null) {
     const um = { id: uid(), role: 'user', text, branchId: bid, ts: Date.now() };
     c.messages[um.id] = um; b.msgIds.push(um.id);
-    if (c.title === NEW_TITLE) c.title = text.replace(/\s+/g, ' ').slice(0, 48);
+    if (c.title === NEW_TITLE) c.title = firstWords(text, 48);
   }
   c.updated = Date.now();
   const picked = modelSel.value || db.model;
@@ -2560,7 +2601,7 @@ async function streamInto(c, am, req, key, picked, backup) {
     renderSidebar();
     renderOutline();
   }
-  if (done) nameBranch(c, am);
+  if (done) { nameBranch(c, am); nameConvo(c, am); }
 }
 
 /* ---------------- sheet: Settings and other panels ---------------- */
@@ -2854,7 +2895,7 @@ const HELP = [
     <ul><li><b>Settings</b> (the gear, top right): paste a Gemini API key. It stays in this browser and goes only to Google's Gemini API.</li>
     <li>No key yet? Menu → <b>Try a sample conversation</b>: a ready-made conversation with branches, decisions and prompts to look at.</li>
     <li>On a desktop, Enter sends and Shift+Enter adds a line. On a phone, Enter adds a line: tap <b>Send</b>. <b>Stop</b> ends an answer and keeps what arrived. Answers show Markdown, code and formulas.</li>
-    <li>Menu → <b>New conversation</b> starts one; its first message becomes its title.</li>
+    <li>Menu → <b>New conversation</b> starts one. Its first answer gives it a short title; the pencil on it in the menu renames it.</li>
     <li>On a phone, add it to the home screen: iPhone Safari → Share → <b>Add to Home Screen</b>; Android Chrome → ⋮ → <b>Add to Home screen</b>.</li></ul>` },
   { id: 'branches', title: 'Branches', cards: ['F-04', 'F-05', 'F-06', 'F-07', 'F-10', 'F-11', 'F-12', 'F-19', 'F-24', 'F-29', 'F-32'], body: `
     <p class="help-why">Try alternatives without mixing them.</p>
@@ -2898,7 +2939,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.', 'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.', '<b>Remember</b> drafts a fact that you save, and a remembered message shows it. On a phone the breadcrumbs show the branch you are in.', 'The prompt view says what each block is, and what the prompt left out: the other branches, excluded messages, dropped decisions.', 'Help starts with what this is and the first 2 minutes; What’s new is at the end, with earlier versions.'] },
+  { version: 'Unreleased', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.', 'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.', '<b>Remember</b> drafts a fact that you save, and a remembered message shows it. On a phone the breadcrumbs show the branch you are in.', 'The prompt view says what each block is, and what the prompt left out: the other branches, excluded messages, dropped decisions.', 'Help starts with what this is and the first 2 minutes; What’s new is at the end, with earlier versions.', 'Conversations name themselves after the first answer, and the pencil in the menu renames them.'] },
   { version: '0.3.0', items: ['<b>Help</b>: this guide, and what’s new in each version.',
     'Your conversations are stored as Thinking States, the same files an export holds. <b>Export all</b> saves them all with your memory, and an import brings back the whole conversation.',
     'More of what you do is data: helper calls with their tokens, options, comparisons and choices, branch statuses, earlier versions of an answer, and which memory each prompt used.',
@@ -3728,7 +3769,7 @@ function adoptConvo(src) {
     bid.set(k, keepId(k)); order.push(k);
     queue.push(...(kids.get(k) || []));
   }
-  const c = { id: uid(), title: str(src.title, 200).trim() || 'Imported conversation', created: time(src.created), updated: time(src.updated),
+  const c = { id: uid(), title: str(src.title, 200).trim() || 'Imported conversation', created: time(src.created), updated: time(src.updated), named: src.named === 'model' ? 'model' : 'you',
     root: bid.get(src.root), focus: bid.get(src.focus) || bid.get(src.root), counter: 0, branches: {}, messages: {} };
   // the ids a Thinking State export gave (spec W3); a bundle id already in use here is left for the next export to replace
   const tsIdOk = v => typeof v === 'string' && TS_ID.test(v);
