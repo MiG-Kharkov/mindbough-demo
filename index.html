@@ -224,6 +224,7 @@ body.readonly #webSearch{display:none}
 .ctxpill{display:inline-flex}
 .ctxpill .topicon:first-child{border-radius:10px 0 0 10px}
 .ctxpill .topicon:last-child{border-radius:0 10px 10px 0;margin-left:-1px}
+.pb-later{display:block;font-size:10.5px;font-weight:600;color:var(--flag);text-transform:none}
 .mem-tools{display:flex;gap:8px;align-items:center;margin:0 0 8px}
 .mem-search{flex:1;min-width:0;font:inherit;font-size:16px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
 .mem-sum{font-size:12.5px;color:var(--muted);margin:0 0 8px}
@@ -595,7 +596,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.5.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 7b3ccca'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 3628237'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1498,6 +1499,20 @@ function canGenerate() {
 const versionOf = x => ({ text: x.text || '', ...(x.model ? { model: x.model } : {}), ts: x.ts, ...(x.edited ? { edited: true } : {}), ...(x.editedAt ? { editedAt: x.editedAt } : {}),
   ...(x.request ? { request: x.request } : {}), ...(x.search ? { search: x.search } : {}) });
 function addVersion(m, x) { if (x && x.text) m.versions = (m.versions || []).concat(versionOf(x)).slice(-10); }
+// The version of a message that a request sent (F-06, F-20, spec §14.5): the one whose signature the request kept, or, for a
+// request without one, the version current at its time. A signature that no version has left means the text it sent is gone.
+const versionsOf = m => [...(m.versions || []).filter(v => v && typeof v.text === 'string'), m];
+function sentIndex(m, sig, at) {
+  const vs = versionsOf(m), byTime = vs.reduce((k, v, i) => ((v.editedAt || v.ts || 0) <= at ? i : k), 0);
+  if (!sig) return byTime;
+  const hits = vs.map((v, i) => sigOf(v.text || '') === sig ? i : -1).filter(i => i >= 0);
+  return !hits.length ? -1 : hits.includes(byTime) ? byTime : hits[hits.length - 1];
+}
+function sentVersion(m, sig, at) {
+  if (!m || !at) return m;
+  const vs = versionsOf(m), k = sentIndex(m, sig, at);
+  return k < 0 ? { ...m, later: true, lost: true } : k === vs.length - 1 ? m : { ...m, text: vs[k].text, later: true };
+}
 function regenerateInPlace(c, m, model) {
   if (!canGenerate()) return;
   const b = branchOf(c, m.id); if (!b) return;
@@ -1609,7 +1624,7 @@ function saveEdit(c, m, el) {
   const text = editValue(el);
   if (!text) { toast('Message can’t be empty'); return; }
   if (text !== m.text) {
-    if (m.role === 'model') { addVersion(m, m); m.editedAt = Date.now(); } // an answer edited in place keeps the text it had
+    addVersion(m, m); m.editedAt = Date.now(); // a message edited in place keeps the text it had, so the prompts that sent it stay true (F-06)
     m.text = text; m.edited = true; c.updated = Date.now(); save(); renderOutline();
   }
   stopEdit();
@@ -2533,8 +2548,8 @@ function mergeTurns(msgs) {
     if (!m || m.hidden || m.error || !m.text || m.streaming) continue;
     const role = m.role === 'user' ? 'user' : 'model';
     const last = turns[turns.length - 1];
-    if (last && last.role === role) { last.text += '\n\n' + m.text; last.ids.push(m.id); }
-    else turns.push({ role, text: m.text, ids: [m.id] });
+    if (last && last.role === role) { last.text += '\n\n' + m.text; last.ids.push(m.id); if (m.later) last.later = true; if (m.lost) last.lost = true; }
+    else turns.push({ role, text: m.text, ids: [m.id], ...(m.later ? { later: true } : {}), ...(m.lost ? { lost: true } : {}) });
   }
   while (turns.length && turns[0].role !== 'user') turns.shift();
   return turns;
@@ -2545,9 +2560,10 @@ function buildRequest(c, msgs) {
   const current = turns.length && turns[turns.length - 1].role === 'user' ? turns[turns.length - 1] : null;
   const past = current ? turns.slice(0, -1) : turns;
   const size = ts => ts.reduce((n, t) => n + t.text.length, 0);
+  const texts = new Map(msgs.filter(Boolean).map(m => [m.id, m.text || ''])), sigs = ids => ids.map(id => sigOf(texts.get(id) || ''));
   const blocks = system.map(b => ({ ...b, chars: b.text.length }));
-  if (past.length) blocks.push({ kind: 'history', label: `History · ${past.length} turn${past.length === 1 ? '' : 's'}`, ids: past.flatMap(t => t.ids), chars: size(past) });
-  if (current) blocks.push({ kind: 'message', label: 'Your message', ids: current.ids, chars: current.text.length });
+  if (past.length) { const ids = past.flatMap(t => t.ids); blocks.push({ kind: 'history', label: `History · ${past.length} turn${past.length === 1 ? '' : 's'}`, ids, sigs: sigs(ids), chars: size(past) }); }
+  if (current) blocks.push({ kind: 'message', label: 'Your message', ids: current.ids, sigs: sigs(current.ids), chars: current.text.length });
   const body = { contents: turns.map(t => ({ role: t.role, parts: [{ text: t.text }] })) };
   if (db.web && turns.length) { blocks.push({ kind: 'tools', label: 'Tools · web search', chars: 0, text: WEB_NOTE }); body.tools = [{ google_search: {} }]; }
   if (system.length) body.systemInstruction = { parts: [{ text: system.map(b => b.text).join('\n\n') }] };
@@ -2557,7 +2573,7 @@ function buildRequest(c, msgs) {
 function requestRecord(req, model) {
   return { model, at: Date.now(), chars: req.chars, blocks: req.blocks.map(b => b.text != null
     ? { kind: b.kind, label: b.label, chars: b.chars, text: b.text, ...(b.items ? { items: b.items } : {}) }
-    : { kind: b.kind, label: b.label, chars: b.chars, ids: b.ids }) };
+    : { kind: b.kind, label: b.label, chars: b.chars, ids: b.ids, ...(b.sigs ? { sigs: b.sigs } : {}) }) };
 }
 
 // What the model searched and found, from Gemini's groundingMetadata: untrusted, so only http(s) links and plain text are kept
@@ -2728,7 +2744,7 @@ function openPromptView(c, m) {
     rec.blocks = rec.blocks.filter(b => b.kind !== 'tools'); // today's web setting says nothing about then
     note = 'Reconstructed: this answer was made before prompts were recorded, so this is what the demo would send for it now.';
   }
-  showPrompt({ c, rec, note, title: 'Prompt of this answer', lookup: id => c.messages[id], search: m.search, calls: (c.calls || []).filter(x => x.mid === m.id),
+  showPrompt({ c, rec, note, title: 'Prompt of this answer', lookup: (id, sig) => { const x = sentVersion(c.messages[id], sig, rec.at); return x && x.hidden ? { ...x, hidden: false } : x; }, search: m.search, calls: (c.calls || []).filter(x => x.mid === m.id),
     path: historyFor(c, branchOf(c, m.id).id, m.id).slice(0, -1), mid: m.id });
 }
 function previewPrompt() {
@@ -2755,7 +2771,7 @@ const fmtChars = n => `${n.toLocaleString('en-US')} char${n === 1 ? '' : 's'}`;
 const roleName = r => r === 'user' ? 'You' : 'Gemini';
 // The turns of a conversation block, rebuilt from the messages it points at
 function pvTurns(pv, b) {
-  const msgs = b.ids.map(id => pv.lookup(id) || { id, role: 'user', text: '(deleted since this request)' });
+  const msgs = b.ids.map((id, j) => pv.lookup(id, Array.isArray(b.sigs) ? b.sigs[j] : null) || { id, role: 'user', text: '(deleted since this request)' });
   return mergeTurns(msgs);
 }
 // What each block of a prompt is, in a line (F-20)
@@ -2809,12 +2825,13 @@ function pvRender(pv) {
   if (b.text != null) return `<pre class="pv-text">${esc(b.text)}</pre>`;
   const turns = pvTurns(pv, b);
   if (pv.level === 'block') {
-    const now = turns.reduce((n, t) => n + t.text.length, 0);
-    return `${now !== b.chars ? `<p class="pv-note">Edited since this request: sizes show the current text.</p>` : ''}
-      <div>${turns.map((t, j) => `<button class="pb-row" data-part="${j}"><span class="pb-role">${roleName(t.role)}</span><span class="pb-snip">${esc(plain(t.text).slice(0, 140))}</span><span class="pb-size">${fmtChars(t.text.length)}</span>${ICON.chevRight}</button>`).join('')}</div>`;
+    const now = turns.reduce((n, t) => n + t.text.length, 0), lost = turns.some(t => t.lost) || (!pv.preview && now !== b.chars && !turns.some(t => t.later));
+    const note = lost ? 'Edited after this answer, and the earlier text wasn’t kept: this shows the current text.' : turns.some(t => t.later) ? 'Edited after this answer: this shows the text the model saw.' : '';
+    return `${note ? `<p class="pv-note">${note}</p>` : ''}
+      <div>${turns.map((t, j) => `<button class="pb-row" data-part="${j}"><span class="pb-role">${roleName(t.role)}${t.later ? '<span class="pb-later">edited later</span>' : ''}</span><span class="pb-snip">${esc(plain(t.text).slice(0, 140))}</span><span class="pb-size">${fmtChars(t.text.length)}</span>${ICON.chevRight}</button>`).join('')}</div>`;
   }
   const t = turns[pv.part];
-  return `<p class="pv-meta"><span><b>${roleName(t.role)}</b></span><span>${fmtChars(t.text.length)}</span></p><pre class="pv-text">${esc(t.text)}</pre>`;
+  return `${t.later ? `<p class="pv-note">${t.lost ? 'Edited after this answer, and the earlier text wasn’t kept: this is the current text.' : 'Edited after this answer: this is the text the model saw.'}</p>` : ''}<p class="pv-meta"><span><b>${roleName(t.role)}</b></span><span>${fmtChars(t.text.length)}</span></p><pre class="pv-text">${esc(t.text)}</pre>`;
 }
 function pvClick(pv, e) {
   const blk = e.target.closest('[data-block]'), part = e.target.closest('[data-part]');
@@ -3011,7 +3028,7 @@ const HELP = [
     <ul><li><b>Branch out</b> under an answer: a new column that continues from there. The model sees only that branch's path, so dead ends don't pollute the context. Under your own message, <b>Branch out</b> offers an empty branch or an answer from any model.</li>
     <li>Under a message: <b>Branch out</b>, the flag (a decision), the bookmark (<b>Remember</b>) and, under an answer, the layers button (its prompt). <b>⋯</b> holds the rest: branch into options, edit, exclude from history, copy the message or the conversation up to here, and delete.</li>
     <li><b>Delete</b>: your question goes with its answer; an answer goes alone, and its question waits with <b>Answer</b>. <b>Undo</b> in the toast brings it back.</li>
-    <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place, and its old text stays as a version.</li>
+    <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place too. Either way the earlier text is kept, so an answer's prompt still shows what the model saw, marked <b>edited later</b>.</li>
     <li>Tap an answer's model chip to regenerate it with any model. The old answer stays as a version (<b>N versions</b> next to the model); in the middle of a chain the new one opens in a new branch.</li>
     <li>The <b>status</b> chip on a branch: Open, Accepted, Parked or Rejected. The decisions of a parked or rejected branch, and of the branches under it, leave the prompts.</li>
     <li>Branches name themselves; the pencil on a column renames it (on a desktop, a double-click too). The × on a column deletes it, with the branches under it, after asking.</li>
@@ -3048,6 +3065,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
+  { version: 'Unreleased', items: ['Fixed: an answer’s prompt shows the text the model saw, even after you edit a message of its history in place, marked edited later.'] },
   { version: '0.5.0', items: ['<b>🔖</b> next to <b>⚑</b> in the top bar opens your memory, which says what it adds to every request; facts are compact rows you tap to edit, with search. <b>← Back</b> returns after Go to.',
     'In the menu, <b>⋯</b> on a conversation holds Rename, Export as a Thinking State, Share and Delete, so its title has room.'] },
   { version: '0.4.0', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.',
@@ -3366,7 +3384,9 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
   const lines = [{ type: 'Session', profile: '0.2', id: c.sessionId, node: byBranch[c.root], title: c.title, by: `mindbough-demo/${APP_VERSION}`, at: iso(c.created) }];
   const decisionOf = {}; nodes.filter(n => n.type === 'Decision').forEach(n => { decisionOf[n.description] = n.id; });
   const who = m => m.role === 'user' ? 'human:me' : `mindbough-demo/${m.model || 'unknown'}`;
-  const block = b => {
+  const verIds = new Map(); // a message's entry ids, oldest version first
+  const entryAt = (id, sig, at) => { const ids = verIds.get(id), m = c.messages[id]; if (!ids || ids.length < 2 || !m) return id; const k = sentIndex(m, sig, at); return k < 0 ? id : ids[k] || id; };
+  const block = (b, at) => {
     const out = { kind: b.kind, chars: b.chars | 0, ...(b.label ? { label: b.label } : {}) };
     if (b.kind === 'memory') { // memory is personal and spans conversations: an export names the items, and leaves their text out
       const refs = Array.isArray(b.items) && b.items.length ? { memory: b.items.map(i => 'home:' + i), level: 'L1' } : {};
@@ -3376,7 +3396,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       const ids = (b.text || '').split('\n').filter(l => l.startsWith('- ')).map(l => decisionOf[l.slice(2)]).filter(Boolean);
       return { ...out, ...(ids.length ? { nodes: [...new Set(ids)] } : {}), ...(b.text ? { text: b.text } : {}) };
     }
-    if (Array.isArray(b.ids) && typeof b.text !== 'string') return { ...out, entries: b.ids.filter(id => c.messages[id]) };
+    if (Array.isArray(b.ids) && typeof b.text !== 'string') return { ...out, entries: b.ids.map((id, j) => [id, Array.isArray(b.sigs) ? b.sigs[j] : null]).filter(([id]) => c.messages[id]).map(([id, sig]) => entryAt(id, sig, at)) };
     return { ...out, ...(b.text ? { text: b.text } : {}) };
   };
   const idsUsed = new Set(Object.keys(c.messages));
@@ -3390,28 +3410,30 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       lines.push({ id: brId, kind: 'branch', node, after: fork, by: 'human:me', at: iso(b.created), ext: { 'mindbough-demo': { n: b.n, ...(b.option ? { option: b.option } : {}) } } });
       after = brId;
     }
-    const reqOf = r => ({ at: iso(r.at), chars: r.chars | 0, blocks: (r.blocks || []).map(block) });
+    const reqOf = r => ({ at: iso(r.at), chars: r.chars | 0, blocks: (r.blocks || []).map(x => block(x, r.at)) });
     const useOf = r => r.usage ? { usage: { input: r.usage.prompt | 0, output: r.usage.answer | 0, ...(r.usage.thoughts ? { reasoning: r.usage.thoughts | 0 } : {}) } } : {};
     const srcOf = x => (x && x.sources || []).map(y => ({ resource: y.uri, title: y.title }));
     b.msgIds.map(id => c.messages[id]).filter(Boolean).forEach((m, i) => {
       if (!mine && m.streaming && m.prev) m = { ...m, ...m.prev, streaming: false, prev: undefined }; // an export holds the answer being replaced
-      // an answer's earlier versions come first: the first as it was written, each later one replacing the one before;
+      // a message's earlier versions come first: the first as it was written, each later one replacing the one before;
       // a version edited in place is by you, without a request (spec §14.5, S4)
-      const vs = m.role === 'model' ? (m.versions || []).filter(v => v && typeof v.text === 'string') : [];
+      const vs = (m.versions || []).filter(v => v && typeof v.text === 'string'), ids = [];
       const variant = i === 0 && b.editOf && c.messages[b.editOf] ? { variant_of: b.editOf } : {};
       let prev = null;
       vs.forEach((v, k) => {
         const id = k === 0 ? m.id : derive(`${m.id}r${k}`), src = srcOf(v.search);
         const tools = v.request && (v.request.blocks || []).some(x => x.kind === 'tools'), rq = v.request && !v.edited ? reqOf(v.request) : null;
         if (rq && tools) { rq.tools = ['web_search']; rq.blocks = rq.blocks.filter(x => x.kind !== 'tools'); }
-        lines.push({ id, kind: 'message', node, after, role: 'assistant', by: v.edited ? 'human:me' : `mindbough-demo/${v.model || 'unknown'}`, at: iso(v.editedAt || v.ts),
+        const by = m.role === 'user' ? (k === 0 && !v.edited && b.option && i === 0 ? 'process:mindbough-demo' : 'human:me') : v.edited ? 'human:me' : `mindbough-demo/${v.model || 'unknown'}`;
+        lines.push({ id, kind: 'message', node, after, role: m.role === 'user' ? 'user' : 'assistant', by, at: iso(v.editedAt || v.ts),
           ...(prev ? { replaces: prev } : variant), text: v.text, ...(rq ? { request: rq, ...useOf(v.request) } : {}), ...(src.length ? { sources: src } : {}) });
-        prev = id;
+        prev = id; ids.push(id);
       });
       const human = vs.length && m.edited;
       // an option's first message is written by the demo from a template (spec §14.2, P3)
       const e = { id: vs.length ? derive(`${m.id}r${vs.length}`) : m.id, kind: 'message', node, after, role: m.role === 'user' ? 'user' : 'assistant',
         by: human ? 'human:me' : b.option && i === 0 && m.role === 'user' && !m.edited ? 'process:mindbough-demo' : who(m), at: iso(human && m.editedAt ? m.editedAt : m.ts), ...(prev ? { replaces: prev } : {}) };
+      verIds.set(m.id, ids.concat(e.id));
       if (m.streaming) e.pending = true; // still being written: readers skip it, and the demo resumes it after a crash (spec §10.3)
       if (m.text) e.text = m.text;
       if (m.error) e.error = m.error;
@@ -3647,6 +3669,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
   const msgs = entries.filter(e => e.kind === 'message' && (own || !e.pending) && nodes.has(String(e.node)));
   const newest = new Map(); msgs.forEach(e => { if (e.replaces) newest.set(e.replaces, e); });
   const latest = e => { let x = e; const seen = new Set(); while (newest.has(x.id) && !seen.has(x.id)) { seen.add(x.id); x = newest.get(x.id); } return x; };
+  const entryText = new Map(msgs.map(e => [e.id, typeof e.text === 'string' ? e.text : '']));
   const slots = msgs.filter(e => !e.replaces);
   // a session with no messages yet is an empty conversation, not a card of its root; a bundle with more to show opens as cards
   if (!slots.length && (nodes.size > 1 || String(nodes.get(rootId).body || '').trim())) return null;
@@ -3674,7 +3697,10 @@ function sessionToConvo(r, files, nodes, rootId, own) {
       const items = (Array.isArray(b.memory) ? b.memory : []).map(String).filter(x => /^home:[0-9]{8}-[0-9a-z]{6}$/.test(x)).map(x => x.slice(5)).slice(0, 200), it = items.length ? { items } : {};
       return own && !b.omitted && typeof b.text === 'string' ? { ...out, text: b.text, ...it } : { ...out, text: '', omitted: true, ...it };
     }
-    if (Array.isArray(b.entries) && (b.kind === 'history' || b.kind === 'message')) return { ...out, ids: b.entries.map(x => toMsg.get(x)).filter(Boolean) };
+    if (Array.isArray(b.entries) && (b.kind === 'history' || b.kind === 'message')) {
+      const sent = b.entries.map(String).filter(x => toMsg.has(x)), exact = sent.some(x => toMsg.get(x) !== x); // an entry that replaces another names the exact version sent
+      return { ...out, ids: sent.map(x => toMsg.get(x)), ...(exact ? { sigs: sent.map(x => toMsg.get(x) !== x ? sigOf(entryText.get(x) || '') : null) } : {}) };
+    }
     return { ...out, text: typeof b.text === 'string' ? b.text : '' };
   };
   let n = 0;
@@ -3693,7 +3719,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
       const chain = [slot]; { let x = slot; const seen = new Set(); while (newest.has(x.id) && !seen.has(x.id)) { seen.add(x.id); x = newest.get(x.id); chain.push(x); } }
       const v = chain[chain.length - 1], role = slot.role === 'user' ? 'user' : 'model';
       // an answer edited in place is by a person: its model, time and prompt are those of the version it was edited from
-      const gen = role === 'model' ? [...chain].reverse().find(e => modelOf(e.by)) || v : v, rqE = [...chain].reverse().find(e => isObj(e.request));
+      const gen = role === 'model' ? [...chain].reverse().find(e => modelOf(e.by)) || v : chain[0], rqE = [...chain].reverse().find(e => isObj(e.request));
       const m = { id: slot.id, role, text: typeof v.text === 'string' ? v.text : '', branchId: id, ts: time(gen.at, now) };
       if (gen !== v) m.editedAt = time(v.at, now);
       const model = role === 'model' ? modelOf(gen.by) : ''; if (model) m.model = model;
@@ -3719,6 +3745,10 @@ function sessionToConvo(r, files, nodes, rootId, own) {
         return { text: typeof x.text === 'string' ? x.text : '', ...(modelOf(x.by) ? { model: modelOf(x.by) } : {}), ts, ...(human ? { edited: true, editedAt: ts } : {}),
           ...(isObj(x.request) ? { request: recBack(x, modelOf(x.by), ts) } : {}), ...(found ? { search: found } : {}) };
       });
+      else if (role === 'user' && chain.length > 1) { // your message edited in place: the earlier texts, each by you from the second on
+        m.edited = true;
+        m.versions = chain.slice(0, -1).map((x, k) => ({ text: typeof x.text === 'string' ? x.text : '', ts: m.ts, ...(k ? { edited: true, editedAt: time(x.at, now) } : {}) })).slice(-10);
+      }
       const ws = WEB.get(String(slot.after));
       if (role === 'model' && (ws || Array.isArray(v.sources))) {
         const found = webSearchOf({ webSearchQueries: ws && isObj(ws.input) ? ws.input.queries : [], groundingChunks: (Array.isArray(v.sources) ? v.sources : ws && Array.isArray(ws.sources) ? ws.sources : []).filter(isObj).map(x => ({ web: { uri: x.resource, title: x.title } })) });
@@ -3985,7 +4015,11 @@ function adoptConvo(src) {
       const out = { kind: BLOCK_KINDS.includes(b.kind) ? b.kind : 'history', label: str(b.label, 80), chars: count(b.chars) };
       if (typeof b.text === 'string') out.text = str(b.text, 20000);
       if (b.omitted) out.omitted = true;
-      else if (typeof b.text !== 'string') out.ids = (Array.isArray(b.ids) ? b.ids : []).map(i => mid.get(i)).filter(Boolean); // text blocks keep their text, conversation blocks their ids
+      else if (typeof b.text !== 'string') { // text blocks keep their text, conversation blocks their ids, and the signature of each text they sent
+        const pairs = (Array.isArray(b.ids) ? b.ids : []).map((i, j) => [mid.get(i), Array.isArray(b.sigs) && /^[0-9a-z]{1,8}:\d{1,9}$/.test(String(b.sigs[j])) ? String(b.sigs[j]) : null]).filter(([x]) => x);
+        out.ids = pairs.map(([x]) => x);
+        if (pairs.some(([, g]) => g)) out.sigs = pairs.map(([, g]) => g);
+      }
       if (b.kind === 'memory' && Array.isArray(b.items)) out.items = b.items.filter(x => typeof x === 'string' && TS_ID.test(x)).slice(0, 200);
       return out;
     });
@@ -3998,7 +4032,7 @@ function adoptConvo(src) {
     if (!mid.has(k) || !isObj(x)) continue;
     const nm = c.messages[mid.get(k)];
     if (isObj(x.request)) nm.request = recOf(x.request);
-    if (nm.role === 'model' && Array.isArray(x.versions)) {
+    if (Array.isArray(x.versions)) {
       const vs = x.versions.filter(isObj).slice(-10).map(v => { const ws = searchOf(v.search); return { text: str(v.text, 1e6), ...(v.model ? { model: str(v.model, 100) } : {}), ts: time(v.ts), ...(v.edited ? { edited: true } : {}),
         ...(Number.isFinite(v.editedAt) ? { editedAt: v.editedAt } : {}), ...(isObj(v.request) ? { request: recOf(v.request) } : {}), ...(ws ? { search: ws } : {}) }; });
       if (vs.length) nm.versions = vs;
