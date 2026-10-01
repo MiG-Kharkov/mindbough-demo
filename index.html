@@ -406,10 +406,10 @@ button.decision:not(:disabled):hover{box-shadow:0 0 0 3px var(--flag-soft)}
 .content input[type=checkbox]{accent-color:var(--accent);margin:0 6px 0 0;vertical-align:-1px}
 .content del{opacity:.6}
 .content img{max-width:100%;border-radius:8px}
-.content th,.content td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
+.content th,.content td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top;overflow-wrap:normal;word-break:normal;min-width:4.5em}
 .content th{background:var(--accent-soft);font-weight:600}
 .content tbody tr:nth-child(even) td{background:rgba(127,127,127,.05)}
-.content table{margin:.6em 0;max-width:100%;font-size:.94em}
+.content table{margin:.6em 0;max-width:100%;font-size:.94em;display:block;overflow-x:auto}
 .content .katex{font-size:1.06em}
 .content .katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0;margin:.6em 0}
 .content pre code.hljs{background:none;padding:10px 12px}
@@ -602,7 +602,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.5.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main faa9c7b'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 0dfc555'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1978,7 +1978,8 @@ function renderCompare() {
   const colOf = bid => cols.find(x => x.bid === bid);
   let html = `<p class="pv-note">Branches that continue from “${esc(snippetOf(m.text, 90))}”</p>`;
   if (done && cmp.question) html += `<p class="cmp-q"><b>Deciding:</b> ${esc(cmp.question)}</p>`;
-  if (done && !alt) html += `<p class="set-hint warn">${esc(RELATIONS[cmp.relation] || 'These branches aren’t alternatives')}${cmp.relationWhy ? `: ${esc(cmp.relationWhy)}` : ''}. So there is no table and no pick.</p>`;
+  const why = (cmp.relationWhy || '').trim(), stop = why && !/[.!?…]$/.test(why) ? '.' : '';
+  if (done && !alt) html += `<p class="set-hint warn">${esc(RELATIONS[cmp.relation] || 'These branches aren’t alternatives')}.${why ? ` ${esc(why)}${stop}` : ''} So there is no table and no pick.</p>`;
   if (table) {
     const pk = x => cmp.pick && cmp.pick.bid === x.bid ? ' class="pick"' : '';
     html += `<div class="cmp-wrap"><table class="cmp"><thead><tr><th></th>${cols.map(x => `<th${pk(x)}><button class="cmp-go" data-cmp="goto" data-bid="${x.bid}">${esc(branchName(byId[x.bid], c))}</button>${tags(x.bid)}</th>`).join('')}</tr></thead><tbody>
@@ -3095,7 +3096,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.', 'Fixed: a title, a snippet or a search keeps the underscore in a name like user_id.', 'Fixed: an answer’s prompt shows the text the model saw, even after you edit a message of its history in place, marked edited later.', 'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.', 'Fixed: two tabs that change memory at the same moment both keep their change.'] },
+  { version: 'Unreleased', items: ['Fixed: on a phone, wide tables in answers scroll sideways instead of breaking words.', '<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.', 'Fixed: a title, a snippet or a search keeps the underscore in a name like user_id.', 'Fixed: an answer’s prompt shows the text the model saw, even after you edit a message of its history in place, marked edited later.', 'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.', 'Fixed: two tabs that change memory at the same moment both keep their change.'] },
   { version: '0.5.0', items: ['<b>🔖</b> next to <b>⚑</b> in the top bar opens your memory, which says what it adds to every request; facts are compact rows you tap to edit, with search. <b>← Back</b> returns after Go to.',
     'In the menu, <b>⋯</b> on a conversation holds Rename, Export as a Thinking State, Share and Delete, so its title has room.'] },
   { version: '0.4.0', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.',
