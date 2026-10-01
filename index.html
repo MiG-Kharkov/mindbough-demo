@@ -374,6 +374,8 @@ button.decision:not(:disabled):hover{box-shadow:0 0 0 3px var(--flag-soft)}
 .decision .dlabel svg.i{width:12px;height:12px}
 .decision .dtext{flex:1;min-width:0;overflow-wrap:anywhere}
 .decision .dtext i{color:var(--muted)}
+.dec-stale{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;margin:4px 2px 0;font-size:12.5px;color:var(--muted)}
+.dec-stale .linkbtn{font-size:13px;padding:6px 0}
 .decision.editing{flex-direction:column;align-items:stretch}
 .dec-area{width:100%;min-height:46px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font:inherit;padding:6px 8px;resize:vertical}
 .msg.flagged .bubble{box-shadow:inset 3px 0 0 var(--flag);background:linear-gradient(var(--flag-soft),var(--flag-soft)),var(--ai)}
@@ -606,7 +608,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 041c3e5'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 8f68b07'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1090,6 +1092,7 @@ function msgHTML(c, m) {
     } else {
       const txt = d.summary ? esc(d.summary) : d.pending ? '<i>Writing a summary…</i>' : `<i>${RO ? 'No summary' : 'Tap to add a one-line summary'}</i>`;
       dec = `<button class="decision" data-act="dec-edit" type="button"${RO ? ' disabled' : ' title="Edit the summary that goes into prompts"'}><span class="dlabel">${ICON.flagOn}Decision</span><span class="dtext">${txt}</span></button>`;
+      if (!RO && decisionStale(m)) dec += `<div class="dec-stale"><span>Written for an earlier version of this message.</span>${keyInput.value.trim() ? '<button class="linkbtn" data-act="dec-auto" title="Let the model for summaries write it for this version">Update</button>' : ''}<button class="linkbtn" data-act="dec-keep" title="The summary still holds: keep it">Keep</button></div>`;
     }
   }
   let acts = '';
@@ -1339,6 +1342,7 @@ $('#canvas').addEventListener('click', async e => {
   if (act === 'dec-cancel') { decEdit = null; rerenderMsg(c.id, m.id); scheduleLayout(); return; }
   if (act === 'dec-save') { saveDecision(c, m); return; }
   if (act === 'dec-auto') { decEdit = null; summarize(c, m, true); return; }
+  if (act === 'dec-keep') { if (m.decision) m.decision.sig = sigOf(m.text || ''); c.updated = Date.now(); save(); rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline(); return; }
   if (act === 'prompt') { openPromptView(c, m); return; }
   if (act === 'hide') { messageMore(c, m, 'hide'); return; }
   if (act === 'remember') { rememberFrom(c, m); return; }
@@ -1531,7 +1535,7 @@ function regenerateInPlace(c, m, model) {
   if (!canGenerate()) return;
   const b = branchOf(c, m.id); if (!b) return;
   const ids = pathIds(c, m.id);
-  const req = buildRequest(c, ids.slice(0, -1).map(id => c.messages[id]));
+  const req = buildRequest(c, ids.slice(0, -1).map(id => c.messages[id]), m.id); // not its own decision: that is what is written again
   const backup = { text: m.text, model: m.model, edited: m.edited, ts: m.ts, request: m.request, ...(m.editedAt ? { editedAt: m.editedAt } : {}), ...(m.search ? { search: m.search } : {}) };
   if (editing && editing.mid === m.id) editing = null;
   m.prev = backup; // saved with the message until the new answer is complete, so a reload or crash can't lose the original
@@ -1638,8 +1642,10 @@ function saveEdit(c, m, el) {
   const text = editValue(el);
   if (!text) { toast('Message can’t be empty'); return; }
   if (text !== m.text) {
+    const before = m.text;
     addVersion(m, m); m.editedAt = Date.now(); // a message edited in place keeps the text it had, so the prompts that sent it stay true (F-06)
     m.text = text; m.edited = true; c.updated = Date.now(); save(); renderOutline();
+    stopEdit(); textChanged(c, m, before); return;
   }
   stopEdit();
 }
@@ -1684,11 +1690,21 @@ function startDecisionEdit(c, m) {
   if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); }
 }
 // Every change keeps the previous text (newest first, up to 10), so a decision can be rolled back
-function setDecision(m, summary, model) {
+function setDecision(m, summary, model, sig) {
   const d = m.decision || (m.decision = { summary: '', at: Date.now() });
   if (d.summary && d.summary !== summary) d.history = [{ summary: d.summary, at: d.at, ...(d.model ? { model: d.model } : {}) }, ...(d.history || [])].slice(0, 10);
   d.summary = summary; d.at = Date.now();
   if (model) d.model = model; else delete d.model; // no model = written by hand
+  d.sig = sig || sigOf(m.text || ''); // the text the summary describes (F-21)
+}
+// A flagged message whose text changed after its summary was written: the summary describes an earlier version
+const decisionStale = m => !!(m.flagged && m.decision && m.decision.summary && !m.decision.pending && m.decision.sig && m.decision.sig !== sigOf(m.text || ''));
+// After a regeneration, an edit in place or a Restore: a summary the helper wrote is written again, and yours waits for you
+function textChanged(c, m, before) {
+  const d = m.decision;
+  if (!m.flagged || !d || !d.summary || d.pending) return;
+  if (!d.sig) d.sig = sigOf(before || ''); // a summary from before signatures described the text before this change
+  if (decisionStale(m) && d.model && helperModel('summary') && keyInput.value.trim()) summarize(c, m, true);
 }
 function saveDecision(c, m) {
   const ta = document.querySelector(`.msg[data-mid="${m.id}"] .dec-area`);
@@ -1769,6 +1785,7 @@ async function summarize(c, m, force) {
   const q = m.role === 'model' ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
   const prompt = 'Write the decision or key point of the message below as one short sentence (at most 25 words), in the language of the message. Reply with the sentence only.\n\n'
     + (q ? `Question it answers:\n${q.text.slice(0, 1500)}\n\n` : '') + `Message:\n${(m.text || '').slice(0, 6000)}`;
+  const sig = sigOf(m.text || ''); // the text being summarized, even if it changes while the helper writes
   m.decision.pending = true; inflight++; touched.add(c.id);
   rerenderMsg(c.id, m.id); scheduleLayout();
   try {
@@ -1782,7 +1799,7 @@ async function summarize(c, m, force) {
     const text = parts.filter(p => p.text && !p.thought).map(p => p.text).join(' ').replace(/\s+/g, ' ').trim().replace(/^["“'«]+|["”'»]+$/g, '');
     recordCall(c, { task: 'summary', model, prompt, mid: m.id, usage: usageOf(j), output: text, ...(text ? {} : { error: 'empty reply' }) });
     if (!text) throw new Error('empty');
-    if (m.decision && (force || !m.decision.summary)) setDecision(m, text.slice(0, 300), model);
+    if (m.decision && (force || !m.decision.summary)) setDecision(m, text.slice(0, 300), model, sig);
   } catch (err) {
     if (!/^empty$/.test(err.message)) recordCall(c, { task: 'summary', model, prompt, mid: m.id, error: err.message });
     toast('Couldn’t write the summary. Tap the decision to write it yourself.');
@@ -2159,6 +2176,7 @@ function versionsClick(e) {
   for (const k of ['edited', 'editedAt', 'request', 'search']) { if (v[k] !== undefined) m[k] = v[k]; else delete m[k]; }
   c.updated = Date.now(); save();
   closeSheet(); renderCanvas(); toast('Restored an earlier version');
+  textChanged(c, m, now.text);
 }
 
 /* ---------------- branch status (F-32) ---------------- */
@@ -2588,11 +2606,11 @@ function itemIdOf(x) {
 }
 function decisionsIn(c) { return Object.values(c.messages).filter(m => m.flagged && m.decision && m.decision.summary && !droppedAt(c, m.branchId)).sort((a, b) => a.ts - b.ts); }
 // { kind, label, text } blocks sent as the system instruction, in this order
-function systemBlocks(c) {
+function systemBlocks(c, skip) {
   const blocks = [];
   const memory = db.memory.filter(x => x.text);
   if (memory.length) blocks.push({ kind: 'memory', label: `Memory · ${memory.length}`, text: 'Things to remember about the user and their work (shared by all conversations):\n' + memory.map(x => `- ${x.text}`).join('\n'), items: memory.map(itemIdOf) });
-  const decisions = decisionsIn(c);
+  const decisions = decisionsIn(c).filter(m => m.id !== skip);
   if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions made in this conversation:\n' + decisions.map(m => `- ${m.decision.summary}`).join('\n') });
   if (blocks.length) blocks.unshift({ kind: 'harness', label: 'Harness', text: HARNESS });
   return blocks;
@@ -2610,9 +2628,9 @@ function mergeTurns(msgs) {
   while (turns.length && turns[0].role !== 'user') turns.shift();
   return turns;
 }
-function buildRequest(c, msgs) {
+function buildRequest(c, msgs, skip) {
   const turns = mergeTurns(msgs);
-  const system = systemBlocks(c).filter(b => b.text);
+  const system = systemBlocks(c, skip).filter(b => b.text);
   const current = turns.length && turns[turns.length - 1].role === 'user' ? turns[turns.length - 1] : null;
   const past = current ? turns.slice(0, -1) : turns;
   const size = ts => ts.reduce((n, t) => n + t.text.length, 0);
@@ -2645,6 +2663,7 @@ function webSearchOf(g) {
 }
 // Streams a Gemini answer into message `am`. `backup` = previous version (in-place regeneration)
 async function streamInto(c, am, req, key, picked, backup) {
+  let changed = null; // the text a completed regeneration replaced
   let model = am.model, done = false;
   if (!req.turns.length) {
     am.streaming = false;
@@ -2737,7 +2756,7 @@ async function streamInto(c, am, req, key, picked, backup) {
       delete am.error;
       Object.assign(am, backup);
       toast(why ? `Regeneration failed — kept the previous answer. ${why}` : 'Regeneration stopped — kept the previous answer');
-    } else if (backup) addVersion(am, backup); // the answer it replaced stays as an earlier version
+    } else if (backup) { addVersion(am, backup); changed = backup.text; } // the answer it replaced stays as an earlier version
     delete am.prev;
     am.streaming = false;
     c.updated = Date.now();
@@ -2747,6 +2766,7 @@ async function streamInto(c, am, req, key, picked, backup) {
     renderSidebar();
     renderOutline();
   }
+  if (changed !== null) textChanged(c, am, changed);
   if (done) { nameBranch(c, am); nameConvo(c, am); }
 }
 
@@ -2914,7 +2934,7 @@ function renderDecisionsPanel() {
     + list.map(m => {
       const d = m.decision || {}, b = branchOf(c, m.id), hist = d.history || [];
       const out = b && droppedAt(c, b.id);
-      const meta = [b && branchName(b), d.summary && (d.model ? `by ${d.model}` : d.choice ? 'chosen by you' : 'by you'), d.at && shortDate(d.at), out && `not in prompts: “${branchName(out, c)}” is ${statusLabel(out).toLowerCase()}`].filter(Boolean).join(' · ');
+      const meta = [b && branchName(b), d.summary && (d.model ? `by ${d.model}` : d.choice ? 'chosen by you' : 'by you'), decisionStale(m) && 'written for an earlier version of the message', d.at && shortDate(d.at), out && `not in prompts: “${branchName(out, c)}” is ${statusLabel(out).toLowerCase()}`].filter(Boolean).join(' · ');
       const body = panelEdit === m.id
         ? `<textarea class="dp-area" rows="3" maxlength="300" aria-label="Decision summary">${esc(d.summary || '')}</textarea>
            <div class="dp-actions"><button class="btn" data-dp="cancel">Cancel</button><button class="btn primary" data-dp="save">Save</button></div>`
@@ -3097,7 +3117,7 @@ const HELP = [
     <li><b>Choose</b> turns the chosen branch's last answer into a decision, "Chose X over Y", folds the others and sets the statuses, also without <b>Compare with AI</b>. If that answer holds your own decision, it asks first. <b>Undo</b> in the toast puts it all back. Choose again later, and the new choice replaces the earlier one in prompts and in the export.</li></ul>` },
   { id: 'context', title: 'Decisions, memory and the prompt', cards: ['F-08', 'F-09', 'F-20', 'F-21', 'F-22', 'F-23', 'F-31'], body: `
     <p class="help-why">Say it once: every request carries it.</p>
-    <ul><li>The <b>flag</b> under a message makes it a decision: a one-line summary that every prompt of the conversation carries. Tap the Decision box to edit it, or <b>Write for me</b>.</li>
+    <ul><li>The <b>flag</b> under a message makes it a decision: a one-line summary that every prompt of the conversation carries. Tap the Decision box to edit it, or <b>Write for me</b>. When the message changes (a regeneration, an edit, a Restore), a summary the helper wrote is written again; yours says it was written for an earlier version, with <b>Update</b> and <b>Keep</b>.</li>
     <li><b>⚑</b> in the top bar opens this conversation's decisions, with history and restore; <b>🔖</b> next to it opens your memory. <b>Go to</b> jumps to a message, and <b>← Back</b> above the composer returns to where you were.</li>
     <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) drafts one from the message, saved when you tap <b>Save</b>. Tap a fact to edit or delete it; with many facts, search them.</li>
     <li>The <b>eye</b> under a message excludes it from history: the model doesn't see it, on this branch and the ones that continue from it. Tap it again to include it.</li>
@@ -3125,7 +3145,8 @@ const WHATS_NEW = [
     'Fixed: the app opens again on iPhones with iOS older than 16.4, where it showed nothing at all.',
     'Fixed: a shared read-only page no longer holds your memory facts in the earlier versions of a regenerated answer.',
     'Fixed: choosing again among branches, after a reload too, leaves only the new choice in prompts; Choose asks before it takes the place of your own decision.',
-    'Fixed: <b>Stop</b> shows only in the conversation an answer is coming in. Elsewhere <b>Send</b> says where it is, with <b>Go there</b>.'] },
+    'Fixed: <b>Stop</b> shows only in the conversation an answer is coming in. Elsewhere <b>Send</b> says where it is, with <b>Go there</b>.',
+    'A decision follows its message: after a regeneration, an edit or a Restore, the helper writes its summary again, and a summary you wrote says it was written for an earlier version, with <b>Update</b> and <b>Keep</b>.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -3550,6 +3571,17 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       ...(x.usage ? { usage: { input: x.usage.prompt | 0, output: x.usage.answer | 0, ...(x.usage.thoughts ? { reasoning: x.usage.thoughts | 0 } : {}) } } : {}),
       ...(x.output ? { output: x.output } : {}), ...(x.error ? { error: x.error } : {}), ...(m ? { ext: { 'mindbough-demo': { message: m.id } } } : {}) });
   }
+  // a Decision is anchored at the version of its message that its summary describes, quotes that version and credits who wrote
+  // it, so a summary written for an earlier version reads as such, here and when the Thinking State is opened again (spec §10.6)
+  for (const m of Object.values(c.messages)) {
+    const d = m.decision, n = d && m.nodeId && nodes.find(x => x.id === m.nodeId && x.type === 'Decision'), ids = verIds.get(m.id);
+    const src = n && (n.sources || []).find(x => x.title === 'The flagged message');
+    if (!src || !ids) continue;
+    const vs = versionsOf(m), hit = d.sig ? vs.map(v => sigOf(v.text || '')).lastIndexOf(d.sig) : -1, k = hit >= 0 ? hit : vs.length - 1, v = vs[k];
+    src.resource = `/sessions/${c.sessionId}.jsonl#${ids[k] || ids[ids.length - 1]}`;
+    src.author = m.role === 'model' && !v.edited ? `mindbough-demo/${v.model || 'unknown'}` : 'human:me';
+    n.body = (v.text || '').trim();
+  }
   return lines.map(x => JSON.stringify(x)).join('\n') + '\n';
 }
 /* ---------------- open a Thinking State (.zip) ---------------- */
@@ -3874,6 +3906,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
       if (hist.length) m.decision.history = hist;
       const q = (Array.isArray(t.answers) ? t.answers : []).map(String).find(x => choiceAt.has(x));
       if (q) m.decision.choice = choiceAt.get(q); // the choice made at that fork (spec §14.4)
+      const at = entryText.get(src.split('#')[1]); if (at) m.decision.sig = sigOf(at); // the version its summary describes
     }
     m.nodeId = nid; used.add(nid);
   }
@@ -4055,6 +4088,7 @@ function adoptConvo(src) {
       if (isObj(x.decision)) {
         const version = h => ({ summary: str(h.summary, 300).trim(), at: time(h.at), ...(h.model ? { model: str(h.model, 100) } : {}) });
         nm.decision = version(x.decision);
+        if (typeof x.decision.sig === 'string' && /^[0-9a-z]{1,8}:\d{1,7}$/.test(x.decision.sig)) nm.decision.sig = x.decision.sig; // the text its summary describes
         if (Array.isArray(x.decision.history)) nm.decision.history = x.decision.history.filter(isObj).slice(0, 10).map(version);
       }
       if (x.hidden) nm.hidden = true;
