@@ -608,7 +608,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 8f68b07'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 0ee181c'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1513,15 +1513,17 @@ function canGenerate() {
   return true;
 }
 // Replace an answer with a fresh one, in the same place
-// An answer's earlier versions (F-07), kept when it is regenerated or edited in place, oldest first, up to 10 (spec §14.5)
+// A message's earlier versions (F-07), kept when it is regenerated, edited in place or restored, oldest first. Every one is kept and
+// none moves, so each keeps its place, and its entry id, in the session (spec §14.5, S6). A Restore is a version that names, by its
+// place, the earlier one it puts back (`restores`), and when (`restoredAt`)
 const versionOf = x => ({ text: x.text || '', ...(x.model ? { model: x.model } : {}), ts: x.ts, ...(x.edited ? { edited: true } : {}), ...(x.editedAt ? { editedAt: x.editedAt } : {}),
-  ...(x.request ? { request: x.request } : {}), ...(x.search ? { search: x.search } : {}) });
-function addVersion(m, x) { if (x && x.text) m.versions = (m.versions || []).concat(versionOf(x)).slice(-10); }
+  ...(x.request ? { request: x.request } : {}), ...(x.search ? { search: x.search } : {}), ...(Number.isInteger(x.restores) ? { restores: x.restores, restoredAt: x.restoredAt } : {}) });
+function addVersion(m, x) { if (x && x.text) m.versions = (m.versions || []).concat(versionOf(x)); }
 // The version of a message that a request sent (F-06, F-20, spec §14.5): the one whose signature the request kept, or, for a
 // request without one, the version current at its time. A signature that no version has left means the text it sent is gone.
 const versionsOf = m => [...(m.versions || []).filter(v => v && typeof v.text === 'string'), m];
 function sentIndex(m, sig, at) {
-  const vs = versionsOf(m), byTime = vs.reduce((k, v, i) => ((v.editedAt || v.ts || 0) <= at ? i : k), 0);
+  const vs = versionsOf(m), byTime = vs.reduce((k, v, i) => ((v.restoredAt || v.editedAt || v.ts || 0) <= at ? i : k), 0);
   if (!sig) return byTime;
   const hits = vs.map((v, i) => sigOf(v.text || '') === sig ? i : -1).filter(i => i >= 0);
   return !hits.length ? -1 : hits.includes(byTime) ? byTime : hits[hits.length - 1];
@@ -1536,10 +1538,11 @@ function regenerateInPlace(c, m, model) {
   const b = branchOf(c, m.id); if (!b) return;
   const ids = pathIds(c, m.id);
   const req = buildRequest(c, ids.slice(0, -1).map(id => c.messages[id]), m.id); // not its own decision: that is what is written again
-  const backup = { text: m.text, model: m.model, edited: m.edited, ts: m.ts, request: m.request, ...(m.editedAt ? { editedAt: m.editedAt } : {}), ...(m.search ? { search: m.search } : {}) };
+  const backup = { text: m.text, model: m.model, edited: m.edited, ts: m.ts, request: m.request, ...(m.editedAt ? { editedAt: m.editedAt } : {}), ...(m.search ? { search: m.search } : {}),
+    ...(Number.isInteger(m.restores) ? { restores: m.restores, restoredAt: m.restoredAt } : {}) };
   if (editing && editing.mid === m.id) editing = null;
   m.prev = backup; // saved with the message until the new answer is complete, so a reload or crash can't lose the original
-  m.text = ''; delete m.error; m.edited = false; delete m.editedAt; delete m.search; m.model = model; m.ts = Date.now(); m.streaming = true;
+  m.text = ''; delete m.error; m.edited = false; delete m.editedAt; delete m.search; delete m.restores; delete m.restoredAt; m.model = model; m.ts = Date.now(); m.streaming = true;
   m.request = requestRecord(req, model);
   c.updated = Date.now();
   b.collapsed = false;
@@ -1552,7 +1555,10 @@ function laterDecisions(c, m) {
   if (!m.request || !Array.isArray(m.request.blocks)) return [];
   const rec = m.request.blocks.find(k => k.kind === 'decisions');
   const had = new Set(rec && rec.text ? rec.text.split('\n').filter(l => l.startsWith('- ')).map(l => l.slice(2)) : []);
-  return decisionsIn(c).filter(d => d !== m && !had.has(d.decision.summary) && !pathIds(c, d.id).includes(m.id));
+  // by the decisions' messages (or nodes, from an opened Thinking State), else by their wording, for requests recorded before.
+  // A decision it sent whose summary changed since counts too, marked changed: the answer had an earlier wording
+  const named = d => rec && Array.isArray(rec.ids) ? rec.ids.includes(d.id) : rec && Array.isArray(rec.nodes) ? rec.nodes.includes(d.nodeId) : false;
+  return decisionsIn(c).filter(d => d !== m && !had.has(d.decision.summary) && !pathIds(c, d.id).includes(m.id)).map(d => named(d) ? Object.assign(Object.create(d), { changed: true }) : d);
 }
 // Shown under the last answer of an open branch when later decisions could change it
 // Your question at the end of a branch, with no answer after it: an option branch made unanswered, or its answer deleted (F-10)
@@ -1570,8 +1576,10 @@ function reaskHTML(c, m) {
   if (RO || m.role !== 'model' || m.streaming || m.error || !b || b.collapsed || b.msgIds[b.msgIds.length - 1] !== m.id) return '';
   const later = laterDecisions(c, m);
   if (!later.length) return '';
-  const last = later[later.length - 1], n = later.length;
-  return `<div class="reask" data-sig="${esc(later.map(d => d.id + d.decision.summary.length).join())}"><span>${ICON.flagOn}Made before ${n} decision${n === 1 ? '' : 's'}: “${esc(snippetOf(last.decision.summary, 80))}”${n > 1 ? ` and ${n - 1} more` : ''}</span><button class="btn" data-act="reask" title="Ask again: the new answer gets every current decision">Re-ask</button></div>`;
+  const last = later[later.length - 1], n = later.length, changed = later.filter(d => d.changed).length, fresh = n - changed;
+  const pl = k => `${k} decision${k === 1 ? '' : 's'}`;
+  const what = !changed ? `Made before ${pl(n)}` : !fresh ? `${pl(n)} changed after this answer` : `Made before ${pl(fresh)}, and ${changed} changed after it`;
+  return `<div class="reask" data-sig="${esc(later.map(d => d.id + d.decision.summary.length).join())}"><span>${ICON.flagOn}${what}: “${esc(snippetOf(last.decision.summary, 80))}”${n > 1 ? ` and ${n - 1} more` : ''}</span><button class="btn" data-act="reask" title="Ask again: the new answer gets every current decision">Re-ask</button></div>`;
 }
 // Decisions changed: update those lines, leaving alone a message you are working in
 function refreshReask() {
@@ -1643,7 +1651,7 @@ function saveEdit(c, m, el) {
   if (!text) { toast('Message can’t be empty'); return; }
   if (text !== m.text) {
     const before = m.text;
-    addVersion(m, m); m.editedAt = Date.now(); // a message edited in place keeps the text it had, so the prompts that sent it stay true (F-06)
+    addVersion(m, m); m.editedAt = Date.now(); delete m.restores; delete m.restoredAt; // a message edited in place keeps the text it had, so the prompts that sent it stay true (F-06)
     m.text = text; m.edited = true; c.updated = Date.now(); save(); renderOutline();
     stopEdit(); textChanged(c, m, before); return;
   }
@@ -2160,8 +2168,9 @@ function renderVersions() {
   const c = db.convos[versFor.cid], m = c && c.messages[versFor.mid];
   if (!m) return '';
   const all = [...(m.versions || []).map((v, i) => ({ v, i })), { v: m, i: -1 }].reverse();
-  return `<p class="pv-note">Up to 10 earlier versions are kept, and a Thinking State export keeps them all. <b>Restore</b> makes an earlier one the answer again and keeps the one it replaces.</p>`
-    + all.map(({ v, i }, k) => `<article class="dp-card"><div class="dp-meta">${i < 0 ? '<b>Current</b> · ' : ''}Version ${all.length - k} · ${esc(v.edited ? 'edited by you' : v.model || 'unknown model')} · ${esc(shortDate(v.editedAt || v.ts))}</div>
+  const who = v => Number.isInteger(v.restores) ? `version ${v.restores + 1} restored by you` : v.edited ? 'edited by you' : v.model || 'unknown model';
+  return `<p class="pv-note">Every version is kept, and a Thinking State export has them all. <b>Restore</b> puts an earlier one back as a new version, so the one it replaces stays too.</p>`
+    + all.map(({ v, i }, k) => `<article class="dp-card"><div class="dp-meta">${i < 0 ? '<b>Current</b> · ' : ''}Version ${all.length - k} · ${esc(who(v))} · ${esc(shortDate(v.restoredAt || v.editedAt || v.ts))}</div>
       <div class="dp-text vers-text">${esc(v.text)}</div>${i >= 0 && !RO ? `<div class="dp-actions"><button class="btn" data-vers="${i}">Restore</button></div>` : ''}</article>`).join('');
 }
 function versionsClick(e) {
@@ -2171,9 +2180,10 @@ function versionsClick(e) {
   if (busy || fanOut) { busyNote(); return; }
   const i = +x.dataset.vers, v = m.versions && m.versions[i]; if (!v) return;
   const now = versionOf(m);
-  m.versions.splice(i, 1); m.versions.push(now);
+  addVersion(m, m); // the answer it replaces stays, as the newest earlier version: nothing moves (spec S6)
   m.text = v.text; m.ts = v.ts; if (v.model) m.model = v.model;
   for (const k of ['edited', 'editedAt', 'request', 'search']) { if (v[k] !== undefined) m[k] = v[k]; else delete m[k]; }
+  m.restores = i; m.restoredAt = Date.now(); // a new version, by you, that puts version i back (spec §14.5)
   c.updated = Date.now(); save();
   closeSheet(); renderCanvas(); toast('Restored an earlier version');
   textChanged(c, m, now.text);
@@ -2611,12 +2621,12 @@ function systemBlocks(c, skip) {
   const memory = db.memory.filter(x => x.text);
   if (memory.length) blocks.push({ kind: 'memory', label: `Memory · ${memory.length}`, text: 'Things to remember about the user and their work (shared by all conversations):\n' + memory.map(x => `- ${x.text}`).join('\n'), items: memory.map(itemIdOf) });
   const decisions = decisionsIn(c).filter(m => m.id !== skip);
-  if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions made in this conversation:\n' + decisions.map(m => `- ${m.decision.summary}`).join('\n') });
+  if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions made in this conversation:\n' + decisions.map(m => `- ${m.decision.summary}`).join('\n'), ids: decisions.map(m => m.id) });
   if (blocks.length) blocks.unshift({ kind: 'harness', label: 'Harness', text: HARNESS });
   return blocks;
 }
-// Consecutive messages of one role become one turn; the model's turns can't come first
-function mergeTurns(msgs) {
+// Consecutive messages of one role become one turn; the model's turns can't come first (a receipt keeps what was sent: all)
+function mergeTurns(msgs, all) {
   const turns = [];
   for (const m of msgs) {
     if (!m || m.hidden || m.error || !m.text || m.streaming) continue;
@@ -2625,7 +2635,7 @@ function mergeTurns(msgs) {
     if (last && last.role === role) { last.text += '\n\n' + m.text; last.ids.push(m.id); if (m.later) last.later = true; if (m.lost) last.lost = true; }
     else turns.push({ role, text: m.text, ids: [m.id], ...(m.later ? { later: true } : {}), ...(m.lost ? { lost: true } : {}) });
   }
-  while (turns.length && turns[0].role !== 'user') turns.shift();
+  if (!all) while (turns.length && turns[0].role !== 'user') turns.shift();
   return turns;
 }
 function buildRequest(c, msgs, skip) {
@@ -2646,7 +2656,7 @@ function buildRequest(c, msgs, skip) {
 // What an answer keeps: system blocks verbatim (they change over time), conversation blocks as message ids (no copies)
 function requestRecord(req, model) {
   return { model, at: Date.now(), chars: req.chars, blocks: req.blocks.map(b => b.text != null
-    ? { kind: b.kind, label: b.label, chars: b.chars, text: b.text, ...(b.items ? { items: b.items } : {}) }
+    ? { kind: b.kind, label: b.label, chars: b.chars, text: b.text, ...(b.items ? { items: b.items } : {}), ...(b.ids ? { ids: b.ids } : {}) }
     : { kind: b.kind, label: b.label, chars: b.chars, ids: b.ids, ...(b.sigs ? { sigs: b.sigs } : {}) }) };
 }
 
@@ -2844,11 +2854,22 @@ function pvSync(pv) {
   $('.sheet-body').scrollTop = 0;
 }
 const fmtChars = n => `${n.toLocaleString('en-US')} char${n === 1 ? '' : 's'}`;
-const roleName = r => r === 'user' ? 'You' : 'Gemini';
-// The turns of a conversation block, rebuilt from the messages it points at
+const roleName = r => r === 'user' ? 'You' : r ? 'Gemini' : 'Deleted';
+// The turns of a conversation block, rebuilt from the messages it points at. A message deleted since is a row of its own, with no
+// role: its text is gone, and it is never merged into a neighbour (FLOW-12)
 function pvTurns(pv, b) {
-  const msgs = b.ids.map((id, j) => pv.lookup(id, Array.isArray(b.sigs) ? b.sigs[j] : null) || { id, role: 'user', text: '(deleted since this request)' });
-  return mergeTurns(msgs);
+  const out = []; let run = [];
+  const flush = () => { if (run.length) out.push(...mergeTurns(run, true)); run = []; };
+  b.ids.forEach((id, j) => {
+    const x = pv.lookup(id, Array.isArray(b.sigs) ? b.sigs[j] : null);
+    if (x) { run.push(x); return; }
+    flush();
+    const last = out[out.length - 1];
+    if (last && last.deleted) { last.ids.push(id); last.text = `(${last.ids.length} messages deleted since this request)`; }
+    else out.push({ role: null, deleted: true, ids: [id], text: '(deleted since this request)' });
+  });
+  flush();
+  return out;
 }
 // What each block of a prompt is, in a line (F-20)
 const BLOCK_WHY = { harness: 'The demo’s fixed instructions to the model', memory: 'Your facts, shared by all conversations',
@@ -2857,7 +2878,7 @@ const BLOCK_WHY = { harness: 'The demo’s fixed instructions to the model', mem
 function notSent(pv) {
   const c = pv.c, r = pv.rec;
   if (!c || !r || !Array.isArray(r.blocks) || !pv.path) return [];
-  const sent = new Set(r.blocks.flatMap(b => Array.isArray(b.ids) ? b.ids : []));
+  const sent = new Set(r.blocks.filter(b => b.kind === 'history' || b.kind === 'message').flatMap(b => Array.isArray(b.ids) ? b.ids : []));
   const on = new Set(pv.path.map(x => x.id)); if (pv.mid) on.add(pv.mid);
   const at = r.at || Date.now();
   const outside = Object.values(c.messages).filter(x => !on.has(x.id) && (x.text || '').trim() && (x.ts || 0) <= at).length;
@@ -2901,12 +2922,13 @@ function pvRender(pv) {
   if (b.text != null) return `<pre class="pv-text">${esc(b.text)}</pre>`;
   const turns = pvTurns(pv, b);
   if (pv.level === 'block') {
-    const now = turns.reduce((n, t) => n + t.text.length, 0), lost = turns.some(t => t.lost) || (!pv.preview && now !== b.chars && !turns.some(t => t.later));
-    const note = lost ? 'Edited after this answer, and the earlier text wasn’t kept: this shows the current text.' : turns.some(t => t.later) ? 'Edited after this answer: this shows the text the model saw.' : '';
+    const gone = turns.some(t => t.deleted), now = turns.reduce((n, t) => n + (t.deleted ? 0 : t.text.length), 0), lost = turns.some(t => t.lost) || (!pv.preview && !gone && now !== b.chars && !turns.some(t => t.later));
+    const note = [gone && 'A message sent here was deleted after this answer: its text is gone.', lost ? 'Edited after this answer, and the earlier text wasn’t kept: this shows the current text.' : turns.some(t => t.later) ? 'Edited after this answer: this shows the text the model saw.' : ''].filter(Boolean).join(' ');
     return `${note ? `<p class="pv-note">${note}</p>` : ''}
-      <div>${turns.map((t, j) => `<button class="pb-row" data-part="${j}"><span class="pb-role">${roleName(t.role)}${t.later ? '<span class="pb-later">edited later</span>' : ''}</span><span class="pb-snip">${esc(plain(t.text).slice(0, 140))}</span><span class="pb-size">${fmtChars(t.text.length)}</span>${ICON.chevRight}</button>`).join('')}</div>`;
+      <div>${turns.map((t, j) => `<button class="pb-row" data-part="${j}"><span class="pb-role">${roleName(t.role)}${t.later ? '<span class="pb-later">edited later</span>' : ''}</span><span class="pb-snip">${esc(plain(t.text).slice(0, 140))}</span><span class="pb-size">${t.deleted ? '' : fmtChars(t.text.length)}</span>${ICON.chevRight}</button>`).join('')}</div>`;
   }
   const t = turns[pv.part];
+  if (t.deleted) return `<p class="pv-note">Deleted after this answer, so its text is gone. The request still names it: it was sent.</p>`;
   return `${t.later ? `<p class="pv-note">${t.lost ? 'Edited after this answer, and the earlier text wasn’t kept: this is the current text.' : 'Edited after this answer: this is the text the model saw.'}</p>` : ''}<p class="pv-meta"><span><b>${roleName(t.role)}</b></span><span>${fmtChars(t.text.length)}</span></p><pre class="pv-text">${esc(t.text)}</pre>`;
 }
 function pvClick(pv, e) {
@@ -3105,7 +3127,7 @@ const HELP = [
     <li>Under a message: <b>Branch out</b>, the flag (a decision), the bookmark (<b>Remember</b>) and the eye (<b>Exclude from history</b>): what the next prompts carry. <b>⋯</b> holds the rest: how the prompt of an answer was built, branch into options, edit, copy the message or the conversation up to here, and delete.</li>
     <li><b>Delete</b>: your question goes with its answer; an answer goes alone, and its question waits with <b>Answer</b>. <b>Undo</b> in the toast brings it back.</li>
     <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place too. Either way the earlier text is kept, so an answer's prompt still shows what the model saw, marked <b>edited later</b>.</li>
-    <li>Tap an answer's model chip to regenerate it with any model. The old answer stays as a version (<b>N versions</b> next to the model); in the middle of a chain the new one opens in a new branch.</li>
+    <li>Tap an answer's model chip to regenerate it with any model. The old answer stays as a version (<b>N versions</b> next to the model); in the middle of a chain the new one opens in a new branch. Every version is kept, and <b>Restore</b> puts an earlier one back as a new version.</li>
     <li>The <b>status</b> chip on a branch: Open, Accepted, Parked or Rejected. The decisions of a parked or rejected branch, and of the branches under it, leave the prompts.</li>
     <li>Branches name themselves; the pencil on a column renames it (on a desktop, a double-click too). The × on a column deletes it, with the branches under it, after asking.</li>
     <li>Fold a column with its chevron, or all of them with the top-bar button: a folded column shows its last message and its decisions.</li>
@@ -3146,7 +3168,8 @@ const WHATS_NEW = [
     'Fixed: a shared read-only page no longer holds your memory facts in the earlier versions of a regenerated answer.',
     'Fixed: choosing again among branches, after a reload too, leaves only the new choice in prompts; Choose asks before it takes the place of your own decision.',
     'Fixed: <b>Stop</b> shows only in the conversation an answer is coming in. Elsewhere <b>Send</b> says where it is, with <b>Go there</b>.',
-    'A decision follows its message: after a regeneration, an edit or a Restore, the helper writes its summary again, and a summary you wrote says it was written for an earlier version, with <b>Update</b> and <b>Keep</b>.'] },
+    'A decision follows its message: after a regeneration, an edit or a Restore, the helper writes its summary again, and a summary you wrote says it was written for an earlier version, with <b>Update</b> and <b>Keep</b>.',
+    'Every version of an answer is kept, and <b>Restore</b> puts an earlier one back as a new version. A prompt shows a message deleted since as deleted.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -3485,7 +3508,7 @@ function thinkingStateFiles(c, quiet, mine) {
 // The conversation as a profile 0.2 session (spec §10): one entry per message and branch point, each answer with its request
 function sessionLines(c, byBranch, nodes, iso, mine) {
   const lines = [{ type: 'Session', profile: '0.2', id: c.sessionId, node: byBranch[c.root], title: c.title, by: `mindbough-demo/${APP_VERSION}`, at: iso(c.created) }];
-  const decisionOf = {}; nodes.filter(n => n.type === 'Decision').forEach(n => { decisionOf[n.description] = n.id; });
+  const decisionOf = new Map(); nodes.filter(n => n.type === 'Decision').forEach(n => { decisionOf.set(n.description, n.id); }); // for requests recorded before they kept ids
   const who = m => m.role === 'user' ? 'human:me' : `mindbough-demo/${m.model || 'unknown'}`;
   const verIds = new Map(); // a message's entry ids, oldest version first
   const entryAt = (id, sig, at) => { const ids = verIds.get(id), m = c.messages[id]; if (!ids || ids.length < 2 || !m) return id; const k = sentIndex(m, sig, at); return k < 0 ? id : ids[k] || id; };
@@ -3495,11 +3518,14 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       const refs = Array.isArray(b.items) && b.items.length ? { memory: b.items.map(i => 'home:' + i), level: 'L1' } : {};
       return mine && !b.omitted && b.text ? { ...out, ...refs, text: b.text } : { ...out, ...refs, omitted: true };
     }
-    if (b.kind === 'decisions') {
-      const ids = (b.text || '').split('\n').filter(l => l.startsWith('- ')).map(l => decisionOf[l.slice(2)]).filter(Boolean);
+    if (b.kind === 'decisions') { // the decisions sent, by their messages: a summary edited since still names its Decision (spec §10.4)
+      const ids = Array.isArray(b.ids) ? b.ids.map(id => c.messages[id] && c.messages[id].nodeId).filter(Boolean)
+        : Array.isArray(b.nodes) ? b.nodes.filter(id => TS_ID.test(id))
+        : (b.text || '').split('\n').filter(l => l.startsWith('- ')).map(l => decisionOf.get(l.slice(2))).filter(Boolean);
       return { ...out, ...(ids.length ? { nodes: [...new Set(ids)] } : {}), ...(b.text ? { text: b.text } : {}) };
     }
-    if (Array.isArray(b.ids) && typeof b.text !== 'string') return { ...out, entries: b.ids.map((id, j) => [id, Array.isArray(b.sigs) ? b.sigs[j] : null]).filter(([id]) => c.messages[id]).map(([id, sig]) => entryAt(id, sig, at)) };
+    // a message deleted since keeps its id: a request records what was sent (spec S6)
+    if (Array.isArray(b.ids) && typeof b.text !== 'string') return { ...out, entries: b.ids.map((id, j) => c.messages[id] ? entryAt(id, Array.isArray(b.sigs) ? b.sigs[j] : null, at) : id) };
     return { ...out, ...(b.text ? { text: b.text } : {}) };
   };
   const idsUsed = new Set(Object.keys(c.messages));
@@ -3525,17 +3551,20 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       let prev = null;
       vs.forEach((v, k) => {
         const id = k === 0 ? m.id : derive(`${m.id}r${k}`), src = srcOf(v.search);
-        const tools = v.request && (v.request.blocks || []).some(x => x.kind === 'tools'), rq = v.request && !v.edited ? reqOf(v.request) : null;
+        // a Restore is a new entry, by you, that puts an earlier version back: that one keeps its model, request and sources (spec §14.5)
+        const back = Number.isInteger(v.restores) && ids[v.restores] ? ids[v.restores] : null;
+        const tools = v.request && (v.request.blocks || []).some(x => x.kind === 'tools'), rq = v.request && !v.edited && !back ? reqOf(v.request) : null;
         if (rq && tools) { rq.tools = ['web_search']; rq.blocks = rq.blocks.filter(x => x.kind !== 'tools'); }
-        const by = m.role === 'user' ? (k === 0 && !v.edited && b.option && i === 0 ? 'process:mindbough-demo' : 'human:me') : v.edited ? 'human:me' : `mindbough-demo/${v.model || 'unknown'}`;
-        lines.push({ id, kind: 'message', node, after, role: m.role === 'user' ? 'user' : 'assistant', by, at: iso(v.editedAt || v.ts),
-          ...(prev ? { replaces: prev } : variant), text: v.text, ...(rq ? { request: rq, ...useOf(v.request) } : {}), ...(src.length ? { sources: src } : {}) });
+        const by = back ? 'human:me' : m.role === 'user' ? (k === 0 && !v.edited && b.option && i === 0 ? 'process:mindbough-demo' : 'human:me') : v.edited ? 'human:me' : `mindbough-demo/${v.model || 'unknown'}`;
+        lines.push({ id, kind: 'message', node, after, role: m.role === 'user' ? 'user' : 'assistant', by, at: iso(back ? v.restoredAt : v.editedAt || v.ts),
+          ...(prev ? { replaces: prev } : variant), ...(back ? { restores: back } : {}), text: v.text, ...(rq ? { request: rq, ...useOf(v.request) } : {}), ...(src.length && !back ? { sources: src } : {}) });
         prev = id; ids.push(id);
       });
-      const human = vs.length && m.edited;
+      const back = Number.isInteger(m.restores) && ids[m.restores] ? ids[m.restores] : null, human = (vs.length && m.edited) || !!back;
       // an option's first message is written by the demo from a template (spec §14.2, P3)
       const e = { id: vs.length ? derive(`${m.id}r${vs.length}`) : m.id, kind: 'message', node, after, role: m.role === 'user' ? 'user' : 'assistant',
-        by: human ? 'human:me' : b.option && i === 0 && m.role === 'user' && !m.edited ? 'process:mindbough-demo' : who(m), at: iso(human && m.editedAt ? m.editedAt : m.ts), ...(prev ? { replaces: prev } : {}) };
+        by: human ? 'human:me' : b.option && i === 0 && m.role === 'user' && !m.edited ? 'process:mindbough-demo' : who(m), at: iso(back ? m.restoredAt : human && m.editedAt ? m.editedAt : m.ts),
+        ...(prev ? { replaces: prev } : {}), ...(back ? { restores: back } : {}) };
       verIds.set(m.id, ids.concat(e.id));
       if (m.streaming) e.pending = true; // still being written: readers skip it, and the demo resumes it after a crash (spec §10.3)
       if (m.text) e.text = m.text;
@@ -3551,7 +3580,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       const own = { ...(m.request && m.request.usage && m.request.usage.tools ? { toolTokens: m.request.usage.tools } : {}), ...(m.edited ? { edited: true } : {}), ...(m.streaming && m.prev ? { prev: m.prev } : {}), ...(cmp ? { compare: cmp } : {}),
         ...(m.node ? { card: { node: m.node, ...(m.flagged ? { flagged: true } : {}), ...(m.decision ? { decision: m.decision } : {}) } } : {}) };
       if (Object.keys(own).length) e.ext = { 'mindbough-demo': own };
-      if (m.search) {
+      if (m.search && !back) {
         const src = (m.search.sources || []).map(x => ({ resource: x.uri, title: x.title }));
         lines.push({ id: derive(m.id + 'ws'), kind: 'tool', node, after, tool: 'web_search', input: { queries: m.search.queries || [] }, ...(src.length ? { sources: src } : {}), by: who(m), at: iso(m.ts) });
         if (src.length) e.sources = src;
@@ -3585,6 +3614,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
   return lines.map(x => JSON.stringify(x)).join('\n') + '\n';
 }
 /* ---------------- open a Thinking State (.zip) ---------------- */
+const ENTRY_ID = /^[0-9a-z][0-9a-z_-]{3,31}$/; // a session entry's id (spec §10.3)
 const TS_ID = /^[0-9]{8}-[0-9a-z]{6}$/, TS_LINKS = ['answers', 'supports', 'contradicts', 'depends_on', 'supersedes'];
 const TS_STATUSES = ['open', 'accepted', 'rejected', 'superseded', 'parked'];
 // Reads the text files of a .zip (stored or deflated entries) with the browser's own inflater
@@ -3806,15 +3836,18 @@ function sessionToConvo(r, files, nodes, rootId, own) {
   const order = [rootId, ...[...branchEntry.keys()].filter(n => n !== rootId && nodes.has(n)), ...[...withEntries].filter(n => n !== rootId && !branchEntry.has(n) && nodes.has(n))];
   const WEB = new Map(); entries.filter(e => e.kind === 'tool' && e.tool === 'web_search').forEach(e => { WEB.set(String(e.after), e); });
   const blockBack = b => {
-    const out = { kind: BLOCK_KINDS.includes(b.kind) ? b.kind : 'harness', label: String(b.label || ({ harness: 'Harness', memory: 'Memory', decisions: 'Decisions', history: 'History', message: 'Your message' }[b.kind] || b.kind || 'Block')).slice(0, 80), chars: Math.max(0, b.chars | 0) };
+    const names = { harness: 'Harness', memory: 'Memory', decisions: 'Decisions', history: 'History', message: 'Your message' };
+    const out = { kind: BLOCK_KINDS.includes(b.kind) ? b.kind : 'harness', label: String(b.label || (Object.prototype.hasOwnProperty.call(names, b.kind) ? names[b.kind] : typeof b.kind === 'string' && b.kind ? b.kind : 'Block')).slice(0, 80), chars: Math.max(0, b.chars | 0) };
     if (b.kind === 'memory') {
       const items = (Array.isArray(b.memory) ? b.memory : []).map(String).filter(x => /^home:[0-9]{8}-[0-9a-z]{6}$/.test(x)).map(x => x.slice(5)).slice(0, 200), it = items.length ? { items } : {};
       return own && !b.omitted && typeof b.text === 'string' ? { ...out, text: b.text, ...it } : { ...out, text: '', omitted: true, ...it };
     }
     if (Array.isArray(b.entries) && (b.kind === 'history' || b.kind === 'message')) {
-      const sent = b.entries.map(String).filter(x => toMsg.has(x)), exact = sent.some(x => toMsg.get(x) !== x); // an entry that replaces another names the exact version sent
-      return { ...out, ids: sent.map(x => toMsg.get(x)), ...(exact ? { sigs: sent.map(x => toMsg.get(x) !== x ? sigOf(entryText.get(x) || '') : null) } : {}) };
+      // an entry that replaces another names the exact version sent; an id no entry has was deleted since, and stays (spec S6)
+      const sent = b.entries.map(String).filter(x => ENTRY_ID.test(x)).slice(0, 2000), exact = sent.some(x => toMsg.has(x) && toMsg.get(x) !== x);
+      return { ...out, ids: sent.map(x => toMsg.get(x) || x), ...(exact ? { sigs: sent.map(x => toMsg.has(x) && toMsg.get(x) !== x ? sigOf(entryText.get(x) || '') : null) } : {}) };
     }
+    if (b.kind === 'decisions' && Array.isArray(b.nodes)) return { ...out, text: typeof b.text === 'string' ? b.text : '', nodes: b.nodes.map(String).filter(x => TS_ID.test(x)).slice(0, 200) };
     return { ...out, text: typeof b.text === 'string' ? b.text : '' };
   };
   let n = 0;
@@ -3832,10 +3865,15 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     for (const slot of mine) {
       const chain = [slot]; { let x = slot; const seen = new Set(); while (newest.has(x.id) && !seen.has(x.id)) { seen.add(x.id); x = newest.get(x.id); chain.push(x); } }
       const v = chain[chain.length - 1], role = slot.role === 'user' ? 'user' : 'model';
+      // a Restore names an earlier version it puts back: that one, and those before it, give the model, the time and the prompt (spec §14.5)
+      const backAt = e => { const k = typeof e.restores === 'string' ? chain.findIndex(x => x.id === e.restores) : -1; return k >= 0 && k < chain.indexOf(e) ? k : -1; };
+      const origin = e => { let x = e; for (let k = backAt(x), g = 0; k >= 0 && g < 100; k = backAt(x), g++) x = chain[k]; return x; };
+      const o = origin(v), restored = o !== v, base = chain.slice(0, chain.indexOf(o) + 1);
       // an answer edited in place is by a person: its model, time and prompt are those of the version it was edited from
-      const gen = role === 'model' ? [...chain].reverse().find(e => modelOf(e.by)) || v : chain[0], rqE = [...chain].reverse().find(e => isObj(e.request));
+      const gen = role === 'model' ? [...base].reverse().find(e => modelOf(e.by)) || o : chain[0], rqE = [...base].reverse().find(e => isObj(e.request));
       const m = { id: slot.id, role, text: typeof v.text === 'string' ? v.text : '', branchId: id, ts: time(gen.at, now) };
-      if (gen !== v) m.editedAt = time(v.at, now);
+      if (restored) { m.restores = backAt(v); m.restoredAt = time(v.at, now); if (gen !== o) { m.edited = true; m.editedAt = time(o.at, now); } }
+      else if (gen !== v) m.editedAt = time(v.at, now);
       const model = role === 'model' ? modelOf(gen.by) : ''; if (model) m.model = model;
       if (v.error) m.error = String(v.error);
       if (slot.excluded || v.excluded) m.hidden = true;
@@ -3853,19 +3891,21 @@ function sessionToConvo(r, files, nodes, rootId, own) {
         return r;
       };
       if (rqE) m.request = recBack(rqE, model, m.ts);
-      if (role === 'model' && chain.length > 1) m.versions = chain.slice(0, -1).slice(-10).map(x => {
+      const asVersion = x => {
         const human = !modelOf(x.by), ts = time(x.at, now), srcs = (Array.isArray(x.sources) ? x.sources : []).filter(isObj);
         const found = srcs.length ? webSearchOf({ webSearchQueries: [], groundingChunks: srcs.map(y => ({ web: { uri: y.resource, title: y.title } })) }) : null;
         return { text: typeof x.text === 'string' ? x.text : '', ...(modelOf(x.by) ? { model: modelOf(x.by) } : {}), ts, ...(human ? { edited: true, editedAt: ts } : {}),
           ...(isObj(x.request) ? { request: recBack(x, modelOf(x.by), ts) } : {}), ...(found ? { search: found } : {}) };
-      });
+      };
+      // every version, in the order it was made; a Restore is one too, with what the version it puts back had
+      if (role === 'model' && chain.length > 1) m.versions = chain.slice(0, -1).map(x => backAt(x) >= 0 ? { ...asVersion(origin(x)), text: typeof x.text === 'string' ? x.text : '', restores: backAt(x), restoredAt: time(x.at, now) } : asVersion(x));
       else if (role === 'user' && chain.length > 1) { // your message edited in place: the earlier texts, each by you from the second on
         m.edited = true;
-        m.versions = chain.slice(0, -1).map((x, k) => ({ text: typeof x.text === 'string' ? x.text : '', ts: m.ts, ...(k ? { edited: true, editedAt: time(x.at, now) } : {}) })).slice(-10);
+        m.versions = chain.slice(0, -1).map((x, k) => ({ text: typeof x.text === 'string' ? x.text : '', ts: m.ts, ...(k ? { edited: true, editedAt: time(x.at, now) } : {}) }));
       }
-      const ws = WEB.get(String(slot.after));
-      if (role === 'model' && (ws || Array.isArray(v.sources))) {
-        const found = webSearchOf({ webSearchQueries: ws && isObj(ws.input) ? ws.input.queries : [], groundingChunks: (Array.isArray(v.sources) ? v.sources : ws && Array.isArray(ws.sources) ? ws.sources : []).filter(isObj).map(x => ({ web: { uri: x.resource, title: x.title } })) });
+      const ws = restored ? null : WEB.get(String(slot.after)), sv = restored ? o : v; // a restored answer has the sources of the version it puts back
+      if (role === 'model' && (ws || Array.isArray(sv.sources))) {
+        const found = webSearchOf({ webSearchQueries: ws && isObj(ws.input) ? ws.input.queries : [], groundingChunks: (Array.isArray(sv.sources) ? sv.sources : ws && Array.isArray(ws.sources) ? ws.sources : []).filter(isObj).map(x => ({ web: { uri: x.resource, title: x.title } })) });
         if (found) m.search = found;
       }
       if (b.msgIds.length === 0 && slot.variant_of && toMsg.has(slot.variant_of)) b.editOf = toMsg.get(slot.variant_of);
@@ -4157,9 +4197,12 @@ function adoptConvo(src) {
     const nm = c.messages[mid.get(k)];
     if (isObj(x.request)) nm.request = recOf(x.request);
     if (Array.isArray(x.versions)) {
-      const vs = x.versions.filter(isObj).slice(-10).map(v => { const ws = searchOf(v.search); return { text: str(v.text, 1e6), ...(v.model ? { model: str(v.model, 100) } : {}), ts: time(v.ts), ...(v.edited ? { edited: true } : {}),
-        ...(Number.isFinite(v.editedAt) ? { editedAt: v.editedAt } : {}), ...(isObj(v.request) ? { request: recOf(v.request) } : {}), ...(ws ? { search: ws } : {}) }; });
+      const vs = x.versions.filter(isObj).slice(-200).map(v => { const ws = searchOf(v.search); return { text: str(v.text, 1e6), ...(v.model ? { model: str(v.model, 100) } : {}), ts: time(v.ts), ...(v.edited ? { edited: true } : {}),
+        ...(Number.isFinite(v.editedAt) ? { editedAt: v.editedAt } : {}), ...(isObj(v.request) ? { request: recOf(v.request) } : {}), ...(ws ? { search: ws } : {}),
+        ...(Number.isFinite(v.restoredAt) ? { restores: v.restores, restoredAt: v.restoredAt } : {}) }; });
+      vs.forEach((v, k) => { if (!(Number.isInteger(v.restores) && v.restores >= 0 && v.restores < k)) { delete v.restores; delete v.restoredAt; } }); // a Restore names an earlier version
       if (vs.length) nm.versions = vs;
+      if (vs.length && Number.isInteger(x.restores) && x.restores >= 0 && x.restores < vs.length && Number.isFinite(x.restoredAt)) { nm.restores = x.restores; nm.restoredAt = x.restoredAt; }
     }
   }
   // helper calls (F-30), anchored at their messages
