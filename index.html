@@ -600,9 +600,9 @@ const NEW_TITLE = 'New conversation';
 const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return (cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.6.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 0dfc555'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 24e78d1'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -3096,7 +3096,12 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Fixed: on a phone, wide tables in answers scroll sideways instead of breaking words.', '<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.', 'Fixed: a title, a snippet or a search keeps the underscore in a name like user_id.', 'Fixed: an answer’s prompt shows the text the model saw, even after you edit a message of its history in place, marked edited later.', 'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.', 'Fixed: two tabs that change memory at the same moment both keep their change.'] },
+  { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
+    'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
+    'Fixed: on a phone, wide tables in answers scroll sideways instead of breaking words.',
+    'Fixed: a title, a snippet or a search keeps the underscore in a name like user_id.',
+    'Fixed: an answer’s prompt shows the text the model saw, even after you edit a message of its history in place, marked edited later.',
+    'Fixed: two tabs that change memory at the same moment both keep their change.'] },
   { version: '0.5.0', items: ['<b>🔖</b> next to <b>⚑</b> in the top bar opens your memory, which says what it adds to every request; facts are compact rows you tap to edit, with search. <b>← Back</b> returns after Go to.',
     'In the menu, <b>⋯</b> on a conversation holds Rename, Export as a Thinking State, Share and Delete, so its title has room.'] },
   { version: '0.4.0', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.',
