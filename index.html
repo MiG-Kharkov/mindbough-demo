@@ -606,7 +606,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 18c7fb3'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 274f024'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -3104,7 +3104,8 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Fixed: on a phone, the branch you write in and the model are no longer cut mid-letter, the buttons under a message are bigger, and toasts no longer cover the message box.'] },
+  { version: 'Unreleased', items: ['Fixed: on a phone, the branch you write in and the model are no longer cut mid-letter, the buttons under a message are bigger, and toasts no longer cover the message box.',
+    'Fixed: the app opens again on iPhones with iOS older than 16.4, where it showed nothing at all.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -3267,7 +3268,8 @@ function zipFiles(files, when = Date.now()) {
 const yq = v => JSON.stringify(String(v)).replace(/[\u007f-\u009f\u2028\u2029\ufeff\ufffe\uffff]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
 const TS_TYPES = ['Thought', 'Question', 'Hypothesis', 'Finding', 'Decision', 'Assumption', 'Constraint', 'Reference', 'Memory', 'Thinking State'];
 const sentenceOf = (t, max) => { const x = firstSentence(plain(t || '')); return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x; };
-const shortTitle = t => { const w = plain(t).split(/(?<=[.!?])\s|[:;]\s| [—–-] /)[0].replace(/\.$/, '').split(/\s+/).filter(Boolean); return w.slice(0, 10).join(' ') + (w.length > 10 ? '…' : ''); };
+// no regex lookbehind: it is a syntax error before iOS 16.4 and would stop the whole app (CI checks for it)
+const shortTitle = t => { const w = plain(t).replace(/([.!?])\s/, '$1\n').split(/\n|[:;]\s| [—–-] /)[0].replace(/\.$/, '').split(/\s+/).filter(Boolean); return w.slice(0, 10).join(' ') + (w.length > 10 ? '…' : ''); };
 const snippetOf = (t, max) => { const x = plain(t || ''); return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x; };
 // A time as ISO seconds; one out of range reads as now
 const MAX_T = 8.64e15, okTime = v => Number.isFinite(v) && Math.abs(v) <= MAX_T;
