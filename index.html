@@ -610,7 +610,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 9bcde3f'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 0e076e3'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1112,7 +1112,7 @@ function msgHTML(c, m) {
     // the row keeps what shapes the thinking; the rest is under More, with words (F-10)
     const remembered = db.memory.some(x => x.src && x.src.cid === c.id && x.src.mid === m.id);
     acts = `<div class="actions">
-      <button class="ib branch" data-act="branch" title="${m.role === 'user' ? 'Get an answer to this message in a new branch' : 'Continue the conversation in a new branch from here'}">${ICON.branch}Branch out</button>
+      <button class="ib branch" data-act="branch" title="${m.role === 'user' ? 'Edit this message, or get another answer to it, in a new branch' : 'Continue the conversation in a new branch from here'}">${ICON.branch}Branch out</button>
       <button class="ib ${m.flagged ? 'on-flag' : ''}" data-act="flag" title="${m.flagged ? 'Remove the flag (the decision leaves prompts)' : 'Flag as a decision'}" aria-pressed="${!!m.flagged}">${m.flagged ? ICON.flagOn : ICON.flag}</button>
       <button class="ib ${remembered ? 'on-mem' : ''}" data-act="remember" title="${remembered ? 'Remembered: edit the fact' : 'Remember this in all conversations'}" aria-pressed="${remembered}">${remembered ? ICON.bookmarkOn : ICON.bookmark}</button>
       <button class="ib ${m.hidden ? 'on-hide' : ''}" data-act="hide" title="${m.hidden ? 'Excluded from history: tap to include it again' : 'Exclude from history: the model won’t see it'}" aria-label="Exclude from history" aria-pressed="${!!m.hidden}">${ICON.eyeOff}</button>
@@ -1418,7 +1418,7 @@ function openModelMenu(anchor, c, m, mode = 'regen') {
   const tag = mode === 'regen' ? 'same' : 'current';
   const others = opts.filter(x => x !== top);
   menu.innerHTML = (mode === 'branch'
-      ? `<div class="mh">New branch</div><button role="menuitem" class="plain" data-empty="1">${ICON.plus}Empty branch<span class="same">no answer</span></button><hr><div class="mh">Answer with</div>`
+      ? `<div class="mh">New branch</div><button role="menuitem" class="plain" data-editbranch="1">${ICON.pencil}Edit in a new branch<span class="same">the original stays</span></button><hr><div class="mh">Answer with</div>`
       : answerTail(c, m) ? `<div class="mh">Answer again in a new branch</div><div class="mnote">The rest of this branch stays as it is</div>` : `<div class="mh">Regenerate with</div>`)
     + (top ? `<button role="menuitem" data-model="${esc(top)}">${mode === 'regen' ? ICON.regen : ICON.branch}${esc(top)}<span class="same">${tag}</span></button>${others.length ? '<hr>' : ''}` : '')
     + others.map(x => `<button role="menuitem" data-model="${esc(x)}">${esc(x)}</button>`).join('');
@@ -1489,11 +1489,12 @@ $('#modelMenu').addEventListener('click', e => {
     if (c && m) messageMore(c, m, more.dataset.more);
     return;
   }
-  const btn = e.target.closest('[data-model],[data-empty]'); if (!btn || !menuFor) return;
+  const btn = e.target.closest('[data-model],[data-empty],[data-editbranch]'); if (!btn || !menuFor) return;
   const { cid, mid, mode } = menuFor;
   const c = db.convos[cid], m = c && c.messages[mid];
   closeModelMenu();
   if (!c || !m) return;
+  if (btn.dataset.editbranch) { startEdit(c, m); return; } // Send as new branch keeps the original (F-06)
   if (btn.dataset.empty) answerInNewBranch(c, m, null);
   else if (mode === 'regen') reask(c, m, btn.dataset.model);
   else answerInNewBranch(c, m, btn.dataset.model);
@@ -1572,7 +1573,7 @@ function waiting(c, m) { const b = c.branches[m.branchId]; return !!b && m.role 
 function answerHTML(c, m) {
   if (RO || !waiting(c, m) || c.branches[m.branchId].collapsed) return '';
   if (m.hidden) return `<div class="reask answer-now"><span>No answer yet. The question is excluded from history: include it again to get an answer.</span></div>`;
-  return `<div class="reask answer-now"><span>No answer yet.</span><button class="btn primary" data-act="answer" title="Ask the model now, with the model picked above the message box">Answer</button></div>`;
+  return `<div class="reask answer-now"><span>No answer yet. A new message goes to the model together with this one.</span><button class="btn primary" data-act="answer" title="Ask the model now, with the model picked above the message box">Answer</button></div>`;
 }
 function answerWaiting(c, m) {
   if (!waiting(c, m) || !canGenerate()) return;
@@ -2893,9 +2894,12 @@ function notSent(pv) {
   const at = r.at || Date.now();
   const outside = Object.values(c.messages).filter(x => !on.has(x.id) && (x.text || '').trim() && (x.ts || 0) <= at).length;
   const excluded = pv.path.filter(x => x.hidden && !sent.has(x.id)).length;
+  // a prompt starts with a message of yours, so answers before the first one it sends are left out too (FLOW-10)
+  const lead = pv.path.filter(x => !x.hidden && !sent.has(x.id) && x.id !== pv.mid && x.role === 'model' && x.text && !x.error && !x.streaming).length;
   const dropped = pv.preview ? Object.values(c.messages).filter(x => x.flagged && x.decision && x.decision.summary && droppedAt(c, x.branchId)).length : 0;
   const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
   return [outside && n(outside, 'message outside this branch’s path', 'messages outside this branch’s path'), excluded && n(excluded, 'excluded message', 'excluded messages'),
+    lead && n(lead, 'answer before the first message sent: a prompt starts with yours', 'answers before the first message sent: a prompt starts with yours'),
     dropped && n(dropped, 'decision of a parked or rejected branch', 'decisions of parked or rejected branches')].filter(Boolean);
 }
 function pvRender(pv) {
@@ -2933,9 +2937,9 @@ function pvRender(pv) {
   const turns = pvTurns(pv, b);
   if (pv.level === 'block') {
     const gone = turns.some(t => t.deleted), now = turns.reduce((n, t) => n + (t.deleted ? 0 : t.text.length), 0), lost = turns.some(t => t.lost) || (!pv.preview && !gone && now !== b.chars && !turns.some(t => t.later));
-    const note = [gone && 'A message sent here was deleted after this answer: its text is gone.', lost ? 'Edited after this answer, and the earlier text wasn’t kept: this shows the current text.' : turns.some(t => t.later) ? 'Edited after this answer: this shows the text the model saw.' : ''].filter(Boolean).join(' ');
+    const note = [gone && 'A message sent here was deleted after this answer: its text is gone.', turns.some(t => t.ids && t.ids.length > 1) && 'Messages of one role next to each other go to the model as one turn.', lost ? 'Edited after this answer, and the earlier text wasn’t kept: this shows the current text.' : turns.some(t => t.later) ? 'Edited after this answer: this shows the text the model saw.' : ''].filter(Boolean).join(' ');
     return `${note ? `<p class="pv-note">${note}</p>` : ''}
-      <div>${turns.map((t, j) => `<button class="pb-row" data-part="${j}"><span class="pb-role">${roleName(t.role)}${t.later ? '<span class="pb-later">edited later</span>' : ''}</span><span class="pb-snip">${esc(plain(t.text).slice(0, 140))}</span><span class="pb-size">${t.deleted ? '' : fmtChars(t.text.length)}</span>${ICON.chevRight}</button>`).join('')}</div>`;
+      <div>${turns.map((t, j) => `<button class="pb-row" data-part="${j}"><span class="pb-role">${roleName(t.role)}${t.later ? '<span class="pb-later">edited later</span>' : ''}${!t.deleted && t.ids && t.ids.length > 1 ? `<span class="pb-later">${t.ids.length} messages</span>` : ''}</span><span class="pb-snip">${esc(plain(t.text).slice(0, 140))}</span><span class="pb-size">${t.deleted ? '' : fmtChars(t.text.length)}</span>${ICON.chevRight}</button>`).join('')}</div>`;
   }
   const t = turns[pv.part];
   if (t.deleted) return `<p class="pv-note">Deleted after this answer, so its text is gone. The request still names it: it was sent.</p>`;
@@ -3133,7 +3137,7 @@ const HELP = [
     <li>On a phone, add it to the home screen: iPhone Safari → Share → <b>Add to Home Screen</b>; Android Chrome → ⋮ → <b>Add to Home screen</b>.</li></ul>` },
   { id: 'branches', title: 'Branches', cards: ['F-04', 'F-05', 'F-06', 'F-07', 'F-10', 'F-11', 'F-12', 'F-19', 'F-24', 'F-29', 'F-32'], body: `
     <p class="help-why">Try alternatives without mixing them.</p>
-    <ul><li><b>Branch out</b> under an answer: a new column that continues from there. The model sees only that branch's path, so dead ends don't pollute the context. Under your own message, <b>Branch out</b> offers an empty branch or an answer from any model.</li>
+    <ul><li><b>Branch out</b> under an answer: a new column that continues from there. The model sees only that branch's path, so dead ends don't pollute the context. Under your own message, <b>Branch out</b> offers <b>Edit in a new branch</b> or an answer from any model.</li>
     <li>Under a message: <b>Branch out</b>, the flag (a decision), the bookmark (<b>Remember</b>) and the eye (<b>Exclude from history</b>): what the next prompts carry. <b>⋯</b> holds the rest: how the prompt of an answer was built, branch into options, edit, copy the message or the conversation up to here, and delete.</li>
     <li><b>Delete</b>: your question goes with its answer; an answer goes alone, and its question waits with <b>Answer</b>. <b>Undo</b> in the toast brings it back.</li>
     <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place too. Either way the earlier text is kept, so an answer's prompt still shows what the model saw, marked <b>edited later</b>.</li>
@@ -3180,7 +3184,8 @@ const WHATS_NEW = [
     'Fixed: <b>Stop</b> shows only in the conversation an answer is coming in. Elsewhere <b>Send</b> says where it is, with <b>Go there</b>.',
     'A decision follows its message: after a regeneration, an edit or a Restore, the helper writes its summary again, and a summary you wrote says it was written for an earlier version, with <b>Update</b> and <b>Keep</b>.',
     'Every version of an answer is kept, and <b>Restore</b> puts an earlier one back as a new version. A prompt shows a message deleted since as deleted.',
-    'An answer you stop or that is cut off keeps what arrived, tagged <b>stopped</b> or <b>cut off</b>, and the app’s own words are never sent to the model as the answer.'] },
+    'An answer you stop or that is cut off keeps what arrived, tagged <b>stopped</b> or <b>cut off</b>, and the app’s own words are never sent to the model as the answer.',
+    'Under your own message, <b>Branch out</b> offers <b>Edit in a new branch</b>. A prompt view says when messages go to the model as one turn.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
