@@ -65,6 +65,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 #outline{background:var(--side);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
 .app:not(.outline-open) #outline{visibility:hidden;border:0}
 .ohead{display:flex;align-items:center;gap:8px;padding:14px 10px 10px 16px;font-weight:700;font-size:15px;white-space:nowrap}
+.ohead .ofold-all{margin-left:auto;font-size:13px;font-weight:600;padding:6px 4px}
 .ohead .cnt{font-weight:500;color:var(--muted);font-size:12.5px}
 .ohead .ib{margin-left:auto}
 #oFilter{margin:0 12px 8px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);font:inherit;font-size:13px;min-width:0}
@@ -325,7 +326,7 @@ body.resizing,body.resizing *{cursor:ew-resize!important;user-select:none!import
 @media (hover:none){.col-head .rename{opacity:1}}
 .name-input{flex:1;min-width:0;font:inherit;font-weight:600;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--accent);border-radius:7px;padding:3px 8px;outline:none}
 #modelMenu button.plain{font-family:"Onest",system-ui,sans-serif}
-body.readonly .col-head .rename{display:none}
+body.readonly .col-head .rename,body.readonly .col-head .colmore{display:none}
 .col-head .name{flex:1;font-weight:600;font-size:14px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .col.collapsed .col-head{border-bottom:0;border-radius:18px 18px 0 0}
 .col-sum{display:none;padding:0 14px 12px;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -390,7 +391,7 @@ button.decision:not(:disabled):hover{box-shadow:0 0 0 3px var(--flag-soft)}
 .msg.user .actions{justify-content:flex-end}
 .msg:hover .actions,.msg:focus-within .actions,.msg.flagged .actions,.msg.hidden .actions{opacity:1}
 @media (hover:none){.actions{opacity:1}}
-@media (max-width:440px){.actions{gap:0}.actions .ib{padding:5px 4px}.col-head .back .lbl{display:none}}
+@media (max-width:440px){.actions{gap:0}.actions .ib{padding:5px 4px}.col-head .back .lbl{display:none}.col-head .name small{display:none}}
 @media (max-width:380px){.actions .ib{padding:5px 3px}}
 .ib.branch{color:var(--accent);font-weight:600}
 .kids{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
@@ -492,8 +493,10 @@ button.model-chip svg.i{width:11px;height:11px}
   #outline{position:fixed;inset:0 0 0 auto;width:300px;max-width:88vw;z-index:30;transform:translateX(100%);transition:transform .25s}
   .app.outline-open #outline{transform:none;box-shadow:0 0 0 100vmax rgba(0,0,0,.35)}
   #crumbs{flex:1 1 0;min-width:0;justify-content:flex-start}
-  #crumbs button{flex:0 1 auto;min-width:2.8em;overflow:hidden;text-overflow:ellipsis}
-  #crumbs button.here{flex:0 0 auto;max-width:100%}
+  #crumbs{overflow:hidden}
+  #crumbs button{flex:0 1 auto;min-width:5em;overflow:hidden;text-overflow:ellipsis}
+  #crumbs button[data-crumbs-all]{min-width:2em;flex:none}
+  #crumbs button.here{flex:0 1 auto;min-width:3em}
   #crumbs span{flex:none}
   .sheet{align-items:flex-end}
   .sheet-panel{width:100%;max-height:88dvh;border-radius:18px 18px 0 0;border-bottom:0}
@@ -513,6 +516,7 @@ button.model-chip svg.i{width:11px;height:11px}
   .model-chip,.bstat,.kid,.conv .rowbtn,.side-foot .linkbtn{position:relative}
   .model-chip::after,.bstat::after,.kid::after,.side-foot .linkbtn::after{content:"";position:absolute;inset:-7px -3px}
   .conv .rowbtn{min-width:40px;min-height:40px}
+  .col-head .ib{min-width:40px;min-height:40px;justify-content:center}
   #model{font-family:inherit}}
 </style>
 </head>
@@ -534,7 +538,6 @@ button.model-chip svg.i{width:11px;height:11px}
   <main>
     <header class="topbar">
       <button id="toggleSide" title="Show / hide conversations" aria-label="Show or hide conversations"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
-      <button id="foldAll" class="topicon" title="Fold all branches" aria-label="Fold all branches"></button>
       <nav id="crumbs"></nav>
       <div class="ctxpill"><button id="openDecisions" class="topicon" title="Decisions in force in this conversation" aria-label="Decisions"><svg class="i" viewBox="0 0 24 24" style="fill:currentColor"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg><span class="cnt" id="decCount"></span></button><button id="openMemory" class="topicon" title="Memory: about you, in every request" aria-label="Memory"><svg class="i" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span class="cnt" id="memCount"></span></button></div>
       <button id="toggleOutline" class="topicon" title="Branches panel (Alt+O)" aria-label="Branches panel"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
@@ -553,7 +556,8 @@ button.model-chip svg.i{width:11px;height:11px}
   </main>
   <aside id="outline" aria-label="Branches panel">
     <div class="ohead">Branches <span class="cnt" id="oCount"></span>
-      <button class="ib" id="closeOutline" title="Close (Alt+O)" aria-label="Close outline"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <button id="foldAll" class="linkbtn ofold-all" type="button"></button>
+      <button class="ib" id="closeOutline" title="Close (Alt+O)" aria-label="Close the Branches panel"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <input id="oFilter" type="search" placeholder="Filter branches and messages…" autocomplete="off">
     <div id="oTree"></div>
@@ -612,7 +616,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 036f8ff'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 8c4876d'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -996,6 +1000,15 @@ function openConvMenu(anchor, id) {
     + item('share', ICON.share, 'Share as a read-only page (.html)') + '<hr>' + item('del', ICON.trash, 'Delete conversation', ' danger');
   placeMenu(menu, anchor);
 }
+// A branch's actions, with words, from the ⋯ in its column head (F-12)
+function openColMenu(anchor, c, bid) {
+  const menu = $('#modelMenu');
+  if (menuFor && menuFor.mode === 'col' && menuFor.bid === bid && menu.classList.contains('show')) { closeModelMenu(); return; }
+  menuFor = { cid: c.id, bid, mode: 'col' };
+  const b = c.branches[bid], item = (act, icon, label, cls = '') => `<button role="menuitem" class="plain${cls}" data-colact="${act}">${icon}${label}</button>`;
+  menu.innerHTML = item('rename', ICON.pencil, 'Rename') + (b && b.parentId ? '<hr>' + item('delete', ICON.trash, 'Delete branch', ' danger') : '');
+  placeMenu(menu, anchor);
+}
 function convAction(id, act) {
   if (!db.convos[id]) return;
   if (act === 'rename') renameConvo(id);
@@ -1159,8 +1172,7 @@ function renderCanvas() {
     if (droppedAt(c, b.id)) col.classList.add('dropped');
     head += `<div class="name" title="${RO ? '' : 'Double-click to rename'}">${esc(branchName(b))}<small>${own} message${own === 1 ? '' : 's'}${flagged.length ? ` · ${flagged.length} decision${flagged.length === 1 ? '' : 's'}` : ''}</small></div>`;
     if (parent) head += `<button class="bstat s-${statusOf(b)}" data-act="status" title="Status of this branch${RO ? '' : ': tap to change'}"${RO ? ' disabled' : ''}>${esc(statusLabel(b))}</button>`;
-    head += `<button class="ib rename" data-act="rename" title="Rename branch">${ICON.pencil}</button>`;
-    if (parent) head += `<button class="ib" data-act="delbranch" title="Delete branch">${ICON.x}</button>`;
+    head += `<button class="ib colmore" data-act="colmore" title="Rename${parent ? ' or delete' : ''} this branch" aria-label="Branch actions" aria-haspopup="menu">${ICON.more}</button>`;
     const lastM = c.messages[b.msgIds[b.msgIds.length - 1]];
     const sum = lastM ? `${lastM.role === 'user' ? 'You' : 'Gemini'}: ${(lastM.text || lastM.error || '').replace(/[#*`>_~]/g, '').replace(/\s+/g, ' ').slice(0, 90)}` : 'Empty';
     let body = '';
@@ -1269,9 +1281,9 @@ function goTo(bid, scroll = 'auto') {
 function updateFoldAll() {
   const c = cur(); const btn = $('#foldAll');
   const all = !!c && Object.values(c.branches).every(b => b.collapsed);
-  btn.innerHTML = all ? ICON.unfoldAll : ICON.foldAll;
-  btn.title = all ? 'Unfold all branches' : 'Fold all branches';
-  btn.setAttribute('aria-label', btn.title);
+  btn.hidden = !c || Object.keys(c.branches).length < 2; // one branch: nothing to fold away
+  btn.textContent = all ? 'Unfold all' : 'Fold all';
+  btn.title = all ? 'Unfold all branches on the canvas' : 'Fold all branches on the canvas';
 }
 $('#foldAll').onclick = () => {
   const c = cur(); if (!c) return;
@@ -1285,16 +1297,18 @@ function renderChrome() {
   updateFoldAll();
   renderDecCount();
   const path = ancestry(c, c.focus);
-  $('#crumbs').innerHTML = path.map((b, i) =>
-    `${i ? '<span>›</span>' : ''}<button data-crumb="${b.id}" class="${b.id === c.focus ? 'here' : ''}">${esc(branchName(b))}</button>`).join('');
-  $('#crumbs').scrollLeft = $('#crumbs').scrollWidth; // on a narrow screen the end of the path, where you are, stays in view
+  // a phone has room for where you are (← in the column goes up); a tablet for the parent too; … opens the Branches panel (NAV-3)
+  const keep = window.matchMedia('(max-width:440px)').matches ? 1 : window.matchMedia('(max-width:820px)').matches ? 2 : path.length, cut = path.length > keep ? path.slice(-keep) : path;
+  $('#crumbs').innerHTML = (cut !== path ? `<button data-crumbs-all title="All branches" aria-label="All branches">…</button>` : '') + cut.map((b, i) =>
+    `${i || cut !== path ? '<span>›</span>' : ''}<button data-crumb="${b.id}" class="${b.id === c.focus ? 'here' : ''}">${esc(branchName(b))}</button>`).join('');
+  $('#crumbs').scrollLeft = $('#crumbs').scrollWidth; // the end of the path, where you are, stays in view
   const b = c.branches[c.focus];
   const out = droppedAt(c, b.id), st = out ? statusLabel(out).toLowerCase() : '';
   $('#toLabel').innerHTML = `${ICON.branch}<span><span class="wl">Writing in </span><b>${esc(branchName(b))}</b>${out ? ` <span class="to-out">· ${esc(st)}</span>` : ''}</span>`;
   $('#toLabel').title = `Writing in ${branchName(b)}${out ? `: ${out === b ? 'it is' : `“${branchName(out, c)}” is`} ${st}, so decisions here don’t go into prompts` : ''}`;
   renderOutline();
 }
-$('#crumbs').addEventListener('click', e => { const t = e.target.closest('[data-crumb]'); if (t) goTo(t.dataset.crumb); });
+$('#crumbs').addEventListener('click', e => { if (e.target.closest('[data-crumbs-all]')) { $('#toggleOutline').click(); return; } const t = e.target.closest('[data-crumb]'); if (t) goTo(t.dataset.crumb); });
 
 function renderAll(animate) {
   renderSidebar();
@@ -1321,6 +1335,7 @@ $('#canvas').addEventListener('click', async e => {
     copyText(code, 'Code copied'); return;
   }
   if (act === 'rename') { startRename(bid); return; }
+  if (act === 'colmore') { openColMenu(btn, c, bid); return; }
   if (act === 'more' && m) { openMoreMenu(btn, c, m); return; }
   if (act === 'answer' && m) { answerWaiting(c, m); return; }
   if (act === 'versions' && m) { openVersions(c, m); return; }
@@ -1334,18 +1349,7 @@ $('#canvas').addEventListener('click', async e => {
     save(); renderCanvas(); focusBranch(c.focus, true, 'none');
     return;
   }
-  if (act === 'delbranch') {
-    const b = c.branches[bid];
-    const sub = []; const walk = id => { sub.push(id); childrenOf(c, id).forEach(k => walk(k.id)); }; walk(bid);
-    const extra = sub.length > 1 ? ` and ${sub.length - 1} nested branch${sub.length === 2 ? '' : 'es'}` : '';
-    if (busy && busy.convoId === c.id && sub.includes(c.messages[busy.msgId]?.branchId)) busy.controller.abort();
-    undoable(c, `Deleted “${branchName(b, c)}”${extra}`, () => {
-      sub.forEach(id => { c.branches[id].msgIds.forEach(mid => delete c.messages[mid]); delete c.branches[id]; });
-      if (!c.branches[c.focus]) c.focus = b.parentId;
-      c.updated = Date.now(); save(); renderCanvas(); renderSidebar(); focusBranch(c.focus); renderDecCount();
-    });
-    return;
-  }
+  if (act === 'delbranch') { deleteBranch(c, bid); return; }
   if (!m) return;
   if (act === 'branch' && m.role === 'user' && !RO) { openModelMenu(btn, c, m, 'branch'); return; }
   if (act === 'branch') {
@@ -1416,6 +1420,19 @@ function inlineRename(b, targetEl, small) {
   });
   // after the event: a blur can come from a render that is removing the input, and finishing inside it would render again (B15)
   input.addEventListener('blur', () => setTimeout(() => finish(true)));
+}
+// Delete a branch and the branches under it, at once, with Undo in the toast (F-12, UI-4)
+function deleteBranch(c, bid) {
+  if (RO || !c.branches[bid] || !c.branches[bid].parentId) return;
+  const b = c.branches[bid];
+  const sub = []; const walk = id => { sub.push(id); childrenOf(c, id).forEach(k => walk(k.id)); }; walk(bid);
+  const extra = sub.length > 1 ? ` and ${sub.length - 1} nested branch${sub.length === 2 ? '' : 'es'}` : '';
+  if (busy && busy.convoId === c.id && sub.includes(c.messages[busy.msgId]?.branchId)) busy.controller.abort();
+  undoable(c, `Deleted “${branchName(b, c)}”${extra}`, () => {
+    sub.forEach(id => { c.branches[id].msgIds.forEach(mid => delete c.messages[mid]); delete c.branches[id]; });
+    if (!c.branches[c.focus]) c.focus = b.parentId;
+    c.updated = Date.now(); save(); renderCanvas(); renderSidebar(); focusBranch(c.focus); renderDecCount();
+  });
 }
 function startRename(bid) {
   const c = cur(); const b = c && c.branches[bid]; const col = colEls[bid];
@@ -1503,6 +1520,8 @@ function closeModelMenu() { $('#modelMenu').classList.remove('show'); menuFor = 
 $('#modelMenu').addEventListener('click', e => {
   const cv = e.target.closest('[data-conv]');
   if (cv && menuFor && menuFor.mode === 'conv') { const id = menuFor.cid; closeModelMenu(); convAction(id, cv.dataset.conv); return; }
+  const ca = e.target.closest('[data-colact]');
+  if (ca && menuFor && menuFor.mode === 'col') { const { cid, bid } = menuFor, c = db.convos[cid]; closeModelMenu(); if (!c) return; if (ca.dataset.colact === 'rename') startRename(bid); else deleteBranch(c, bid); return; }
   const more = e.target.closest('[data-more]');
   if (more && menuFor && menuFor.mode === 'more') {
     const c = db.convos[menuFor.cid], m = c && c.messages[menuFor.mid];
@@ -1521,7 +1540,7 @@ $('#modelMenu').addEventListener('click', e => {
   else answerInNewBranch(c, m, btn.dataset.model);
 });
 document.addEventListener('pointerdown', e => {
-  if (menuFor && !e.target.closest('#modelMenu') && !e.target.closest('[data-act="regen-menu"],[data-act="branch"],[data-act="more"],[data-conv-more]')) closeModelMenu();
+  if (menuFor && !e.target.closest('#modelMenu') && !e.target.closest('[data-act="regen-menu"],[data-act="branch"],[data-act="more"],[data-act="colmore"],[data-conv-more]')) closeModelMenu();
 }, true);
 $('#viewport').addEventListener('scroll', () => { if (menuFor) closeModelMenu(); });
 window.addEventListener('resize', () => { if (menuFor) closeModelMenu(); });
@@ -2459,7 +2478,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft') { const p = c.branches[c.focus].parentId; if (p) { e.preventDefault(); goTo(p); } }
   if (e.key === 'ArrowRight') { const k = childrenOf(c, c.focus)[0]; if (k) { e.preventDefault(); goTo(k.id, 'top'); } }
 });
-let rT; window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => { const c = cur(); if (c) focusBranch(c.focus, false, 'none'); }, 120); });
+let rT; window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => { const c = cur(); if (c) { focusBranch(c.focus, false, 'none'); renderChrome(); } }, 120); });
 
 /* ---------------- API key & models ---------------- */
 const keyInput = $('#apiKey'), modelSel = $('#model');
@@ -3221,7 +3240,7 @@ const HELP = [
     <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place too. Either way the earlier text is kept, so an answer's prompt still shows what the model saw, marked <b>changed later</b>.</li>
     <li>Tap an answer's model chip to regenerate it with any model. The old answer stays as a version (<b>N versions</b> next to the model); in the middle of a chain the new one opens in a new branch. Every version is kept, and <b>Restore</b> puts an earlier one back as a new version.</li>
     <li>The <b>status</b> chip on a branch: Open, Accepted, Parked or Rejected. The decisions of a parked or rejected branch, and of the branches under it, leave the prompts.</li>
-    <li>Branches name themselves; the pencil on a column renames it (on a desktop, a double-click too). The × on a column deletes it, with the branches under it; <b>Undo</b> in the toast brings them back.</li>
+    <li>Branches name themselves; <b>⋯</b> on a column renames it (on a desktop, a double-click too) or deletes it, with the branches under it; <b>Undo</b> in the toast brings them back. <b>Fold all</b> is in the Branches panel.</li>
     <li>Fold a column with its chevron, or all of them with the top-bar button: a folded column shows its last message and its decisions.</li>
     <li>Move around: <b>Back</b>, the ↳ badges and the breadcrumbs. On a phone, swipe left and right; on a desktop, drag the canvas or use Alt+← / Alt+→. The <b>Branches panel</b> (right) shows the tree and a filter.</li></ul>` },
   { id: 'choose', title: 'Options, compare and choose', cards: ['F-27', 'F-28'], body: `
@@ -3271,7 +3290,8 @@ const WHATS_NEW = [
     '<b>Remember</b> drafts a fact about you, never a decision. A reworded fact keeps its earlier wordings, also in Export all.',
     'A sample or a Thinking State you have already opens again instead of adding a copy. Another tool’s session keeps who wrote what.',
     'Fixed: text pasted from a PDF no longer breaks an export, and the menu’s conversations open with Enter or Space.',
-    'Fixed: with two tabs open, one no longer pulls the other to its conversation or closes what you are typing there.'] },
+    'Fixed: with two tabs open, one no longer pulls the other to its conversation or closes what you are typing there.',
+    'On a phone a column head has room for its name: Rename and Delete branch are under <b>⋯</b>, the breadcrumbs show where you are, and Fold all moved to the Branches panel.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
