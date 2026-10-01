@@ -424,6 +424,7 @@ button.decision:not(:disabled):hover{box-shadow:0 0 0 3px var(--flag-soft)}
 .reask>span{flex:1;min-width:0;overflow-wrap:anywhere}
 .reask .i{width:13px;height:13px;color:var(--flag);vertical-align:-2px;margin-right:4px}
 .reask .btn{flex:none}
+.reask.answer-now{border-color:var(--accent)}
 .kid.cmp{display:inline-flex;align-items:center;gap:4px;background:none;font-weight:600}
 .kid.cmp .i{width:13px;height:13px}
 .model-chip{border:1px solid var(--line);background:none;color:var(--muted);border-radius:6px;padding:0 6px;font-size:11px;font-weight:500;font-family:"IBM Plex Mono",ui-monospace,monospace;display:inline-flex;align-items:center;gap:4px;line-height:18px}
@@ -573,7 +574,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.3.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 31e2581'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main f59c0b7'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1049,7 +1050,7 @@ function msgHTML(c, m) {
   }
   return `<div class="${cls}" data-mid="${m.id}">
     <div class="bubble"><div class="role">${who}${chip}${tags}</div><div class="content">${body}</div>${sourcesHTML(m)}</div>
-    ${dec}${isEdit ? '' : reaskHTML(c, m)}${acts}${kidsHTML}</div>`;
+    ${dec}${isEdit ? '' : reaskHTML(c, m) + answerHTML(c, m)}${acts}${kidsHTML}</div>`;
 }
 
 function renderCanvas() {
@@ -1230,6 +1231,7 @@ $('#canvas').addEventListener('click', async e => {
   }
   if (act === 'rename') { startRename(bid); return; }
   if (act === 'more' && m) { openMoreMenu(btn, c, m); return; }
+  if (act === 'answer' && m) { answerWaiting(c, m); return; }
   if (act === 'versions' && m) { openVersions(c, m); return; }
   if (act === 'status') { if (!RO) openStatus(c, bid); return; }
   if (act === 'back') { goTo(c.branches[bid].parentId); return; }
@@ -1371,8 +1373,15 @@ function openMoreMenu(anchor, c, m) {
   menu.innerHTML = RO ? copies
     : (m.error ? '' : item('options', ICON.options, 'Branch into options') + item('edit', ICON.pencil, m.role === 'user' ? 'Edit' : 'Edit this answer'))
       + item('hide', ICON.eyeOff, m.hidden ? 'Include in history again' : 'Exclude from history')
-      + '<hr>' + copies + '<hr>' + item('delmsg', ICON.trash, 'Delete this message', ' danger');
+      + '<hr>' + copies + '<hr>' + item('delmsg', ICON.trash, m.role !== 'user' ? 'Delete this answer' : turnOf(c, m).length > 1 ? 'Delete this question and its answer' : 'Delete this question', ' danger');
   placeMenu(menu, anchor);
+}
+// Your question goes with the answer after it; an answer goes alone, and its question then waits for an answer (F-10)
+function turnOf(c, m) {
+  const b = branchOf(c, m.id); if (!b || m.role !== 'user') return [m.id];
+  const ids = [m.id];
+  for (let j = b.msgIds.indexOf(m.id) + 1; j < b.msgIds.length; j++) { const x = c.messages[b.msgIds[j]]; if (!x || x.role === 'user') break; ids.push(x.id); }
+  return ids;
 }
 // The conversation from its start to this message, as the model reads it: this branch's path
 function copyPath(c, m) {
@@ -1387,7 +1396,10 @@ function messageMore(c, m, act) {
   if (RO) return;
   if (act === 'options') openOptions(c, m);
   else if (act === 'edit') startEdit(c, m);
-  else if (act === 'delmsg') removeMessages(c, new Set([m.id]));
+  else if (act === 'delmsg') {
+    const ids = turnOf(c, m);
+    removeMessages(c, new Set(ids), m.role !== 'user' ? 'Deleted the answer' : ids.length > 1 ? 'Deleted the question and its answer' : 'Deleted the question');
+  }
   else if (act === 'hide') {
     m.hidden = !m.hidden; save();
     rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline(); renderDecCount();
@@ -1461,6 +1473,16 @@ function laterDecisions(c, m) {
   return decisionsIn(c).filter(d => d !== m && !had.has(d.decision.summary) && !pathIds(c, d.id).includes(m.id));
 }
 // Shown under the last answer of an open branch when later decisions could change it
+// Your question at the end of a branch, with no answer after it: an option branch made unanswered, or its answer deleted (F-10)
+function waiting(c, m) { const b = c.branches[m.branchId]; return !!b && m.role === 'user' && b.msgIds[b.msgIds.length - 1] === m.id; }
+function answerHTML(c, m) {
+  if (RO || !waiting(c, m) || c.branches[m.branchId].collapsed) return '';
+  return `<div class="reask answer-now"><span>No answer yet.</span><button class="btn primary" data-act="answer" title="Ask the model now, with the model picked next to “Writing in …”">Answer</button></div>`;
+}
+function answerWaiting(c, m) {
+  if (!waiting(c, m) || !canGenerate()) return;
+  sendToBranch(c, m.branchId, null);
+}
 function reaskHTML(c, m) {
   const b = c.branches[m.branchId];
   if (RO || m.role !== 'model' || m.streaming || m.error || !b || b.collapsed || b.msgIds[b.msgIds.length - 1] !== m.id) return '';
@@ -2136,14 +2158,15 @@ function deleteMessages(c, ids) {
   ids.forEach(id => delete c.messages[id]);
 }
 // Delete messages with an Undo option
-function removeMessages(c, ids) {
+function removeMessages(c, ids, what) {
   if (busy && ids.has(busy.msgId)) busy.controller.abort();
   const snapshot = JSON.stringify(c);
+  const moved = Object.values(c.branches).filter(k => ids.has(k.forkMsgId)).length; // they continue from the message before
   if (editing && ids.has(editing.mid)) editing = null;
   deleteMessages(c, ids);
   const at = c.updated = Date.now();
   save(); renderCanvas(); renderSidebar(); focusBranch(c.focus, true, 'none');
-  toast(`Deleted ${ids.size} message${ids.size === 1 ? '' : 's'}`, {
+  toast(`${what || `Deleted ${ids.size} message${ids.size === 1 ? '' : 's'}`}${moved ? ` · ${moved} branch${moved === 1 ? ' now continues' : 'es now continue'} from the message before` : ''}`, {
     label: 'Undo',
     fn: () => {
       const now = db.convos[c.id];
@@ -2325,7 +2348,12 @@ function updateMsgEl(c, m, full) {
 
 async function send() {
   const text = input.value.trim();
-  if (RO || !text || busy || fanOut) return;
+  if (RO || busy || fanOut) return;
+  if (!text) {
+    const c = cur(), b = c && c.branches[c.focus], last = b && c.messages[b.msgIds[b.msgIds.length - 1]];
+    if (last && waiting(c, last) && !needKey()) sendToBranch(c, b.id, null);
+    return;
+  }
   if (needKey()) return;
   let c = cur(); if (!c) { newConvo(); c = cur(); }
   input.value = ''; autosize();
@@ -2790,7 +2818,7 @@ const HELP = [
     <li><b>Compare N</b> next to the branch badges: see the branches side by side (with AI: criteria, or a note that they aren't alternatives), then <b>Choose</b> one.</li>
     <li>The <b>status</b> chip on a branch: Open, Accepted, Parked or Rejected. The decisions of a parked or rejected branch, and of the branches under it, leave the prompts. Choose sets the statuses for you.</li>
     <li>In the Thinking State, options, comparisons and choices are data: the fork is a question, each option answers it, a comparison is a finding, and choosing accepts one option and rejects the other alternatives.</li>
-    <li>Under a message: <b>Branch out</b>, the flag (a decision), the bookmark (<b>Remember</b>) and, for an answer, the layers button (its prompt). <b>⋯</b> holds the rest: branch into options, edit, exclude from history, copy the message or the conversation up to here, and delete.</li>
+    <li>Under a message: <b>Branch out</b>, the flag (a decision), the bookmark (<b>Remember</b>) and, for an answer, the layers button (its prompt). <b>⋯</b> holds the rest: branch into options, edit, exclude from history, copy the message or the conversation up to here, and delete. Deleting your question takes its answer with it; deleting an answer leaves the question, with <b>Answer</b> to ask again.</li>
     <li>Regenerate an answer with another model: tap its model chip.</li>
     <li>A regenerated or edited answer keeps its earlier versions: tap <b>N versions</b> next to its model to read them or restore one.</li>
     <li>Branches name themselves; tap the pencil on a column to rename. The Branches panel (right) shows the tree and a filter.</li>
@@ -2816,7 +2844,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.'] },
+  { version: 'Unreleased', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.', 'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.'] },
   { version: '0.3.0', items: ['<b>Help</b>: this guide, and what changed in each version.',
     'Your conversations are stored as Thinking States, the same files an export holds. <b>Export all</b> saves them all with your memory, and an import brings back the whole conversation.',
     'More of what you do is data: helper calls with their tokens, options, comparisons and choices, branch statuses, earlier versions of an answer, and which memory each prompt used.',
