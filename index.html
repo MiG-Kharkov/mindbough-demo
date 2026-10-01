@@ -119,13 +119,10 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .conv .t{flex:1;min-width:0}
 .conv .t b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .conv .t small{color:var(--muted);font-size:12px}
-.conv .del{border:0;background:none;padding:4px;border-radius:6px;color:var(--muted);opacity:0}
-.conv:hover .del,.conv.active .del{opacity:1}
-.conv .del:hover{color:var(--danger)}
 .conv .rowbtn{border:0;background:none;padding:4px;border-radius:6px;color:var(--muted);opacity:0}
-.conv:hover .rowbtn,.conv.active .rowbtn{opacity:1}
+.conv:hover .rowbtn,.conv.active .rowbtn,.conv:focus-within .rowbtn{opacity:1}
 .conv .rowbtn:hover{color:var(--accent);background:var(--accent-soft)}
-@media (hover:none){.conv .rowbtn,.conv .del{opacity:1}}
+@media (hover:none){.conv .rowbtn{opacity:1}}
 .side-tools{display:flex;gap:6px;margin:0 14px 12px}
 .side-tools button{flex:1;display:flex;gap:6px;align-items:center;justify-content:center;border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:7px 8px;font-size:13px}
 .side-tools button:hover{border-color:var(--accent);color:var(--accent)}
@@ -134,7 +131,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 #roBanner b{display:block;color:var(--ink);font-size:14px;margin-bottom:4px}
 #roBanner button{margin-top:10px;width:100%;display:flex;gap:6px;align-items:center;justify-content:center;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:9px;padding:8px;font-weight:600}
 body.readonly #roBanner{display:block}
-body.readonly #newChat,body.readonly .side-tools,body.readonly .sample-link,body.readonly #openSettings,body.readonly #keyHint,body.readonly #openDecisions,body.readonly .conv .del,body.readonly .conv .rowbtn,
+body.readonly #newChat,body.readonly .side-tools,body.readonly .sample-link,body.readonly #openSettings,body.readonly #keyHint,body.readonly #openDecisions,body.readonly .conv .rowbtn,
 body.readonly .keywrap,body.readonly #model,body.readonly .composer,body.readonly .side-foot .edit-only,
 body.readonly [data-act="delbranch"],body.readonly .actions .ib:not([data-act="more"]):not([data-act="prompt"]){display:none}
 .side-foot{padding:12px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);line-height:1.5}
@@ -555,7 +552,7 @@ button.model-chip svg.i{width:11px;height:11px}
         <p class="set-hint" id="helperUse" hidden></p>
         <p class="set-hint">Automatic uses the cheapest model your key can reach. You pick the model for chatting next to “Writing in …”.</p>
         <h3 class="set-h">About</h3>
-        <p class="set-hint">This is the MVP of the Thinking State format, an open format for the state of your thinking with AI. Every prompt is built from where you are, what you decided and what you remember. Export a conversation as a Thinking State (the bough button in the menu), and any app or agent can read it.</p>
+        <p class="set-hint">This is the MVP of the Thinking State format, an open format for the state of your thinking with AI. Every prompt is built from where you are, what you decided and what you remember. Export a conversation as a Thinking State (⋯ on it in the menu), and any app or agent can read it.</p>
         <p class="set-hint" id="verSettings"></p>
         <p class="set-hint"><button type="button" class="linkbtn" data-open-help>Help and what's new</button></p>
         <p class="set-hint" id="storageInfo"></p>
@@ -582,7 +579,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.4.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 5639f62'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main e874377'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -941,34 +938,42 @@ function renderSidebar() {
     const when = d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
     return `<div class="conv ${id === db.current ? 'active' : ''}" data-cid="${id}" tabindex="0">
       <div class="t"><b>${esc(c.title)}</b><small>${when}, ${nb} branch${nb === 1 ? '' : 'es'}</small></div>
-      <button class="rowbtn" data-rename="${id}" title="Rename" aria-label="Rename conversation">${ICON.pencil}</button>
-      <button class="rowbtn" data-share="${id}" title="Share as a read-only page (.html)" aria-label="Share read-only">${ICON.share}</button>
-      <button class="rowbtn" data-ts="${id}" title="Export as a Thinking State (.zip) for agents and tools" aria-label="Export as a Thinking State">${ICON.bough}</button>
-      <button class="del" data-del="${id}" aria-label="Delete conversation">${ICON.trash}</button></div>`;
+      <button class="rowbtn" data-conv-more="${id}" title="Rename, export, share or delete" aria-label="Actions for this conversation" aria-haspopup="menu">${ICON.more}</button></div>`;
   }).join('');
+}
+// A conversation's actions, with words, as under a message (F-01)
+function openConvMenu(anchor, id) {
+  const menu = $('#modelMenu');
+  if (menuFor && menuFor.mode === 'conv' && menuFor.cid === id && menu.classList.contains('show')) { closeModelMenu(); return; }
+  menuFor = { cid: id, mode: 'conv' };
+  const item = (act, icon, label, cls = '') => `<button role="menuitem" class="plain${cls}" data-conv="${act}">${icon}${label}</button>`;
+  menu.innerHTML = item('rename', ICON.pencil, 'Rename') + item('ts', ICON.bough, 'Export as a Thinking State (.zip)')
+    + item('share', ICON.share, 'Share as a read-only page (.html)') + '<hr>' + item('del', ICON.trash, 'Delete conversation', ' danger');
+  placeMenu(menu, anchor);
+}
+function convAction(id, act) {
+  if (!db.convos[id]) return;
+  if (act === 'rename') renameConvo(id);
+  else if (act === 'ts') exportThinkingState(id);
+  else if (act === 'share') exportReadOnly(id);
+  else if (act === 'del') deleteConvo(id);
+}
+function deleteConvo(id) {
+  if (!confirm(`Delete “${db.convos[id].title}” and all its branches?`)) return;
+  if (busy && busy.convoId === id) busy.controller.abort();
+  delete db.convos[id]; db.order = db.order.filter(x => x !== id);
+  if (db.current === id) db.current = db.order[0] || null;
+  save();
+  if (!db.current) newConvo(); else renderAll(false);
 }
 $('#convList').addEventListener('click', e => {
   if (e.target.closest('.name-input')) return;
-  const rn = e.target.closest('[data-rename]');
-  if (rn) { renameConvo(rn.dataset.rename); return; }
-  const sh = e.target.closest('[data-share]');
-  if (sh) { exportReadOnly(sh.dataset.share); return; }
-  const tsb = e.target.closest('[data-ts]');
-  if (tsb) { exportThinkingState(tsb.dataset.ts); return; }
-  const del = e.target.closest('[data-del]');
-  if (del) {
-    const id = del.dataset.del;
-    if (!confirm(`Delete “${db.convos[id].title}” and all its branches?`)) return;
-    if (busy && busy.convoId === id) busy.controller.abort();
-    delete db.convos[id]; db.order = db.order.filter(x => x !== id);
-    if (db.current === id) db.current = db.order[0] || null;
-    save();
-    if (!db.current) newConvo(); else renderAll(false);
-    return;
-  }
+  const more = e.target.closest('[data-conv-more]');
+  if (more) { openConvMenu(more, more.dataset.convMore); return; }
   const row = e.target.closest('[data-cid]');
   if (row) { db.current = row.dataset.cid; save(); renderAll(false); $('#sidebar').classList.remove('open'); }
 });
+$('#convList').addEventListener('scroll', () => { if (menuFor && menuFor.mode === 'conv') closeModelMenu(); });
 $('#newChat').onclick = () => { newConvo(); $('#sidebar').classList.remove('open'); };
 
 
@@ -1363,7 +1368,7 @@ $('#canvas').addEventListener('dblclick', e => {
 });
 
 /* ---------------- regenerate ---------------- */
-let menuFor = null; // { cid, mid, mode: 'regen' | 'branch' }
+let menuFor = null; // { cid, mid, mode: 'regen' | 'branch' | 'more' }, or { cid, mode: 'conv' } for a conversation's ⋯
 function openModelMenu(anchor, c, m, mode = 'regen') {
   const menu = $('#modelMenu');
   if (menuFor && menuFor.mid === m.id && menuFor.mode === mode && menu.classList.contains('show')) { closeModelMenu(); return; }
@@ -1434,6 +1439,8 @@ function messageMore(c, m, act) {
 }
 function closeModelMenu() { $('#modelMenu').classList.remove('show'); menuFor = null; }
 $('#modelMenu').addEventListener('click', e => {
+  const cv = e.target.closest('[data-conv]');
+  if (cv && menuFor && menuFor.mode === 'conv') { const id = menuFor.cid; closeModelMenu(); convAction(id, cv.dataset.conv); return; }
   const more = e.target.closest('[data-more]');
   if (more && menuFor && menuFor.mode === 'more') {
     const c = db.convos[menuFor.cid], m = c && c.messages[menuFor.mid];
@@ -1451,7 +1458,7 @@ $('#modelMenu').addEventListener('click', e => {
   else answerInNewBranch(c, m, btn.dataset.model);
 });
 document.addEventListener('pointerdown', e => {
-  if (menuFor && !e.target.closest('#modelMenu') && !e.target.closest('[data-act="regen-menu"],[data-act="branch"],[data-act="more"]')) closeModelMenu();
+  if (menuFor && !e.target.closest('#modelMenu') && !e.target.closest('[data-act="regen-menu"],[data-act="branch"],[data-act="more"],[data-conv-more]')) closeModelMenu();
 }, true);
 $('#viewport').addEventListener('scroll', () => { if (menuFor) closeModelMenu(); });
 window.addEventListener('resize', () => { if (menuFor) closeModelMenu(); });
@@ -2941,12 +2948,12 @@ const HELP = [
     <li>Tap the <b>flag</b> under an answer you agree with: it becomes a decision that every prompt of the conversation carries.</li>
     <li>Tap the <b>layers</b> button next to "Writing in …": your next prompt, block by block. The decision is in it; the other branch isn't.</li>
     <li>Tap the <b>bookmark</b> under a message and <b>Save</b>: that fact now goes into every conversation.</li>
-    <li>Menu → the Mindbough logo on a conversation: download it as a Thinking State.</li></ol>` },
+    <li>Menu → <b>⋯</b> on a conversation → <b>Export as a Thinking State</b>: a .zip any app or agent can read.</li></ol>` },
   { id: 'start', title: 'Getting started', cards: ['F-02', 'F-03', 'F-15', 'F-18'], body: `
     <ul><li><b>Settings</b> (the gear, top right): paste a Gemini API key. It stays in this browser and goes only to Google's Gemini API.</li>
     <li>No key yet? Menu → <b>Try a sample conversation</b>: a recorded conversation with options, a comparison and a choice, decisions, a web search, and every prompt with its tokens.</li>
     <li>On a desktop, Enter sends and Shift+Enter adds a line. On a phone, Enter adds a line: tap <b>Send</b>. <b>Stop</b> ends an answer and keeps what arrived. Answers show Markdown, code and formulas.</li>
-    <li>Menu → <b>New conversation</b> starts one. Its first answer gives it a short title; the pencil on it in the menu renames it.</li>
+    <li>Menu → <b>New conversation</b> starts one. Its first answer gives it a short title. <b>⋯</b> on a conversation in the menu renames, exports, shares or deletes it.</li>
     <li>On a phone, add it to the home screen: iPhone Safari → Share → <b>Add to Home Screen</b>; Android Chrome → ⋮ → <b>Add to Home screen</b>.</li></ul>` },
   { id: 'branches', title: 'Branches', cards: ['F-04', 'F-05', 'F-06', 'F-07', 'F-10', 'F-11', 'F-12', 'F-19', 'F-24', 'F-29', 'F-32'], body: `
     <p class="help-why">Try alternatives without mixing them.</p>
@@ -2980,16 +2987,17 @@ const HELP = [
   { id: 'data', title: 'Your data and the format', cards: ['F-13', 'F-14', 'F-17', 'F-25', 'F-26'], body: `
     <p class="help-why">Yours: open files that any tool can read.</p>
     <ul><li>Everything is saved in this browser only (IndexedDB), as Thinking States: the same files an export holds. It survives reloads, closed tabs and crashes, but clearing the site's data deletes it, so <b>Export all</b> is your backup.</li>
-    <li>The Mindbough logo on a conversation in the menu downloads it as a <b>Thinking State</b> (.zip): its thoughts, decisions and the facts remembered from it, and the session with the model, prompt and tokens of every answer.</li>
+    <li>Menu → <b>⋯</b> on a conversation → <b>Export as a Thinking State</b>: a .zip with its thoughts, decisions and the facts remembered from it, and the session with the model, prompt and tokens of every answer.</li>
     <li>What you do is data too: options answer a question, a comparison is a finding, a choice sets statuses, an answer keeps its versions, helper calls keep their tokens, and a prompt names the facts it used. Exports and shared pages leave the memory text out of the prompts; a conversation's export includes only the facts remembered from it.</li>
     <li><b>Export all</b> saves one .zip: a Thinking State per conversation, and your memory as documents in <code>home/memory/</code>.</li>
-    <li>The share button saves a read-only page of a conversation. On that page, <b>Download Thinking State</b> gets its .zip, to import and continue.</li>
+    <li><b>⋯</b> → <b>Share as a read-only page</b> saves a read-only page of the conversation. On that page, <b>Download Thinking State</b> gets its .zip, to import and continue.</li>
     <li><b>Import</b> opens a Thinking State or an Export all (.zip), a shared page, or a .json from an earlier version. The demo's own Thinking States come back whole; one made by another tool opens as a tree of cards to keep writing in.</li></ul>` },
   { id: 'help', title: 'About this help', cards: ['F-34'], body: `
     <p>This help changes with the app: every new feature adds itself here, and <b>What's new</b> lists what changed in this version, with earlier versions below it. Press <b>?</b> on a keyboard to open it.</p>` },
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
+  { version: 'Unreleased', items: ['In the menu, <b>⋯</b> on a conversation holds Rename, Export as a Thinking State, Share and Delete, so its title has room.'] },
   { version: '0.4.0', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.',
     'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.',
     '<b>Remember</b> drafts a fact that you save, and a remembered message shows it. On a phone the breadcrumbs show the branch you are in.',
@@ -4057,7 +4065,7 @@ $('#toggleSide').onclick = () => {
 // tap outside closes drawers on small screens; that tap must not also press what is under it (e.g. Delete)
 let swallowClick = false;
 document.addEventListener('pointerdown', e => {
-  if (!isMobile()) return;
+  if (!isMobile() || e.target.closest('#modelMenu')) return; // a menu opened from a panel belongs to it
   let closed = false;
   if (ui.outline && !e.target.closest('#outline') && !e.target.closest('#toggleOutline')) { toggleOutline(false); closed = true; }
   const sb = $('#sidebar');
