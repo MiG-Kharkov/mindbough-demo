@@ -32,7 +32,7 @@
   --accent:#0F7B74; --accent-ink:#fff; --accent-soft:rgba(15,123,116,.10);
   --user:#13212B; --user-ink:#EEF4F5; --ai:#FFFFFF;
   --flag:#B86E00; --flag-soft:rgba(199,119,0,.10);
-  --wire:#93A9B0; --dot:rgba(19,33,43,.10); --danger:#B3261E;
+  --wire:#93A9B0; --dot:rgba(19,33,43,.10); --danger:#B3261E; --danger-ink:#fff;
   --shadow:0 1px 1px rgba(19,33,43,.04),0 6px 18px rgba(19,33,43,.06);
   --k-harness:#8FA3A9; --k-memory:#8E6CCB; --k-decisions:#C77700; --k-history:#4F86B8; --k-message:#0F7B74; --k-tools:#B8527A;
   --colW:460px;
@@ -42,7 +42,7 @@
   --accent:#3CC3B6; --accent-ink:#06201E; --accent-soft:rgba(60,195,182,.13);
   --user:#1F3A3E; --user-ink:#E6F4F2; --ai:#18272A;
   --flag:#F0A640; --flag-soft:rgba(240,166,64,.12);
-  --wire:#355157; --dot:rgba(220,231,232,.07); --danger:#F2847C;
+  --wire:#355157; --dot:rgba(220,231,232,.07); --danger:#F2847C; --danger-ink:#2B0D0A;
   --shadow:0 1px 2px rgba(0,0,0,.35);
   --k-harness:#5F777D; --k-memory:#B39DDB; --k-decisions:#F0A640; --k-history:#7FB2E0; --k-message:#3CC3B6; --k-tools:#E08AAE;
 }}
@@ -152,7 +152,8 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 #model{border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);padding:3px 6px;font:inherit;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px;max-width:100%;min-width:0}
 #promptPreview{margin-left:auto}
 .modelpick{display:inline-flex;min-width:0;max-width:230px}
-#toLabel{display:inline-flex;gap:6px;align-items:center;min-width:0;white-space:nowrap;overflow:hidden}
+#toLabel{display:inline-flex;gap:6px;align-items:center;min-width:0;white-space:nowrap;overflow:hidden;flex:0 1 auto}
+#toLabel>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .keyhint{max-width:820px;margin:0 auto 8px;padding:8px 12px;border-radius:10px;background:var(--flag-soft);font-size:13px}
 .keyhint button{border:0;background:none;padding:0;color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:3px}
 .topicon.warn{position:relative}
@@ -203,8 +204,7 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 .pv-search ul,.pv-used{margin:6px 0 0;padding-left:18px}
 .pv-search a{color:var(--accent);overflow-wrap:anywhere}
 body.readonly #webSearch{display:none}
-@media (max-width:820px){.modelpick{flex-shrink:2}}
-@media (max-width:400px){#webSearch .lbl{display:none}#webSearch{padding:3px 6px}.modelpick{flex-shrink:3}}
+@media (max-width:820px){.modelpick{flex-shrink:0}#toLabel .wl{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}}
 .pb-row{display:flex;align-items:center;gap:10px;width:100%;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;padding:11px 4px;font-size:14px;min-height:44px}
 .pb-row:hover{background:var(--accent-soft)}
 .pb-row:last-child{border-bottom:0}
@@ -354,7 +354,7 @@ body.readonly .col-head .rename{display:none}
 .ib{border:1px solid transparent;background:none;border-radius:8px;padding:5px;display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:12.5px}
 .ib:hover{background:var(--accent-soft);color:var(--ink)}
 .ib.back{border-color:var(--line);color:var(--ink);padding:5px 9px}
-.ib.on-flag{color:var(--flag)} .ib.on-hide{color:var(--danger)}
+.ib.on-flag{color:var(--flag)} .ib.on-hide{color:var(--ink);background:var(--line)}
 .col-body{padding:8px 14px 16px}
 .empty{color:var(--muted);font-size:14px;padding:22px 6px;text-align:center}
 .fork-note{font-size:12.5px;color:var(--muted);padding:8px 2px 2px;display:flex;gap:6px;align-items:center}
@@ -470,10 +470,10 @@ button.model-chip svg.i{width:11px;height:11px}
 .box:focus-within{border-color:var(--accent)}
 #input{flex:1;border:0;background:none;resize:none;font:inherit;color:var(--ink);outline:none;padding:7px 0;max-height:200px;line-height:1.45}
 #send{border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);padding:9px 14px;font-weight:600;display:flex;gap:6px;align-items:center}
-#send.stop{background:var(--danger);color:#fff}
+#send.stop{background:var(--danger);color:var(--danger-ink)}
 #send:disabled{opacity:.45;cursor:default}
 
-.toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
+.toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 32px);box-sizing:border-box;background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
 .toast.show{opacity:1}
 .toast.act{pointer-events:auto;display:flex;align-items:center;gap:12px;padding:6px 6px 6px 14px}
 .toast button{border:0;background:var(--accent);color:var(--accent-ink);border-radius:7px;padding:5px 12px;font-weight:600;font-size:13px}
@@ -489,7 +489,6 @@ button.model-chip svg.i{width:11px;height:11px}
   #crumbs button{flex:0 1 auto;min-width:2.8em;overflow:hidden;text-overflow:ellipsis}
   #crumbs button.here{flex:0 0 auto;max-width:100%}
   #crumbs span{flex:none}
-  .modelpick{max-width:46vw}
   .sheet{align-items:flex-end}
   .sheet-panel{width:100%;max-height:88dvh;border-radius:18px 18px 0 0;border-bottom:0}
 }
@@ -503,7 +502,12 @@ button.model-chip svg.i{width:11px;height:11px}
 #oTree{padding-bottom:calc(12px + env(safe-area-inset-bottom))}
 .side-foot .ver{margin-top:8px;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;opacity:.85}
 /* touch screens: iOS zooms into any field under 16px on focus; the column resize strip would swallow swipes */
-@media (pointer:coarse){input,textarea,select{font-size:16px!important}.col-resize{display:none}}
+@media (pointer:coarse){input,textarea,select{font-size:16px!important}.col-resize{display:none}
+  .actions{gap:4px}.actions .ib{min-width:40px;min-height:40px;justify-content:center}
+  .model-chip,.bstat,.kid,.conv .rowbtn,.side-foot .linkbtn{position:relative}
+  .model-chip::after,.bstat::after,.kid::after,.side-foot .linkbtn::after{content:"";position:absolute;inset:-7px -3px}
+  .conv .rowbtn{min-width:40px;min-height:40px}
+  #model{font-family:inherit}}
 </style>
 </head>
 <body>
@@ -573,7 +577,7 @@ button.model-chip svg.i{width:11px;height:11px}
         <h3 class="set-h">Models for helper tasks</h3>
         <div id="helperModels"></div>
         <p class="set-hint" id="helperUse" hidden></p>
-        <p class="set-hint">Automatic uses the cheapest model your key can reach. You pick the model for chatting next to “Writing in …”.</p>
+        <p class="set-hint">Automatic uses the cheapest model your key can reach. You pick the model for chatting above the message box.</p>
         <h3 class="set-h">About</h3>
         <p class="set-hint">This is the MVP of the Thinking State format, an open format for the state of your thinking with AI. Every prompt is built from where you are, what you decided and what you remember. Export a conversation as a Thinking State (⋯ on it in the menu), and any app or agent can read it.</p>
         <p class="set-hint" id="verSettings"></p>
@@ -602,7 +606,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 0ec2cbe'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 18c7fb3'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1159,7 +1163,7 @@ function renderCanvas() {
                  : `<div class="fork-note">${ICON.branch}<span>Continues from the start of ${esc(branchName(parent))}</span></div>`;
     }
     body += own ? b.msgIds.map(id => msgHTML(c, c.messages[id])).join('')
-      : `<div class="empty">${parent ? 'New branch. Write a message below: the model sees only this branch’s path of the conversation.' : '<b>Ask anything below.</b><br>Each branch sends the model only its own path, plus the decisions you flag and the facts you remember. The layers button next to “Writing in …” shows exactly what is sent. This is the MVP of the Thinking State format: open files any app or agent can continue. <button type="button" class="linkbtn" data-open-help>Help</button>'}</div>`;
+      : `<div class="empty">${parent ? 'New branch. Write a message below: the model sees only this branch’s path of the conversation.' : '<b>Ask anything below.</b><br>Each branch sends the model only its own path, plus the decisions you flag and the facts you remember. The layers button above the message box shows exactly what is sent. This is the MVP of the Thinking State format: open files any app or agent can continue. <button type="button" class="linkbtn" data-open-help>Help</button>'}</div>`;
     col.innerHTML = `<div class="col-head">${head}</div><div class="col-body">${body}</div><div class="col-resize" title="Drag to resize · double-click to reset"></div>`;
     canvas.appendChild(col);
     colEls[b.id] = col;
@@ -1259,7 +1263,8 @@ function renderChrome() {
     `${i ? '<span>›</span>' : ''}<button data-crumb="${b.id}" class="${b.id === c.focus ? 'here' : ''}">${esc(branchName(b))}</button>`).join('');
   $('#crumbs').scrollLeft = $('#crumbs').scrollWidth; // on a narrow screen the end of the path, where you are, stays in view
   const b = c.branches[c.focus];
-  $('#toLabel').innerHTML = `${ICON.branch}<span>Writing in <b>${esc(branchName(b))}</b></span>`;
+  $('#toLabel').innerHTML = `${ICON.branch}<span><span class="wl">Writing in </span><b>${esc(branchName(b))}</b></span>`;
+  $('#toLabel').title = `Writing in ${branchName(b)}`;
   renderOutline();
 }
 $('#crumbs').addEventListener('click', e => { const t = e.target.closest('[data-crumb]'); if (t) goTo(t.dataset.crumb); });
@@ -1549,7 +1554,7 @@ function laterDecisions(c, m) {
 function waiting(c, m) { const b = c.branches[m.branchId]; return !!b && m.role === 'user' && b.msgIds[b.msgIds.length - 1] === m.id; }
 function answerHTML(c, m) {
   if (RO || !waiting(c, m) || c.branches[m.branchId].collapsed) return '';
-  return `<div class="reask answer-now"><span>No answer yet.</span><button class="btn primary" data-act="answer" title="Ask the model now, with the model picked next to “Writing in …”">Answer</button></div>`;
+  return `<div class="reask answer-now"><span>No answer yet.</span><button class="btn primary" data-act="answer" title="Ask the model now, with the model picked above the message box">Answer</button></div>`;
 }
 function answerWaiting(c, m) {
   if (!waiting(c, m) || !canGenerate()) return;
@@ -1744,7 +1749,7 @@ function fillHelpers() {
   const list = [...modelSel.options].map(o => o.value);
   $('#helperModels').innerHTML = HELPER_TASKS.map(t => {
     const v = db.helpers[t.id] || '';
-    const opts = [['', modelsKnown ? `Automatic · ${cheapModel()}` : 'Automatic · the cheapest model your key can reach'], ...(t.off ? [['off', t.off]] : []), ...list.map(n => [n, n])];
+    const opts = [['', modelsKnown ? `Automatic · ${cheapModel()}` : 'Automatic (the cheapest)'], ...(t.off ? [['off', t.off]] : []), ...list.map(n => [n, n])];
     if (v && !opts.some(o => o[0] === v)) opts.push([v, `${v} (not available)`]);
     return `<label class="set-row"><span>${t.label}</span><select data-helper="${t.id}">${opts.map(([val, text]) => `<option value="${esc(val)}"${val === v ? ' selected' : ''}>${esc(text)}</option>`).join('')}</select></label>`;
   }).join('');
@@ -2377,14 +2382,15 @@ function pickBest(list) {
   const flash = pool.filter(n => /flash/.test(n) && !/lite/.test(n));
   return (flash.length ? flash : pool).sort((a, b) => ver(b) - ver(a))[0];
 }
+const shortModel = n => String(n || '').replace(/^gemini-/, '');
 function setModel(n) { db.model = n; save(); fillModels([...modelSel.options].map(o => o.value)); }
 let modelsKnown = false; // the key's own list of models has arrived
 function fillModels(list, fromApi) {
   if (fromApi && list.length) modelsKnown = true;
   if (fromApi && list.length && !list.includes(db.model)) { db.model = pickBest(list); save(); }
   const set = [...new Set([db.model, ...list].filter(Boolean))];
-  modelSel.innerHTML = set.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
-  modelSel.value = db.model;
+  modelSel.innerHTML = set.map(n => `<option value="${esc(n)}" title="${esc(n)}">${esc(shortModel(n))}</option>`).join('');
+  modelSel.value = db.model; modelSel.title = db.model;
   fillHelpers();
 }
 fillModels(DEFAULT_MODELS);
@@ -2405,7 +2411,7 @@ async function loadModels() {
 }
 let kT;
 keyInput.addEventListener('input', () => { db.key = keyInput.value.trim(); save(); renderKeyState(); clearTimeout(kT); kT = setTimeout(loadModels, 600); });
-modelSel.addEventListener('change', () => { db.model = modelSel.value; save(); });
+modelSel.addEventListener('change', () => { db.model = modelSel.value; modelSel.title = modelSel.value; save(); });
 const renderWeb = () => { $('#webSearch').setAttribute('aria-pressed', String(!!db.web)); };
 $('#webSearch').onclick = () => {
   if (db.web) db.webOff = true; else delete db.webOff;
@@ -3047,7 +3053,7 @@ const HELP = [
     <ol><li>No key? Menu → <b>Try a sample conversation</b>, and pick one of three. Have one? <b>Settings</b> (the gear) → paste it.</li>
     <li>Ask something, then tap <b>Branch out</b> under the answer and ask a follow-up: the new column sees only its own path.</li>
     <li>Tap the <b>flag</b> under an answer you agree with: it becomes a decision that every prompt of the conversation carries.</li>
-    <li>Tap the <b>layers</b> button next to "Writing in …": your next prompt, block by block. The decision is in it; the other branch isn't.</li>
+    <li>Tap the <b>layers</b> button above the message box: your next prompt, block by block. The decision is in it; the other branch isn't.</li>
     <li>Tap the <b>bookmark</b> under a message and <b>Save</b>: that fact now goes into every conversation.</li>
     <li>Menu → <b>⋯</b> on a conversation → <b>Export as a Thinking State</b>: a .zip any app or agent can read.</li></ol>` },
   { id: 'start', title: 'Getting started', cards: ['F-02', 'F-03', 'F-15', 'F-18'], body: `
@@ -3078,11 +3084,11 @@ const HELP = [
     <li><b>⚑</b> in the top bar opens this conversation's decisions, with history and restore; <b>🔖</b> next to it opens your memory. <b>Go to</b> jumps to a message, and <b>← Back</b> above the composer returns to where you were.</li>
     <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) drafts one from the message, saved when you tap <b>Save</b>. Tap a fact to edit or delete it; with many facts, search them.</li>
     <li>The <b>eye</b> under a message excludes it from history: the model doesn't see it, on this branch and the ones that continue from it. Tap it again to include it.</li>
-    <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. The layers button next to "Writing in …" previews your next prompt.</li>
+    <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. The layers button above the message box previews your next prompt.</li>
     <li>An answer written before later decisions says so: <b>Re-ask</b> writes it again with them. Re-asking in the middle of a chain opens a new branch.</li></ul>` },
   { id: 'models', title: 'Models and web search', cards: ['F-30', 'F-33'], body: `
     <p class="help-why">A cheap model for small jobs, and the tokens in view.</p>
-    <ul><li>Pick the model for your next request next to "Writing in …". Each answer shows the model that wrote it, and its prompt view the tokens.</li>
+    <ul><li>Pick the model for your next request above the message box. Each answer shows the model that wrote it, and its prompt view the tokens.</li>
     <li>Settings → <b>Models for helper tasks</b>: the model for summaries, names, options and comparisons. <b>Automatic</b> takes the cheapest model your key can reach (the newest Flash-Lite); summaries and names can be turned off. It also sums this conversation's helper calls, and an answer's prompt view lists the ones made on it.</li>
     <li><b>Web</b> (the globe next to the model picker) is on from the start: the model may search the web with Google Search, inside the Gemini API, when a message needs fresh facts. The answer lists its sources, and the prompt view says whether it searched. Turn it off for private topics, or to avoid search costs.</li></ul>` },
   { id: 'data', title: 'Your data and the format', cards: ['F-13', 'F-14', 'F-17', 'F-25', 'F-26'], body: `
@@ -3098,6 +3104,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
+  { version: 'Unreleased', items: ['Fixed: on a phone, the branch you write in and the model are no longer cut mid-letter, the buttons under a message are bigger, and toasts no longer cover the message box.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -3145,8 +3152,9 @@ document.addEventListener('keydown', e => { if (e.key === '?' && !typing(e) && !
 /* ---------------- toast ---------------- */
 let tT;
 function toast(t, action) {
-  const el = $('#toast');
+  const el = $('#toast'), pill = $('#backPill');
   el.textContent = t;
+  el.style.bottom = ($('.composer').offsetHeight + 12 + (pill && !pill.hidden ? pill.offsetHeight + 8 : 0)) + 'px'; // clear of "Writing in …" and the Back pill
   el.classList.toggle('act', !!action);
   if (action) {
     const b = document.createElement('button');
