@@ -225,6 +225,12 @@ body.readonly #webSearch{display:none}
 .ctxpill .topicon:first-child{border-radius:10px 0 0 10px}
 .ctxpill .topicon:last-child{border-radius:0 10px 10px 0;margin-left:-1px}
 .pb-later{display:block;font-size:10.5px;font-weight:600;color:var(--flag);text-transform:none}
+.sample-row{display:block;width:100%;text-align:left;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:10px 12px;margin:0 0 8px;font:inherit;color:inherit;cursor:pointer}
+.sample-row:hover,.sample-row:focus-visible{border-color:var(--accent);outline:none}
+.sr-title{display:block;font-weight:600;font-size:15px}
+.sr-what{display:block;font-size:13px;color:var(--muted);margin-top:2px}
+.sr-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.sr-tags span{font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-soft);border-radius:999px;padding:2px 8px}
 .mem-tools{display:flex;gap:8px;align-items:center;margin:0 0 8px}
 .mem-search{flex:1;min-width:0;font:inherit;font-size:16px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
 .mem-sum{font-size:12.5px;color:var(--muted);margin:0 0 8px}
@@ -596,7 +602,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.5.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'PR #90 e19ea78'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'PR #90 2e58ebb'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -3035,7 +3041,7 @@ const HELP = [
     <p>Everything is kept as a <b>Thinking State</b>: open files that any app or agent can read and continue. This app is the MVP of that format.</p>
     <ul><li>The version, the format it writes and the build are at the bottom of the menu and in Settings → About.</li></ul>` },
   { id: 'tour', title: 'The first 2 minutes', cards: [], body: `
-    <ol><li>No key? Menu → <b>Try a sample conversation</b>. Have one? <b>Settings</b> (the gear) → paste it.</li>
+    <ol><li>No key? Menu → <b>Try a sample conversation</b>, and pick one of three. Have one? <b>Settings</b> (the gear) → paste it.</li>
     <li>Ask something, then tap <b>Branch out</b> under the answer and ask a follow-up: the new column sees only its own path.</li>
     <li>Tap the <b>flag</b> under an answer you agree with: it becomes a decision that every prompt of the conversation carries.</li>
     <li>Tap the <b>layers</b> button next to "Writing in …": your next prompt, block by block. The decision is in it; the other branch isn't.</li>
@@ -3043,7 +3049,7 @@ const HELP = [
     <li>Menu → <b>⋯</b> on a conversation → <b>Export as a Thinking State</b>: a .zip any app or agent can read.</li></ol>` },
   { id: 'start', title: 'Getting started', cards: ['F-02', 'F-03', 'F-15', 'F-18'], body: `
     <ul><li><b>Settings</b> (the gear, top right): paste a Gemini API key. It stays in this browser and goes only to Google's Gemini API.</li>
-    <li>No key yet? Menu → <b>Try a sample conversation</b>: a recorded conversation with options, a comparison and a choice, decisions, a web search, and every prompt with its tokens.</li>
+    <li>No key yet? Menu → <b>Try a sample conversation</b>: three recorded ones, a decision, a troubleshooting session and a pricing plan, with options, comparisons and choices, branch statuses, decisions, web searches, formulas, and every prompt with its tokens.</li>
     <li>On a desktop, Enter sends and Shift+Enter adds a line. On a phone, Enter adds a line: tap <b>Send</b>. <b>Stop</b> ends an answer and keeps what arrived. Answers show Markdown, code and formulas.</li>
     <li>Menu → <b>New conversation</b> starts one. Its first answer gives it a short title. <b>⋯</b> on a conversation in the menu renames, exports, shares or deletes it.</li>
     <li>On a phone, add it to the home screen: iPhone Safari → Share → <b>Add to Home Screen</b>; Android Chrome → ⋮ → <b>Add to Home screen</b>.</li></ul>` },
@@ -3089,7 +3095,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Fixed: a title, a snippet or a search keeps the underscore in a name like user_id.', 'Fixed: an answer’s prompt shows the text the model saw, even after you edit a message of its history in place, marked edited later.', 'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.', 'Fixed: two tabs that change memory at the same moment both keep their change.'] },
+  { version: 'Unreleased', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.', 'Fixed: a title, a snippet or a search keeps the underscore in a name like user_id.', 'Fixed: an answer’s prompt shows the text the model saw, even after you edit a message of its history in place, marked edited later.', 'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.', 'Fixed: two tabs that change memory at the same moment both keep their change.'] },
   { version: '0.5.0', items: ['<b>🔖</b> next to <b>⚑</b> in the top bar opens your memory, which says what it adds to every request; facts are compact rows you tap to edit, with search. <b>← Back</b> returns after Go to.',
     'In the menu, <b>⋯</b> on a conversation holds Rename, Export as a Thinking State, Share and Delete, so its title has room.'] },
   { version: '0.4.0', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.',
@@ -4135,16 +4141,28 @@ $('#importFile').addEventListener('change', async e => {
   }
   finishImport(added, failed, files.length, facts, left);
 });
-// The sample (F-18): a Thinking State the demo recorded, published next to the app and opened like any other,
-// so everything it holds (prompts, tokens, helper calls, a comparison, a choice, versions, a web search) is there without a key.
-// It doesn't add its fact to your memory
-$('#sampleBtn').onclick = async () => {
+// The samples (F-18): Thinking States the demo recorded, published next to the app and opened like any other, so everything they
+// hold (prompts, tokens, helper calls, comparisons, choices, statuses, versions, web searches) is there without a key.
+// Each shows a different way of thinking; none adds its facts to your memory
+const SAMPLES = [
+  { file: 'examples/sample-thinking-state.zip', title: 'Choose a database', what: 'A decision: three options, a comparison and a choice.', shows: ['Options', 'Compare', 'Choose', 'Versions'] },
+  { file: 'examples/sample-troubleshooting.zip', title: 'Why did checkout get slow?', what: 'Troubleshooting: a branch per cause, each checked, then fixed or ruled out.', shows: ['Causes as branches', 'Ruled out', 'They add up', 'Fix plan'] },
+  { file: 'examples/sample-pricing.zip', title: 'Price a SaaS product', what: 'Three pricing models with their formulas, the market from a web search, and a launch checklist.', shows: ['Formulas', 'Tables', 'Web sources', 'Checklist'] },
+];
+function openSamples() {
+  openSheet({ title: 'Try a sample', onClick: e => { const b = e.target.closest('[data-sample]'); if (b) openSample(SAMPLES[+b.dataset.sample]); },
+    render: () => `<p class="pv-note">Conversations the demo recorded, each a Thinking State: everything works without a key, and nothing is added to your memory.</p>`
+      + SAMPLES.map((x, i) => `<button class="sample-row" type="button" data-sample="${i}"><span class="sr-title">${x.title}</span><span class="sr-what">${x.what}</span><span class="sr-tags">${x.shows.map(t => `<span>${t}</span>`).join('')}</span></button>`).join('') });
+}
+async function openSample(x) {
+  closeSheet();
   let r;
-  try { r = await fetch('examples/sample-thinking-state.zip', { cache: 'no-cache' }); if (!r.ok) throw new Error(r.status); }
+  try { r = await fetch(x.file, { cache: 'no-cache' }); if (!r.ok) throw new Error(r.status); }
   catch (err) { toast('Couldn’t load the sample. Open the demo from its web address rather than as a file.'); return; }
-  try { const x = await importZip(await r.arrayBuffer(), { memory: false }); finishImport(x.added, x.failed, 1, 0); }
+  try { const y = await importZip(await r.arrayBuffer(), { memory: false }); finishImport(y.added, y.failed, 1, 0); }
   catch (err) { toast(err.message || 'Couldn’t open the sample'); }
-};
+}
+$('#sampleBtn').onclick = openSamples;
 $('#exportAllBtn').onclick = exportAllStates;
 $('#roDownload').onclick = () => exportThinkingState(db.current);
 
