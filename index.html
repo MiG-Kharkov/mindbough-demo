@@ -600,9 +600,9 @@ const NEW_TITLE = 'New conversation';
 const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return (cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.6.0';
+const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main b45921e'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 0ec2cbe'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -3098,7 +3098,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
+  { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
     'Fixed: on a phone, wide tables in answers scroll sideways instead of breaking words.',
