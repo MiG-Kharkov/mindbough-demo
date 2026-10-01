@@ -582,7 +582,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.3.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 8307c39'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main a45c9f5'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2893,7 +2893,7 @@ const HELP = [
     <li>Menu → the Mindbough logo on a conversation: download it as a Thinking State.</li></ol>` },
   { id: 'start', title: 'Getting started', cards: ['F-02', 'F-03', 'F-15', 'F-18'], body: `
     <ul><li><b>Settings</b> (the gear, top right): paste a Gemini API key. It stays in this browser and goes only to Google's Gemini API.</li>
-    <li>No key yet? Menu → <b>Try a sample conversation</b>: a ready-made conversation with branches, decisions and prompts to look at.</li>
+    <li>No key yet? Menu → <b>Try a sample conversation</b>: a recorded conversation with options, a comparison and a choice, decisions, a web search, and every prompt with its tokens.</li>
     <li>On a desktop, Enter sends and Shift+Enter adds a line. On a phone, Enter adds a line: tap <b>Send</b>. <b>Stop</b> ends an answer and keeps what arrived. Answers show Markdown, code and formulas.</li>
     <li>Menu → <b>New conversation</b> starts one. Its first answer gives it a short title; the pencil on it in the menu renames it.</li>
     <li>On a phone, add it to the home screen: iPhone Safari → Share → <b>Add to Home Screen</b>; Android Chrome → ⋮ → <b>Add to Home screen</b>.</li></ul>` },
@@ -2939,7 +2939,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.', 'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.', '<b>Remember</b> drafts a fact that you save, and a remembered message shows it. On a phone the breadcrumbs show the branch you are in.', 'The prompt view says what each block is, and what the prompt left out: the other branches, excluded messages, dropped decisions.', 'Help starts with what this is and the first 2 minutes; What’s new is at the end, with earlier versions.', 'Conversations name themselves after the first answer, and the pencil in the menu renames them.'] },
+  { version: 'Unreleased', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.', 'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.', '<b>Remember</b> drafts a fact that you save, and a remembered message shows it. On a phone the breadcrumbs show the branch you are in.', 'The prompt view says what each block is, and what the prompt left out: the other branches, excluded messages, dropped decisions.', 'Help starts with what this is and the first 2 minutes; What’s new is at the end, with earlier versions.', 'Conversations name themselves after the first answer, and the pencil in the menu renames them.', 'The sample is a recorded Thinking State: options, a comparison and a choice, versions, a web search, and every prompt with its tokens.'] },
   { version: '0.3.0', items: ['<b>Help</b>: this guide, and what’s new in each version.',
     'Your conversations are stored as Thinking States, the same files an export holds. <b>Export all</b> saves them all with your memory, and an import brings back the whole conversation.',
     'More of what you do is data: helper calls with their tokens, options, comparisons and choices, branch statuses, earlier versions of an answer, and which memory each prompt used.',
@@ -3545,6 +3545,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
       n: nid === rootId ? 0 : Number.isInteger(bext.n) && bext.n > 0 ? bext.n : ++n, created: time(be ? be.at : mine[0] && mine[0].at, convo.created), nodeId: nid };
     n = Math.max(n, b.n);
     if (nid !== rootId && ['accepted', 'parked', 'rejected'].includes(th(node).status)) b.status = th(node).status;
+    if (!own && (b.status === 'parked' || b.status === 'rejected')) b.collapsed = true; // an opened Thinking State shows its dropped lines folded
     if (isObj(bext.option)) b.option = { ...(typeof bext.option.why === 'string' ? { why: bext.option.why.slice(0, 200) } : {}), ...(typeof bext.option.call === 'string' ? { call: bext.option.call } : {}) };
     for (const slot of mine) {
       const chain = [slot]; { let x = slot; const seen = new Set(); while (newest.has(x.id) && !seen.has(x.id)) { seen.add(x.id); x = newest.get(x.id); chain.push(x); } }
@@ -3883,6 +3884,31 @@ function finishImport(added, failed, sources, facts = 0) {
   else if (failed && sources > 1) toast('Nothing could be imported');
 }
 $('#importBtn').onclick = () => $('#importFile').click();
+// Opens the Thinking States of a zip (one, or an Export all): their conversations, and the facts that come with them (F-13, F-26);
+// `memory: false` leaves memory as it is (the sample doesn't add facts to yours)
+async function importZip(buf, { memory = true } = {}) {
+  let added = [], failed = 0, facts = 0;
+  const convos = await openThinkingStates(buf);
+  if (!convos.length && !(convos.home || []).length) throw new Error('No Thinking State in this zip: it needs a README.md with type: Thinking State');
+  convos.forEach(c => {
+    const id = adoptConvo(c);
+    if (!id) { failed++; return; }
+    added.push(id);
+    for (const f of memory ? c.facts || [] : []) { // facts remembered from this conversation (spec §9), linked to their messages again
+      if (!db.convos[id].messages[f.mid]) continue;
+      const known = db.memory.find(x => (f.itemId && x.itemId === f.itemId) || x.text === f.text);
+      if (known) { if (!(known.src && db.convos[known.src.cid])) known.src = { cid: id, mid: f.mid }; continue; } // a fact whose conversation is gone follows it here
+      db.memory.push({ id: uid(), text: f.text, at: f.at, src: { cid: id, mid: f.mid }, from: db.convos[id].title, ...(TS_ID.test(f.itemId) ? { itemId: f.itemId } : {}) }); facts++;
+    }
+  });
+  for (const f of memory ? convos.home || [] : []) { // global memory from Export all
+    const c = f.bundle && Object.values(db.convos).find(x => x.tsId === f.bundle && x.messages[f.mid]);
+    const known = db.memory.find(x => x.itemId === f.itemId || x.text === f.text);
+    if (known) { if (c && !(known.src && db.convos[known.src.cid])) known.src = { cid: c.id, mid: f.mid }; continue; }
+    db.memory.push({ id: uid(), text: f.text, at: f.at, itemId: f.itemId, ...(c ? { src: { cid: c.id, mid: f.mid }, from: c.title } : f.from ? { from: f.from } : {}) }); facts++;
+  }
+  return { added, failed, facts };
+}
 $('#importFile').addEventListener('change', async e => {
   const files = [...e.target.files]; e.target.value = '';
   let added = [], failed = 0, facts = 0;
@@ -3890,25 +3916,8 @@ $('#importFile').addEventListener('change', async e => {
     try {
       const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
       if (head[0] === 0x50 && head[1] === 0x4b && head[2] === 3 && head[3] === 4) { // "PK\3\4": a zip, so Thinking States
-        const convos = await openThinkingStates(await f.arrayBuffer());
-        if (!convos.length && !(convos.home || []).length) throw new Error('No Thinking State in this zip: it needs a README.md with type: Thinking State');
-        convos.forEach(c => {
-          const id = adoptConvo(c);
-          if (!id) { failed++; return; }
-          added.push(id);
-          for (const f of c.facts || []) { // facts remembered from this conversation (spec §9), linked to their messages again
-            if (!db.convos[id].messages[f.mid]) continue;
-            const known = db.memory.find(x => (f.itemId && x.itemId === f.itemId) || x.text === f.text);
-            if (known) { if (!(known.src && db.convos[known.src.cid])) known.src = { cid: id, mid: f.mid }; continue; } // a fact whose conversation is gone follows it here
-            db.memory.push({ id: uid(), text: f.text, at: f.at, src: { cid: id, mid: f.mid }, from: db.convos[id].title, ...(TS_ID.test(f.itemId) ? { itemId: f.itemId } : {}) }); facts++;
-          }
-        });
-        for (const f of convos.home || []) { // global memory from Export all
-          const c = f.bundle && Object.values(db.convos).find(x => x.tsId === f.bundle && x.messages[f.mid]);
-          const known = db.memory.find(x => x.itemId === f.itemId || x.text === f.text);
-          if (known) { if (c && !(known.src && db.convos[known.src.cid])) known.src = { cid: c.id, mid: f.mid }; continue; }
-          db.memory.push({ id: uid(), text: f.text, at: f.at, itemId: f.itemId, ...(c ? { src: { cid: c.id, mid: f.mid }, from: c.title } : f.from ? { from: f.from } : {}) }); facts++;
-        }
+        const r = await importZip(await f.arrayBuffer());
+        added = added.concat(r.added); failed += r.failed; facts += r.facts;
         continue;
       }
       const list = parseImport(await f.text()); list.forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; }); facts += mergeMemory(list.memory);
@@ -3917,13 +3926,15 @@ $('#importFile').addEventListener('change', async e => {
   }
   finishImport(added, failed, files.length, facts);
 });
-// A ready-made conversation (branches, flags, rich answers), published next to the app: try the demo and Import without a key
+// The sample (F-18): a Thinking State the demo recorded, published next to the app and opened like any other,
+// so everything it holds (prompts, tokens, helper calls, a comparison, a choice, versions, a web search) is there without a key.
+// It doesn't add its fact to your memory
 $('#sampleBtn').onclick = async () => {
-  try {
-    const r = await fetch('examples/sample-conversation.json', { cache: 'no-cache' });
-    if (!r.ok) throw new Error(r.status);
-    finishImport(parseImport(await r.text()).map(adoptConvo).filter(Boolean), 0, 1);
-  } catch (err) { toast('Couldn’t load the sample. Open the demo from its web address rather than as a file.'); }
+  let r;
+  try { r = await fetch('examples/sample-thinking-state.zip', { cache: 'no-cache' }); if (!r.ok) throw new Error(r.status); }
+  catch (err) { toast('Couldn’t load the sample. Open the demo from its web address rather than as a file.'); return; }
+  try { const x = await importZip(await r.arrayBuffer(), { memory: false }); finishImport(x.added, x.failed, 1, 0); }
+  catch (err) { toast(err.message || 'Couldn’t open the sample'); }
 };
 $('#exportAllBtn').onclick = exportAllStates;
 $('#roDownload').onclick = () => exportThinkingState(db.current);
