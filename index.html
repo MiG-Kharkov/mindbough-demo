@@ -625,7 +625,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 4ce06ab'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 59ed46f'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2065,7 +2065,11 @@ function compareKids(c, m) {
 const sigKey = sig => String(sig || '').split('|').map(p => { const a = p.split(':'); if (a.length === 4) a[2] = String(Math.floor(+a[2] / 1000)); return a.join(':'); }).join('|');
 const compareSigOld = (c, kids) => kids.map(b => { const l = c.messages[b.msgIds[b.msgIds.length - 1]]; return `${b.id}:${b.msgIds.length}:${l ? l.ts : 0}:${l ? (l.text || '').length : 0}`; }).join('|');
 const compareSig = (c, m, kids) => 'p:' + sigOf(compareBlocks(c, m, kids, '').filter(x => x.kind !== 'memory').map(x => `${x.label}\n${x.text}`).join('\n\n'));
-const compareStale = (c, m, kids, sig) => String(sig || '').startsWith('p:') ? sig !== compareSig(c, m, kids) : sigKey(sig) !== sigKey(compareSigOld(c, kids));
+// What a comparison was built from: the conversation up to the fork, the decisions in force outside the branches compared, and each
+// branch up to the answer compared (cols[].mid). What a branch adds later, its flags (a choice is one) and its name are no part of it,
+// nor a decision made since further down from the fork: that follows from the choice, as for Re-ask (F-31)
+const compareSigOf = (c, m, kids, cols, at) => 'q:' + sigOf(compareBlocks(c, m, kids, '', cols, at).filter(x => x.kind !== 'memory').map(x => x.text).join('\n\n'));
+const compareStale = (c, m, kids, cmp) => { const sig = String(cmp.sig || ''); return sig.startsWith('q:') ? sig !== compareSigOf(c, m, kids, cmp.cols || [], cmp.at) : sig.startsWith('p:') ? sig !== compareSig(c, m, kids) : sigKey(sig) !== sigKey(compareSigOld(c, kids)); };
 const branchMsgs = (c, b) => b.msgIds.map(id => c.messages[id]).filter(x => x && !x.hidden && !x.error && x.text);
 // What a branch amounts to, without a model: its decisions, else the first sentence of its last answer
 function branchGist(c, b) {
@@ -2074,8 +2078,10 @@ function branchGist(c, b) {
   const last = [...msgs].reverse().find(x => x.role === 'model');
   return last ? sentenceOf(last.text.slice(0, 1200), 180) : '';
 }
-function branchDigest(c, b) {
-  const t = branchMsgs(c, b).map(x => `${x.role === 'user' ? 'User' : 'Assistant'}: ${x.text}${x.flagged && x.decision && x.decision.summary ? `\n[Decision: ${x.decision.summary}]` : ''}`).join('\n\n');
+// upTo: the answer a comparison compared, so what it was built from leaves out what came after, and the flags (F-28)
+function branchDigest(c, b, upTo) {
+  let msgs = branchMsgs(c, b); if (upTo) { const k = b.msgIds.indexOf(upTo); msgs = k < 0 ? msgs.concat({ role: 'model', text: '(the answer compared is gone)' }) : msgs.filter(x => b.msgIds.indexOf(x.id) <= k); }
+  const t = msgs.map(x => `${x.role === 'user' ? 'User' : 'Assistant'}: ${x.text}${!upTo && x.flagged && x.decision && x.decision.summary ? `\n[Decision: ${x.decision.summary}]` : ''}`).join('\n\n');
   return t.length > 6000 ? `${t.slice(0, 1500)}\n…\n${t.slice(-4500)}` : t;
 }
 let cmpView = null; // { cid, mid, loading, error, focus }
@@ -2097,7 +2103,7 @@ function renderCompare() {
   const cols = (cmp.cols || []).filter(x => byId[x.bid]);
   const done = !!cmp.at && cols.length > 1, alt = !cmp.relation || cmp.relation === 'alternatives';
   const table = done && alt && cmp.criteria && cmp.criteria.length > 0;
-  const stale = done && compareStale(c, m, kids, cmp.sig);
+  const stale = done && compareStale(c, m, kids, cmp);
   const tags = bid => `${table && cmp.pick && cmp.pick.bid === bid ? '<span class="cmp-tag">Suggested</span>' : ''}${cmp.chosen === bid ? '<span class="cmp-tag on">Chosen</span>' : ''}`;
   const choose = bid => RO ? '' : `<button class="btn" data-cmp="choose" data-bid="${bid}">Choose</button>`;
   const colOf = bid => cols.find(x => x.bid === bid);
@@ -2149,17 +2155,18 @@ function findingText(c, cmp, n) {
 }
 const RELATIONS = { alternatives: 'These branches are alternatives', complementary: 'These branches complement each other', sequential: 'One branch is a later step of another', unrelated: 'These branches explore different questions' };
 // What a comparison is built from, as blocks like a prompt's (F-20): the conversation up to the fork, decisions, memory, the user's focus, the branches
-function compareBlocks(c, m, kids, focus) {
+function compareBlocks(c, m, kids, focus, cols, at) {
   const b = branchOf(c, m.id), kidIds = new Set(kids.map(k => k.id));
   const under = x => { let bb = c.branches[x.branchId]; while (bb) { if (kidIds.has(bb.id)) return true; bb = c.branches[bb.parentId]; } return false; };
   const path = b ? historyFor(c, b.id, m.id).filter(x => !x.hidden && !x.error && x.text).slice(-6) : [];
   const said = x => `${x.role === 'user' ? 'User' : 'Assistant'}: ${x.text.slice(0, x.id === m.id ? 3000 : 1500)}`;
-  const decisions = decisionsIn(c).filter(x => !under(x)), memory = db.memory.filter(x => x.text);
+  const decisions = decisionsIn(c).filter(x => !under(x) && !(at && (x.decision.at || 0) > at && pathIds(c, x.id).includes(m.id))), memory = db.memory.filter(x => x.text);
   const blocks = [{ kind: 'fork', label: 'Conversation up to the fork', text: path.map(said).join('\n\n') }];
   if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions in force:\n' + decisions.map(x => `- ${x.decision.summary}`).join('\n') });
   if (memory.length) blocks.push({ kind: 'memory', label: `Memory · ${memory.length}`, text: 'About the user and their work:\n' + memory.map(x => `- ${x.text}`).join('\n') });
   if (focus) blocks.push({ kind: 'focus', label: 'Compare by', text: `The user asks to compare by: ${focus}` });
-  kids.forEach((k, i) => blocks.push({ kind: 'branch', label: branchName(k, c), text: `=== Option ${i + 1}: ${branchName(k, c)} ===\n${branchDigest(c, k) || '(not answered yet)'}` }));
+  kids.forEach((k, i) => { const col = cols && cols.find(x => x.bid === k.id);
+    blocks.push({ kind: 'branch', label: branchName(k, c), text: `=== Option ${i + 1}${cols ? '' : `: ${branchName(k, c)}`} ===\n${branchDigest(c, k, cols ? (col && col.mid) || null : undefined) || '(not answered yet)'}` }); });
   blocks.forEach(x => { x.chars = x.text.length; });
   return blocks;
 }
@@ -2200,8 +2207,9 @@ async function compareWithAI(c, m) {
     const pi = alt && data.pick ? +data.pick.option : 0;
     const pick = pi >= 1 && pi <= kids.length ? { bid: kids[pi - 1].id, why: clean(data.pick.why, 240) } : null;
     const request = { chars: prompt.length, blocks: [{ kind: 'task', label: 'Task', text: COMPARE_TASK, chars: COMPARE_TASK.length }, ...blocks] };
-    m.compare = { at: Date.now(), model, question: clean(data.question, 200), relation, relationWhy: clean(data.relation_why, 240), criteria, cols,
-      ...(pick ? { pick } : {}), ...(!alt && data.next ? { next: clean(data.next, 300) } : {}), ...(focus ? { focus } : {}), request, sig: compareSig(c, m, kids),
+    const at = Date.now();
+    m.compare = { at, model, question: clean(data.question, 200), relation, relationWhy: clean(data.relation_why, 240), criteria, cols,
+      ...(pick ? { pick } : {}), ...(!alt && data.next ? { next: clean(data.next, 300) } : {}), ...(focus ? { focus } : {}), request, sig: compareSigOf(c, m, kids, cols, at),
       ...(m.compare && m.compare.chosen ? { chosen: m.compare.chosen } : {}), ...(call ? { call } : {}),
       // the comparison this one replaces, kept as a finding it supersedes, up to 5
       ...(m.compare && m.compare.nodeId ? { before: [{ nodeId: m.compare.nodeId, at: m.compare.at, model: m.compare.model, text: findingText(c, m.compare, (m.compare.cols || []).length) }, ...(m.compare.before || [])].slice(0, 5) } : {}) };
@@ -3354,7 +3362,8 @@ const WHATS_NEW = [
     'On a phone, Back closes a sheet or a panel instead of leaving the app; a swipe no longer opens a rejected, folded branch first.',
     'A sample says what works without a key; a key that works says so in Settings, with <b>Send your message</b>. On a phone, <b>Share</b> opens the share sheet.',
     'The export says who did what: <code>log.md</code> lists your decisions and status changes, and every node says who worded it, the model or you, with its earlier names. The first branch keeps a name you give it.',
-    'Words that say what things do: <b>⋯</b> under an answer offers <b>Regenerate</b>, the button that previews your next prompt says <b>Prompt</b>, and the menu has a Help row.'] },
+    'Words that say what things do: <b>⋯</b> under an answer offers <b>Regenerate</b>, the button that previews your next prompt says <b>Prompt</b>, and the menu has a Help row.',
+    'Fixed: a comparison no longer says it changed when you choose, or go on in the branch you chose.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -4443,7 +4452,7 @@ function adoptConvo(src) {
     return { at: time(k.at), model: str(k.model, 100), question: str(k.question, 200), relation: Object.prototype.hasOwnProperty.call(RELATIONS, k.relation) ? k.relation : 'alternatives', relationWhy: str(k.relationWhy, 240),
       criteria: (Array.isArray(k.criteria) ? k.criteria : []).map(y => typeof y === 'string' ? { name: y, why: '' } : y).filter(isObj).slice(0, 5).map(y => ({ name: str(y.name, 60), why: str(y.why, 140) })).filter(y => y.name), cols,
       ...(isObj(k.pick) && bid.has(k.pick.bid) ? { pick: { bid: bid.get(k.pick.bid), why: str(k.pick.why, 240) } } : {}), ...(k.next ? { next: str(k.next, 300) } : {}), ...(k.focus ? { focus: str(k.focus, 300) } : {}),
-      request: { chars: count(isObj(k.request) ? k.request.chars : 0), blocks }, sig: String(k.sig || '').startsWith('p:') ? str(k.sig, 40) : str(k.sig, 4000).split('|').map(p => { const a = p.split(':'); a[0] = bid.get(a[0]) || ''; return a.join(':'); }).join('|'),
+      request: { chars: count(isObj(k.request) ? k.request.chars : 0), blocks }, sig: /^[pq]:/.test(String(k.sig || '')) ? str(k.sig, 40) : str(k.sig, 4000).split('|').map(p => { const a = p.split(':'); a[0] = bid.get(a[0]) || ''; return a.join(':'); }).join('|'),
       ...(bid.has(k.chosen) ? { chosen: bid.get(k.chosen) } : {}), ...(typeof k.call === 'string' ? { call: k.call } : {}), ...(tsIdOk(k.nodeId) ? { nodeId: k.nodeId } : {}),
       ...(Array.isArray(k.before) ? { before: k.before.filter(x => isObj(x) && tsIdOk(x.nodeId)).slice(0, 5).map(x => ({ nodeId: x.nodeId, at: time(x.at), model: str(x.model, 100), text: str(x.text, 300) })) } : {}) };
   };
