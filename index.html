@@ -500,6 +500,7 @@ button.model-chip svg.i{width:11px;height:11px}
   #crumbs span{flex:none}
   .sheet{align-items:flex-end}
   .sheet-panel{width:100%;max-height:88dvh;border-radius:18px 18px 0 0;border-bottom:0}
+  .sheet-panel.tall{height:88dvh}
 }
 @media (prefers-reduced-motion:reduce){#canvas.anim{transition:none}.typing i{animation:none}}
 /* installed on a phone the page reaches under the notch and the home indicator (viewport-fit=cover) */
@@ -616,7 +617,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 8c4876d'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 549ab93'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1174,10 +1175,10 @@ function renderCanvas() {
     if (parent) head += `<button class="bstat s-${statusOf(b)}" data-act="status" title="Status of this branch${RO ? '' : ': tap to change'}"${RO ? ' disabled' : ''}>${esc(statusLabel(b))}</button>`;
     head += `<button class="ib colmore" data-act="colmore" title="Rename${parent ? ' or delete' : ''} this branch" aria-label="Branch actions" aria-haspopup="menu">${ICON.more}</button>`;
     const lastM = c.messages[b.msgIds[b.msgIds.length - 1]];
-    const sum = lastM ? `${lastM.role === 'user' ? 'You' : 'Gemini'}: ${(lastM.text || lastM.error || '').replace(/[#*`>_~]/g, '').replace(/\s+/g, ' ').slice(0, 90)}` : 'Empty';
+    const sum = lastM ? `${lastM.role === 'user' ? 'You' : 'Gemini'}: ${plain(unmark(lastM.text || lastM.error || '')).slice(0, 90)}` : 'Empty';
     let body = '';
     if (b.collapsed) {
-      const flags = flagged.length ? `<div class="col-flags">${flagged.map(m => `<button class="cflag" data-act="gotomsg" data-mid="${m.id}" title="Go to this message">${ICON.flagOn}<span>${esc(m.decision && m.decision.summary ? m.decision.summary : plain(m.text || m.error).slice(0, 90))}</span></button>`).join('')}</div>` : '';
+      const flags = flagged.length ? `<div class="col-flags">${flagged.map(m => `<button class="cflag" data-act="gotomsg" data-mid="${m.id}" title="Go to this message">${ICON.flagOn}<span>${esc(m.decision && m.decision.summary ? m.decision.summary : plain(unmark(m.text || m.error)).slice(0, 90))}</span></button>`).join('')}</div>` : '';
       col.innerHTML = `<div class="col-head">${head}</div><div class="col-sum">${esc(sum)}</div>${flags}<div class="col-resize" title="Drag to resize · double-click to reset"></div>`;
       canvas.appendChild(col); colEls[b.id] = col;
       continue;
@@ -1185,7 +1186,7 @@ function renderCanvas() {
     if (parent) {
       const eo = b.editOf && c.messages[b.editOf];
       if (eo) {
-        const t = eo.text.replace(/\s+/g, ' ');
+        const t = plain(unmark(eo.text));
         body += `<div class="fork-note">${ICON.pencil}<span>Edited version of: “${esc(t.slice(0, 60))}${t.length > 60 ? '…' : ''}”</span></div>`;
       }
       const ro = !eo && b.regenOf && c.messages[b.regenOf];
@@ -1195,7 +1196,7 @@ function renderCanvas() {
         body += `<div class="fork-note">${ICON.regen}<span>${q ? `Asked again: “${esc(t.slice(0, 60))}${t.length > 60 ? '…' : ''}”. The earlier answer stays in “${esc(branchName(parent, c))}”.` : 'Asked again'}</span></div>`;
       }
       const fm = (eo || ro) ? null : c.messages[b.forkMsgId];
-      const said = fm ? plain(fm.text || '').replace(/\s+/g, ' ').trim() : '';
+      const said = fm ? plain(unmark(fm.text || '')) : '';
       if (!eo && !ro) body += fm ? `<div class="fork-note">${ICON.branch}<span>Continues after: “${esc(said.slice(0, 60))}${said.length > 60 ? '…' : ''}”</span></div>`
                  : `<div class="fork-note">${ICON.branch}<span>Continues from the start of ${esc(branchName(parent))}</span></div>`;
     }
@@ -1404,7 +1405,7 @@ function inlineRename(b, targetEl, small) {
     if (done) return; done = true;
     if (commit) {
       const v = input.value.trim();
-      if (!v || v === autoBranchName(b)) delete b.name; else b.name = v;
+      if (!v || v === autoBranchName(b)) { if (b.modelName) b.name = b.modelName; else delete b.name; } else b.name = v; // empty: the model's title, else the automatic one
       c.updated = Date.now();
       save();
     }
@@ -2024,11 +2025,11 @@ async function createOptionBranches() {
   let done = 0;
   for (const bid of made) {
     if (fanOut.cancel || !db.convos[c.id] || !c.branches[bid]) break;
-    await sendToBranch(c, bid, null);
+    toast(`Answering ${done + 1} of ${made.length}…`);
+    await sendToBranch(c, bid, null, null, true);
     done++;
   }
   const stopped = fanOut.cancel; fanOut = null; paintSend();
-  if (db.current === c.id && c.branches[made[0]]) goTo(made[0], 'top');
   toast(stopped ? `Stopped: ${made.length - done} branch${made.length - done === 1 ? '' : 'es'} left unanswered` : `${made.length} branches answered`);
 }
 
@@ -2320,7 +2321,7 @@ async function nameBranch(c, am) {
     const name = clean(data && data.title, 60).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim();
     const lc = db.convos[c.id], lb = lc && lc.branches[b.id]; // the live ones: an Undo or another tab may have replaced them
     if (!name || !lb || lb.name) return;
-    lb.name = name;
+    lb.name = name; lb.modelName = name; // kept, so clearing a name you give later brings this one back (NAV-9)
     save();
     if (db.current === c.id) paintBranchName(lc, lb);
   } catch (err) {} // the name taken from the first message stays
@@ -2456,7 +2457,14 @@ vp.addEventListener('pointermove', e => {
 });
 const endDrag = () => { if (drag) { drag = null; vp.classList.remove('dragging'); } };
 vp.addEventListener('pointerup', endDrag); vp.addEventListener('pointercancel', endDrag);
-// Phones: a sideways swipe moves along the tree, like Alt+→ / Alt+← (left: into the first child, right: to the parent)
+// The branch a swipe left or Alt+→ goes into: the one you came back from, else the first that is neither folded nor parked or
+// rejected; a folded one only when there is nothing else (NAV-1)
+function nextChild(c, bid) {
+  const kids = childrenOf(c, bid), back = c.branches[bid] && kids.find(k => k.id === c.branches[bid].lastChild);
+  return back || kids.find(k => !k.collapsed && !droppedAt(c, k.id)) || kids.find(k => !k.collapsed) || kids[0] || null;
+}
+function upFrom(c) { const b = c.branches[c.focus], p = b && b.parentId; if (p) c.branches[p].lastChild = b.id; return p; } // remembered, not saved
+// Phones: a sideways swipe moves along the tree, like Alt+→ / Alt+← (left: into a child, right: to the parent)
 let swipe = null;
 vp.addEventListener('touchstart', e => {
   const t = e.touches[0];
@@ -2469,14 +2477,14 @@ vp.addEventListener('touchend', e => {
   if (Date.now() - s.at > 800 || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
   if (scrollsX(s.el, -dx) || String(window.getSelection() || '')) return; // a wide code block scrolls, or text is being selected
   const c = cur(); if (!c) return;
-  if (dx < 0) { const k = childrenOf(c, c.focus)[0]; if (k) goTo(k.id, 'top'); else toast('No branch continues from here'); }
-  else { const p = c.branches[c.focus].parentId; if (p) goTo(p); else toast('This is the main branch'); }
+  if (dx < 0) { const k = nextChild(c, c.focus); if (k) goTo(k.id, 'top'); else toast('No branch continues from here'); }
+  else { const p = upFrom(c); if (p) goTo(p); else toast('This is the main branch'); }
 }, { passive: true });
 
 document.addEventListener('keydown', e => {
   const c = cur(); if (!c || !e.altKey || typing(e)) return;
-  if (e.key === 'ArrowLeft') { const p = c.branches[c.focus].parentId; if (p) { e.preventDefault(); goTo(p); } }
-  if (e.key === 'ArrowRight') { const k = childrenOf(c, c.focus)[0]; if (k) { e.preventDefault(); goTo(k.id, 'top'); } }
+  if (e.key === 'ArrowLeft') { const p = upFrom(c); if (p) { e.preventDefault(); goTo(p); } }
+  if (e.key === 'ArrowRight') { const k = nextChild(c, c.focus); if (k) { e.preventDefault(); goTo(k.id, 'top'); } }
 });
 let rT; window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => { const c = cur(); if (c) { focusBranch(c.focus, false, 'none'); renderChrome(); } }, 120); });
 
@@ -2672,7 +2680,7 @@ async function send() {
   sendToBranch(c, c.focus, text);
 }
 
-async function sendToBranch(c, bid, text, modelOverride) {
+async function sendToBranch(c, bid, text, modelOverride, stay) {
   const key = keyInput.value.trim();
   const b = c.branches[bid];
   b.collapsed = false;
@@ -2691,7 +2699,7 @@ async function sendToBranch(c, bid, text, modelOverride) {
   if (!end || end.role !== 'user') { save(); renderCanvas(); toast('Nothing to answer: the question is excluded from history. Include it again first.'); return; } // FLOW-05
   const am = { id: uid(), role: 'model', text: '', branchId: bid, ts: Date.now(), streaming: true, model, request: requestRecord(req, model) };
   c.messages[am.id] = am; b.msgIds.push(am.id);
-  save(); renderSidebar(); renderCanvas(); focusBranch(bid, true);
+  save(); renderSidebar(); renderCanvas(); if (stay) focusBranch(c.focus, false, 'none'); else focusBranch(bid, true); // stay: answering in the background (NAV-11)
   return streamInto(c, am, req, key, picked, null);
 }
 
@@ -2884,6 +2892,7 @@ function openSheet(view) {
   $('#settingsView').hidden = !view.settings;
   $('#sheetDyn').innerHTML = view.render ? view.render() : '';
   $('#sheetBack').hidden = !view.back;
+  $('.sheet-panel').classList.toggle('tall', !!view.tall); // tabs and levels: one height on a phone (UI-2)
   $('#sheet').hidden = false;
 }
 function closeSheet() { $('#sheet').hidden = true; sheetView = null; $('#sheetDyn').innerHTML = ''; memDraft = null; } // a fact not saved is not kept
@@ -2893,7 +2902,7 @@ $('#sheet').addEventListener('click', e => {
   if (sheetView && sheetView.onClick) sheetView.onClick(e);
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && !$('#sheet').hidden) { e.preventDefault(); e.stopPropagation(); closeSheet(); }
+  if (e.key === 'Escape' && !$('#sheet').hidden) { e.preventDefault(); e.stopPropagation(); if (sheetView && sheetView.back) sheetView.back(); else closeSheet(); } // a level up first (UI-3)
 }, true);
 const fmtMB = mb => mb < 0.1 ? mb.toFixed(2) : mb.toFixed(1);
 function openSettings(hint) {
@@ -2927,21 +2936,21 @@ function openPromptView(c, m) {
   showPrompt({ c, rec, note, title: 'Prompt of this answer', lookup: (id, sig) => { const x = sentVersion(c.messages[id], sig, rec.at); return x && x.hidden ? { ...x, hidden: false } : x; }, search: m.search, calls: (c.calls || []).filter(x => x.mid === m.id),
     path: historyFor(c, branchOf(c, m.id).id, m.id).slice(0, -1), mid: m.id });
 }
-function previewPrompt() {
+function previewPrompt(backTo) {
   const c = cur(); if (!c) return;
   const draft = input.value.trim();
   const msgs = historyFor(c, c.focus).concat(draft ? [{ id: '__draft', role: 'user', text: draft }] : []);
   const rec = requestRecord(buildRequest(c, msgs), modelSel.value || db.model);
-  showPrompt({ c, rec, title: 'Next prompt', preview: true, path: historyFor(c, c.focus), lookup: id => id === '__draft' ? { id, role: 'user', text: draft } : c.messages[id],
+  showPrompt({ c, rec, title: 'Next prompt', preview: true, path: historyFor(c, c.focus), ...(typeof backTo === 'function' ? { backTo } : {}), lookup: id => id === '__draft' ? { id, role: 'user', text: draft } : c.messages[id],
     note: 'Preview: what your next message would send right now' + (draft ? ', including what you have typed.' : '. Type a message to see it added.') });
 }
 function showPrompt(pv) {
   pv.level = 'overview';
-  openSheet({ title: pv.title, render: () => pvRender(pv), onClick: e => pvClick(pv, e), back: null });
+  openSheet({ title: pv.title, tall: true, render: () => pvRender(pv), onClick: e => pvClick(pv, e), back: pv.backTo || null });
   pvSync(pv);
 }
 function pvSync(pv) {
-  sheetView.back = pv.level === 'overview' ? null : () => { pv.level = pv.level === 'part' ? 'block' : 'overview'; pvSync(pv); };
+  sheetView.back = pv.level === 'overview' ? pv.backTo || null : () => { pv.level = pv.level === 'part' ? 'block' : 'overview'; pvSync(pv); };
   $('#sheetBack').hidden = !sheetView.back;
   $('#sheetTitle').textContent = pv.level === 'overview' ? pv.title : pv.rec.blocks[pv.block].label;
   $('#sheetDyn').innerHTML = pvRender(pv);
@@ -3135,11 +3144,11 @@ $('#backPill').addEventListener('click', e => {
 });
 function openContextPanel(tab) {
   if (tab) ctxTab = tab;
-  openSheet({ title: 'Decisions and memory', context: true, render: renderContextPanel, onClick: contextPanelClick });
+  openSheet({ title: 'Decisions and memory', context: true, tall: true, render: renderContextPanel, onClick: contextPanelClick });
   const ta = $('#sheetDyn .dp-area'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
 }
 const firstSentence = t => { const m = t.match(/^(.{12,240}?[.!?])(\s|$)/); return (m ? m[1] : t.slice(0, 240)).trim(); };
-// Remember: a fact from the message (its decision summary, or its first sentence), opened for editing
+// Remember: a draft fact about you, from the message, opened for editing (F-23)
 function rememberFrom(c, m) {
   panelEdit = panelHist = null; memQuery = '';
   const known = db.memory.find(x => x.src && x.src.cid === c.id && x.src.mid === m.id);
@@ -3181,7 +3190,7 @@ function decisionsPanelClick(e) {
   const btn = e.target.closest('[data-dp]'); if (!btn) return;
   if (RO && !['goto', 'hist', 'preview'].includes(btn.dataset.dp)) return; // read-only: look, don't change
   const c = cur(); if (!c) return;
-  if (btn.dataset.dp === 'preview') { previewPrompt(); return; }
+  if (btn.dataset.dp === 'preview') { const tab = ctxTab; previewPrompt(() => openContextPanel(tab)); return; } // ← comes back here (UI-3)
   const card = btn.closest('.dp-card'), m = card && c.messages[card.dataset.mid];
   if (!m) return;
   switch (btn.dataset.dp) {
@@ -3291,7 +3300,8 @@ const WHATS_NEW = [
     'A sample or a Thinking State you have already opens again instead of adding a copy. Another tool’s session keeps who wrote what.',
     'Fixed: text pasted from a PDF no longer breaks an export, and the menu’s conversations open with Enter or Space.',
     'Fixed: with two tabs open, one no longer pulls the other to its conversation or closes what you are typing there.',
-    'On a phone a column head has room for its name: Rename and Delete branch are under <b>⋯</b>, the breadcrumbs show where you are, and Fold all moved to the Branches panel.'] },
+    'On a phone a column head has room for its name: Rename and Delete branch are under <b>⋯</b>, the breadcrumbs show where you are, and Fold all moved to the Branches panel.',
+    'On a phone, Back closes a sheet or a panel instead of leaving the app; a swipe no longer opens a rejected, folded branch first.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -4507,6 +4517,26 @@ $('#toggleSide').onclick = () => {
   if (isMobile()) { $('#sidebar').classList.toggle('open'); if (ui.outline) toggleOutline(false); return; }
   ui.side = !ui.side; saveUI(); applyUI(true);
 };
+// Back on a phone (Android's button, iOS's edge swipe) goes back in the browser's history. An open sheet, or a side panel on a phone,
+// holds one step of it, so Back closes it, or goes a level up in it, instead of leaving the app (NAV-6)
+let held = false, dropping = false;
+const overlayOpen = () => !$('#sheet').hidden || $('#sidebar').classList.contains('open') || (isMobile() && !!ui.outline);
+function hold() { if (held) return; try { history.pushState({ mbOverlay: true }, ''); held = true; } catch (e) {} }
+function release() { if (!held || overlayOpen()) return; held = false; if (history.state && history.state.mbOverlay) { dropping = true; history.back(); } }
+window.addEventListener('popstate', () => {
+  if (dropping) { dropping = false; return; }
+  if (!held) return;
+  held = false;
+  if (!$('#sheet').hidden) { if (sheetView && sheetView.back) sheetView.back(); else closeSheet(); }
+  else if ($('#sidebar').classList.contains('open')) $('#sidebar').classList.remove('open');
+  else if (isMobile() && ui.outline) toggleOutline(false);
+  if (overlayOpen()) hold(); // still something open (a level up, or a second panel): the next Back is for it
+});
+{ const watch = () => (overlayOpen() ? hold() : release());
+  const mo = new MutationObserver(watch);
+  mo.observe($('#sheet'), { attributes: true, attributeFilter: ['hidden'] });
+  mo.observe($('#sidebar'), { attributes: true, attributeFilter: ['class'] });
+  mo.observe($('.app'), { attributes: true, attributeFilter: ['class'] }); }
 // tap outside closes drawers on small screens; that tap must not also press what is under it (e.g. Delete)
 let swallowClick = false;
 document.addEventListener('pointerdown', e => {
@@ -4527,6 +4557,8 @@ document.addEventListener('keydown', e => {
 
 let oQuery = '';
 // Text without Markdown marks, for titles, snippets and search; an underscore inside a word, as in user_id, is part of it
+// A text's lines without the Markdown that only makes sense at a line's start: list and task markers, headings (NAV-10)
+const unmark = t => String(t || '').replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?/gm, '').replace(/^[ \t]*#{1,6}[ \t]+/gm, '');
 const plain = t => String(t || '').replace(/[#*`>~|]/g, '').replace(/_+/g, (u, i, s) => /[\p{L}\p{N}]/u.test(s[i - 1] || '') && /[\p{L}\p{N}]/u.test(s[i + u.length] || '') ? u : '').replace(/\s+/g, ' ').trim();
 function snippetAround(text, q) {
   const t = plain(text); const i = t.toLowerCase().indexOf(q);
@@ -4558,7 +4590,7 @@ function renderOutline() {
     const flags = msgs.filter(x => x.flagged).length;
     let snip;
     if (m && m.hit) snip = snippetAround(m.hit.text || m.hit.error, q) + (m.n > 1 ? `  · ${m.n} hits` : '');
-    else { const f = msgs[0]; snip = f ? `${f.role === 'user' ? 'You' : 'Gemini'}: ${plain(f.text || f.error).slice(0, 80)}` : 'Empty'; }
+    else { const f = msgs[0]; snip = f ? `${f.role === 'user' ? 'You' : 'Gemini'}: ${plain(unmark(f.text || f.error)).slice(0, 80)}` : 'Empty'; }
     const cls = ['orow', b.id === c.focus && 'here', onPath.has(b.id) && 'onpath', b.collapsed && 'canvas-collapsed'].filter(Boolean).join(' ');
     return `<li><div class="${cls}" data-obid="${b.id}">
       <button class="otog${kids.length ? '' : ' none'}${shut ? ' shut' : ''}" data-otog title="${shut ? 'Show' : 'Hide'} sub-branches" aria-expanded="${!shut}">${ICON.chevron}</button>
@@ -4580,7 +4612,7 @@ function renderOutline() {
   box.hidden = !flagged.length;
   $('#oFlagCount').textContent = flagged.length;
   $('#oFlagList').innerHTML = flagged.map(([m, b]) => `<button class="frow" data-fmid="${m.id}">
-      <div class="ft">${m.decision && m.decision.summary ? esc(m.decision.summary) : `${m.role === 'user' ? 'You' : 'Gemini'}: ${esc(plain(m.text || m.error).slice(0, 90))}`}</div>
+      <div class="ft">${m.decision && m.decision.summary ? esc(m.decision.summary) : `${m.role === 'user' ? 'You' : 'Gemini'}: ${esc(plain(unmark(m.text || m.error)).slice(0, 90))}`}</div>
       <div class="fb">${esc(branchName(b))}</div></button>`).join('');
 
   const here = tree.querySelector('.orow.here');
