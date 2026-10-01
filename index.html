@@ -131,7 +131,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 #roBanner b{display:block;color:var(--ink);font-size:14px;margin-bottom:4px}
 #roBanner button{margin-top:10px;width:100%;display:flex;gap:6px;align-items:center;justify-content:center;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:9px;padding:8px;font-weight:600}
 body.readonly #roBanner{display:block}
-body.readonly #newChat,body.readonly .side-tools,body.readonly .sample-link,body.readonly #openSettings,body.readonly #keyHint,body.readonly #openDecisions,body.readonly .conv .rowbtn,
+body.readonly #newChat,body.readonly .side-tools,body.readonly .sample-link,body.readonly #openSettings,body.readonly #keyHint,body.readonly .ctxpill,body.readonly .conv .rowbtn,
 body.readonly .keywrap,body.readonly #model,body.readonly .composer,body.readonly .side-foot .edit-only,
 body.readonly [data-act="delbranch"],body.readonly .actions .ib:not([data-act="more"]):not([data-act="prompt"]){display:none}
 .side-foot{padding:12px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);line-height:1.5}
@@ -221,6 +221,21 @@ body.readonly #webSearch{display:none}
 .pv-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .topicon .cnt{font-size:11px;font-weight:700;margin-left:3px;line-height:16px}
 .topicon .cnt:empty{display:none}
+.ctxpill{display:inline-flex}
+.ctxpill .topicon:first-child{border-radius:10px 0 0 10px}
+.ctxpill .topicon:last-child{border-radius:0 10px 10px 0;margin-left:-1px}
+.mem-tools{display:flex;gap:8px;align-items:center;margin:0 0 8px}
+.mem-search{flex:1;min-width:0;font:inherit;font-size:16px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+.mem-sum{font-size:12.5px;color:var(--muted);margin:0 0 8px}
+.dp-card.mem.row{padding:0;margin-bottom:6px}
+.mem-row{display:block;width:100%;text-align:left;border:0;background:none;padding:7px 12px;font:inherit;color:inherit;cursor:pointer;border-radius:0 11px 11px 0}
+.mem-row .dp-text{font-size:14px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.mem-row .dp-meta{margin-top:1px;font-size:11.5px}
+.mem-row:hover,.mem-row:focus-visible{background:var(--accent-soft);outline:none}
+.backpill{position:absolute;left:50%;transform:translateX(-50%);z-index:20;display:flex;align-items:center;max-width:calc(100% - 32px);background:var(--ink);color:var(--bg);border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.backpill[hidden]{display:none}
+.backpill button{border:0;background:none;color:inherit;font:inherit;font-size:14px;padding:8px 6px 8px 14px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.backpill .bp-x{padding:8px 14px 8px 8px;font-size:16px;flex:0 0 auto}
 /* decisions panel */
 .linkbtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px}
 .dp-card{border:1px solid var(--line);border-left:3px solid var(--flag);border-radius:12px;padding:10px 12px;margin:0 0 10px;background:var(--panel)}
@@ -504,10 +519,11 @@ button.model-chip svg.i{width:11px;height:11px}
       <button id="toggleSide" title="Show / hide conversations" aria-label="Show or hide conversations"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
       <button id="foldAll" class="topicon" title="Fold all branches" aria-label="Fold all branches"></button>
       <nav id="crumbs"></nav>
-      <button id="openDecisions" class="topicon" title="Decisions and memory" aria-label="Decisions and memory"><svg class="i" viewBox="0 0 24 24" style="fill:currentColor"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg><span class="cnt" id="decCount"></span></button>
+      <div class="ctxpill"><button id="openDecisions" class="topicon" title="Decisions in force in this conversation" aria-label="Decisions"><svg class="i" viewBox="0 0 24 24" style="fill:currentColor"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg><span class="cnt" id="decCount"></span></button><button id="openMemory" class="topicon" title="Memory: about you, in every request" aria-label="Memory"><svg class="i" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span class="cnt" id="memCount"></span></button></div>
       <button id="toggleOutline" class="topicon" title="Branches panel (Alt+O)" aria-label="Branches panel"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
       <button id="openSettings" class="topicon" title="Settings" aria-label="Settings"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
     </header>
+    <div id="backPill" class="backpill" hidden><button type="button" class="bp-go" data-back="go">← Back to <b></b></button><button type="button" class="bp-x" data-back="hide" aria-label="Hide">×</button></div>
     <div id="viewport"><div id="canvas"><svg id="wires"></svg></div></div>
     <div class="composer">
       <div id="keyHint" class="keyhint" hidden>To chat, add a Gemini API key in <button type="button" data-open="settings">Settings</button>, or <button type="button" data-open="sample">try a sample conversation</button>.</div>
@@ -579,7 +595,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.4.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main e874377'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 6a7240e'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2814,7 +2830,7 @@ $('#promptPreview').onclick = previewPrompt;
 /* ---------------- decisions panel: read, edit, roll back ---------------- */
 let panelEdit = null, panelHist = null; // message ids
 function flaggedIn(c) { return Object.values(c.messages).filter(m => m.flagged).sort((a, b) => b.ts - a.ts); }
-function renderDecCount() { const c = cur(); $('#decCount').textContent = (c && flaggedIn(c).length) || ''; refreshReask(); }
+function renderDecCount() { const c = cur(); $('#decCount').textContent = (c && flaggedIn(c).length) || ''; $('#memCount').textContent = db.memory.length || ''; refreshReask(); }
 const shortDate = t => new Date(t).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 function renderDecisionsPanel() {
   const c = cur(); if (!c) return '';
@@ -2851,21 +2867,54 @@ function renderContextPanel() {
   const tab = (id, label, n) => `<button role="tab" class="tab${ctxTab === id ? ' on' : ''}" data-tab="${id}" aria-selected="${ctxTab === id}">${label}${n ? ` · ${n}` : ''}</button>`;
   return `<div class="tabs" role="tablist">${tab('decisions', 'Decisions', dn)}${tab('memory', 'Memory', mn)}</div>` + (ctxTab === 'memory' ? renderMemoryPanel() : renderDecisionsPanel());
 }
+let memQuery = ''; // the Memory tab's search
+const MEM_SEARCH_FROM = 8; // facts before the search box shows
+const factFrom = x => { const c = x.src && db.convos[x.src.cid]; return c ? `from “${c.title}”` : x.from ? `from “${x.from}”` : 'added by you'; };
+const factSource = x => { const c = x.src && db.convos[x.src.cid]; return !!(c && Object.prototype.hasOwnProperty.call(c.messages, x.src.mid)); };
+const factMatches = (x, q) => !q || x.text.toLowerCase().includes(q);
 function renderMemoryPanel() {
-  const note = `<p class="pv-note">Memory is shared by all your conversations: every request carries these facts. <button class="linkbtn" type="button" data-dp="preview">See the next prompt</button></p>`;
-  const add = memEdit || memDraft ? '' : `<div class="dp-actions"><button class="btn primary" data-mem="add">+ Add a fact</button></div>`;
-  const editor = (x, draft) => `<article class="dp-card mem" data-id="${x.id}"><textarea class="dp-area" rows="2" maxlength="300" aria-label="Fact" placeholder="One fact the model should always know">${esc(x.text)}</textarea>
-      ${draft ? `<div class="dp-meta">${x.src ? 'From this message. ' : ''}Not saved yet: Save adds it to every request.</div>` : ''}
-      <div class="dp-actions"><button class="btn" data-mem="cancel">Cancel</button><button class="btn primary" data-mem="save">Save</button></div></article>`;
+  const n = db.memory.length, chars = db.memory.reduce((k, x) => k + (x.text ? x.text.length + 3 : 0), 0), q = memQuery.trim().toLowerCase();
+  const note = `<p class="pv-note">Memory is about you: your role, your preferences and the answers you want. It is shared by all conversations, so every request carries it. <button class="linkbtn" type="button" data-dp="preview">See the next prompt</button></p>`;
+  const tools = memEdit || memDraft ? '' : `<div class="mem-tools"><button class="btn primary" data-mem="add">+ Add a fact</button>${n > MEM_SEARCH_FROM ? `<input class="mem-search" type="search" data-mem-search placeholder="Search memory" aria-label="Search memory" value="${esc(memQuery)}">` : ''}</div>`;
+  const sum = n ? `<p class="mem-sum">${n} fact${n === 1 ? '' : 's'} in every request · about ${Math.max(1, Math.round(chars / 4)).toLocaleString('en-US')} tokens</p>` : '';
+  const editor = (x, draft) => `<article class="dp-card mem" data-id="${x.id}"><textarea class="dp-area" rows="2" maxlength="300" aria-label="Fact" placeholder="One fact about you, or how you want answers">${esc(x.text)}</textarea>
+      <div class="dp-meta">${draft ? `${x.src ? 'From this message. ' : ''}Not saved yet: Save adds it to every request.` : `${esc(factFrom(x))} · ${esc(shortDate(x.at))}`}</div>
+      <div class="dp-actions">${draft ? '' : `<button class="btn danger" data-mem="delete">Delete</button>${factSource(x) ? '<button class="btn" data-mem="goto">Go to source</button>' : ''}`}<button class="btn" data-mem="cancel">Cancel</button><button class="btn primary" data-mem="save">Save</button></div></article>`;
   const draft = memDraft ? editor(memDraft, true) : '';
-  if (!db.memory.length) return note + draft + (memDraft ? '' : `<p class="pv-empty">Nothing yet. Use <b>Remember</b> under a message, or add a fact here.</p>`) + add;
-  return note + draft + db.memory.map(x => {
-    const c = x.src && db.convos[x.src.cid], from = c ? `from “${c.title}”` : x.from ? `from “${x.from}”` : 'added by you';
-    if (memEdit === x.id) return editor(x, false);
-    return `<article class="dp-card mem" data-id="${x.id}"><div class="dp-text">${esc(x.text)}</div><div class="dp-meta">${esc(from)} · ${esc(shortDate(x.at))}</div>
-      <div class="dp-actions">${c && c.messages[x.src.mid] ? '<button class="btn" data-mem="goto">Go to</button>' : ''}<button class="btn" data-mem="edit">Edit</button><button class="btn danger" data-mem="delete">Delete</button></div></article>`;
-  }).join('') + add;
+  if (!n) return note + draft + (memDraft ? '' : `<p class="pv-empty">Nothing yet. Add who you are, your role or how you like answers, or use <b>Remember</b> under a message.</p>`) + tools;
+  const rows = db.memory.map(x => memEdit === x.id ? editor(x, false)
+    : `<article class="dp-card mem row" data-id="${x.id}"${factSource(x) ? ' data-source' : ''}${factMatches(x, q) ? '' : ' hidden'}><button class="mem-row" type="button" data-mem="edit" aria-label="Edit this fact"><span class="dp-text">${esc(x.text)}</span><span class="dp-meta">${esc(factFrom(x))} · ${esc(shortDate(x.at))}</span></button></article>`).join('');
+  const none = `<p class="pv-empty" data-mem-none${db.memory.some(x => factMatches(x, q)) ? ' hidden' : ''}>No fact matches.</p>`;
+  return note + tools + draft + sum + rows + none;
 }
+// Typing in the search filters the rows in place, so the box keeps its focus
+$('#sheetDyn').addEventListener('input', e => {
+  if (!e.target.matches('[data-mem-search]')) return;
+  memQuery = e.target.value; const q = memQuery.trim().toLowerCase(); let shown = 0;
+  document.querySelectorAll('#sheetDyn .dp-card.mem.row').forEach(el => { const x = db.memory.find(y => y.id === el.dataset.id); const ok = !!x && factMatches(x, q); el.hidden = !ok; if (ok) shown++; });
+  const none = $('#sheetDyn [data-mem-none]'); if (none) none.hidden = shown > 0;
+});
+// Go to from a panel can switch the branch or the conversation: ← Back returns to where you were (F-22, F-23)
+let backTo = null; // { cid, bid, top }
+function jumpAway() { const c = cur(); backTo = c ? { cid: c.id, bid: c.focus, top: $('#viewport').scrollTop } : null; }
+function showBack() {
+  const pill = $('#backPill'), here = cur(), c = backTo && db.convos[backTo.cid], b = c && c.branches[backTo.bid];
+  if (!b || (here && here.id === backTo.cid && here.focus === backTo.bid)) { pill.hidden = true; backTo = null; return; }
+  pill.querySelector('b').textContent = here && here.id !== c.id ? `${c.title} › ${branchName(b, c)}` : branchName(b, c);
+  pill.style.bottom = ($('.composer').offsetHeight + 12) + 'px'; // above the composer, clear of the columns' heads
+  pill.hidden = false;
+}
+function goBack() {
+  const t = backTo; backTo = null; $('#backPill').hidden = true;
+  const c = t && db.convos[t.cid]; if (!c || !c.branches[t.bid]) return;
+  if (db.current !== t.cid) { db.current = t.cid; save(); renderAll(false); }
+  focusBranch(t.bid, true, 'none');
+  $('#viewport').scrollTo({ top: t.top, behavior: 'smooth' });
+}
+$('#backPill').addEventListener('click', e => {
+  const b = e.target.closest('[data-back]'); if (!b) return;
+  if (b.dataset.back === 'go') goBack(); else { backTo = null; $('#backPill').hidden = true; }
+});
 function openContextPanel(tab) {
   if (tab) ctxTab = tab;
   openSheet({ title: 'Decisions and memory', context: true, render: renderContextPanel, onClick: contextPanelClick });
@@ -2899,9 +2948,10 @@ function contextPanelClick(e) {
       if (x === memDraft) { if (text) { db.memory.unshift({ ...memDraft, text, at: Date.now() }); if (writing()) factsHere.add(memDraft.id); } memDraft = null; }
       else if (text) Object.assign(x, { text, at: Date.now() }); else drop(x.id);
       memEdit = null; save(); paintFactSource(x); break; }
-    case 'delete': drop(x.id); save(); paintFactSource(x); break;
-    case 'goto': { closeSheet(); if (db.current !== x.src.cid) { db.current = x.src.cid; save(); renderAll(false); } goToMessage(x.src.mid); return; }
+    case 'delete': drop(x.id); memEdit = null; save(); paintFactSource(x); break;
+    case 'goto': { jumpAway(); closeSheet(); memEdit = null; if (db.current !== x.src.cid) { db.current = x.src.cid; save(); renderAll(false); } goToMessage(x.src.mid); showBack(); return; }
   }
+  renderDecCount();
   $('#sheetDyn').innerHTML = renderContextPanel();
   const ta = $('#sheetDyn .dp-area'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
 }
@@ -2912,7 +2962,7 @@ function decisionsPanelClick(e) {
   const card = btn.closest('.dp-card'), m = card && c.messages[card.dataset.mid];
   if (!m) return;
   switch (btn.dataset.dp) {
-    case 'goto': closeSheet(); goToMessage(m.id); return;
+    case 'goto': jumpAway(); closeSheet(); goToMessage(m.id); showBack(); return;
     case 'edit': panelEdit = m.id; panelHist = null; break;
     case 'cancel': panelEdit = null; break;
     case 'save': setDecision(m, card.querySelector('.dp-area').value.replace(/\s+/g, ' ').trim().slice(0, 300)); panelEdit = null; c.updated = Date.now(); save(); break;
@@ -2929,6 +2979,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); e.target.closest('.dp-card').querySelector('[data-dp="save"], [data-mem="save"]').click(); }
 });
 $('#openDecisions').onclick = () => { panelEdit = panelHist = memEdit = null; openContextPanel('decisions'); };
+$('#openMemory').onclick = () => { panelEdit = panelHist = memEdit = null; memQuery = ''; openContextPanel('memory'); };
 $('#keyHint').addEventListener('click', e => {
   const b = e.target.closest('[data-open]'); if (!b) return;
   if (b.dataset.open === 'settings') openSettings(); else $('#sampleBtn').click();
@@ -2974,8 +3025,8 @@ const HELP = [
   { id: 'context', title: 'Decisions, memory and the prompt', cards: ['F-08', 'F-09', 'F-20', 'F-21', 'F-22', 'F-23', 'F-31'], body: `
     <p class="help-why">Say it once: every request carries it.</p>
     <ul><li>The <b>flag</b> under a message makes it a decision: a one-line summary that every prompt of the conversation carries. Tap the Decision box to edit it, or <b>Write for me</b>.</li>
-    <li>The flag button in the top bar opens <b>Decisions and memory</b>: this conversation's decisions, with history and restore, and the Memory tab.</li>
-    <li><b>Remember</b> (the bookmark under a message) drafts a fact from it: edit it, then <b>Save</b>, and it goes into every request of every conversation. A remembered message shows a filled bookmark. Edit or delete facts any time on the Memory tab.</li>
+    <li><b>⚑</b> in the top bar opens this conversation's decisions, with history and restore; <b>🔖</b> next to it opens your memory. <b>Go to</b> jumps to a message, and <b>← Back</b> above the composer returns to where you were.</li>
+    <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) drafts one from the message, saved when you tap <b>Save</b>. Tap a fact to edit or delete it; with many facts, search them.</li>
     <li><b>⋯ → Exclude from history</b> leaves a message out of what the model sees, on this branch and the ones that continue from it.</li>
     <li>The <b>layers</b> button under an answer shows how its prompt was built: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. The layers button next to "Writing in …" previews your next prompt.</li>
     <li>An answer written before later decisions says so: <b>Re-ask</b> writes it again with them. Re-asking in the middle of a chain opens a new branch.</li></ul>` },
@@ -2997,7 +3048,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['In the menu, <b>⋯</b> on a conversation holds Rename, Export as a Thinking State, Share and Delete, so its title has room.'] },
+  { version: 'Unreleased', items: ['In the menu, <b>⋯</b> on a conversation holds Rename, Export as a Thinking State, Share and Delete, so its title has room.', '<b>🔖</b> next to <b>⚑</b> in the top bar opens your memory, which says what it adds to every request; facts are compact rows you tap to edit, with search. <b>← Back</b> returns after Go to.'] },
   { version: '0.4.0', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.',
     'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.',
     '<b>Remember</b> drafts a fact that you save, and a remembered message shows it. On a phone the breadcrumbs show the branch you are in.',
