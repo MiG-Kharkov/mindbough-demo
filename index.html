@@ -133,7 +133,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 body.readonly #roBanner{display:block}
 body.readonly #newChat,body.readonly .side-tools,body.readonly .sample-link,body.readonly #openSettings,body.readonly #keyHint,body.readonly .ctxpill,body.readonly .conv .rowbtn,
 body.readonly .keywrap,body.readonly #model,body.readonly .composer,body.readonly .side-foot .edit-only,
-body.readonly [data-act="delbranch"],body.readonly .actions .ib:not([data-act="more"]):not([data-act="prompt"]){display:none}
+body.readonly [data-act="delbranch"],body.readonly .actions .ib:not([data-act="more"]){display:none}
 .side-foot{padding:12px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);line-height:1.5}
 .hint-touch{display:none}
 @media (hover:none) and (pointer:coarse){.hint-touch{display:inline}.hint-desk{display:none}}
@@ -602,7 +602,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 24e78d1'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main b45921e'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1102,8 +1102,8 @@ function msgHTML(c, m) {
       <button class="ib branch" data-act="branch" title="${m.role === 'user' ? 'Get an answer to this message in a new branch' : 'Continue the conversation in a new branch from here'}">${ICON.branch}Branch out</button>
       <button class="ib ${m.flagged ? 'on-flag' : ''}" data-act="flag" title="${m.flagged ? 'Remove the flag (the decision leaves prompts)' : 'Flag as a decision'}" aria-pressed="${!!m.flagged}">${m.flagged ? ICON.flagOn : ICON.flag}</button>
       <button class="ib ${remembered ? 'on-mem' : ''}" data-act="remember" title="${remembered ? 'Remembered: edit the fact' : 'Remember this in all conversations'}" aria-pressed="${remembered}">${remembered ? ICON.bookmarkOn : ICON.bookmark}</button>
-      ${m.role === 'model' ? `<button class="ib" data-act="prompt" title="How the prompt for this answer was built">${ICON.layers}</button>` : ''}
-      <button class="ib more" data-act="more" title="More: options, edit, exclude, copy, delete" aria-label="More actions" aria-haspopup="menu">${ICON.more}</button>
+      <button class="ib ${m.hidden ? 'on-hide' : ''}" data-act="hide" title="${m.hidden ? 'Excluded from history: tap to include it again' : 'Exclude from history: the model won’t see it'}" aria-label="Exclude from history" aria-pressed="${!!m.hidden}">${ICON.eyeOff}</button>
+      <button class="ib more" data-act="more" title="More: ${m.role === 'model' ? 'the prompt, ' : ''}options, edit, copy, delete" aria-label="More actions" aria-haspopup="menu">${ICON.more}</button>
     </div>`;
   }
   return `<div class="${cls}" data-mid="${m.id}">
@@ -1334,6 +1334,7 @@ $('#canvas').addEventListener('click', async e => {
   if (act === 'dec-save') { saveDecision(c, m); return; }
   if (act === 'dec-auto') { decEdit = null; summarize(c, m, true); return; }
   if (act === 'prompt') { openPromptView(c, m); return; }
+  if (act === 'hide') { messageMore(c, m, 'hide'); return; }
   if (act === 'remember') { rememberFrom(c, m); return; }
   if (act === 'compare') { openCompare(c, m); return; }
   if (act === 'reask') { reask(c, m, [...modelSel.options].some(o => o.value === m.model) ? m.model : modelSel.value || db.model); return; }
@@ -1424,9 +1425,9 @@ function openMoreMenu(anchor, c, m) {
   menuFor = { cid: c.id, mid: m.id, mode: 'more' };
   const item = (act, icon, label, cls = '') => `<button role="menuitem" class="plain${cls}" data-more="${act}">${icon}${label}</button>`;
   const copies = item('copy', ICON.copy, 'Copy text') + item('copypath', ICON.copy, 'Copy the conversation up to here');
-  menu.innerHTML = RO ? copies
-    : (m.error ? '' : item('options', ICON.options, 'Branch into options') + item('edit', ICON.pencil, m.role === 'user' ? 'Edit' : 'Edit this answer'))
-      + item('hide', ICON.eyeOff, m.hidden ? 'Include in history again' : 'Exclude from history')
+  const prompt = m.role === 'model' && !m.error ? item('prompt', ICON.layers, 'How the prompt was built') + '<hr>' : '';
+  menu.innerHTML = RO ? prompt + copies
+    : prompt + (m.error ? '' : item('options', ICON.options, 'Branch into options') + item('edit', ICON.pencil, m.role === 'user' ? 'Edit' : 'Edit this answer'))
       + '<hr>' + copies + '<hr>' + item('delmsg', ICON.trash, m.role !== 'user' ? 'Delete this answer' : turnOf(c, m).length > 1 ? 'Delete this question and its answer' : 'Delete this question', ' danger');
   placeMenu(menu, anchor);
 }
@@ -1447,6 +1448,7 @@ function copyPath(c, m) {
 function messageMore(c, m, act) {
   if (act === 'copy') { copyText(m.text || m.error || '', 'Text copied'); return; }
   if (act === 'copypath') { copyPath(c, m); return; }
+  if (act === 'prompt') { openPromptView(c, m); return; }
   if (RO) return;
   if (act === 'options') openOptions(c, m);
   else if (act === 'edit') startEdit(c, m);
@@ -3057,7 +3059,7 @@ const HELP = [
   { id: 'branches', title: 'Branches', cards: ['F-04', 'F-05', 'F-06', 'F-07', 'F-10', 'F-11', 'F-12', 'F-19', 'F-24', 'F-29', 'F-32'], body: `
     <p class="help-why">Try alternatives without mixing them.</p>
     <ul><li><b>Branch out</b> under an answer: a new column that continues from there. The model sees only that branch's path, so dead ends don't pollute the context. Under your own message, <b>Branch out</b> offers an empty branch or an answer from any model.</li>
-    <li>Under a message: <b>Branch out</b>, the flag (a decision), the bookmark (<b>Remember</b>) and, under an answer, the layers button (its prompt). <b>⋯</b> holds the rest: branch into options, edit, exclude from history, copy the message or the conversation up to here, and delete.</li>
+    <li>Under a message: <b>Branch out</b>, the flag (a decision), the bookmark (<b>Remember</b>) and the eye (<b>Exclude from history</b>): what the next prompts carry. <b>⋯</b> holds the rest: how the prompt of an answer was built, branch into options, edit, copy the message or the conversation up to here, and delete.</li>
     <li><b>Delete</b>: your question goes with its answer; an answer goes alone, and its question waits with <b>Answer</b>. <b>Undo</b> in the toast brings it back.</li>
     <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place too. Either way the earlier text is kept, so an answer's prompt still shows what the model saw, marked <b>edited later</b>.</li>
     <li>Tap an answer's model chip to regenerate it with any model. The old answer stays as a version (<b>N versions</b> next to the model); in the middle of a chain the new one opens in a new branch.</li>
@@ -3075,8 +3077,8 @@ const HELP = [
     <ul><li>The <b>flag</b> under a message makes it a decision: a one-line summary that every prompt of the conversation carries. Tap the Decision box to edit it, or <b>Write for me</b>.</li>
     <li><b>⚑</b> in the top bar opens this conversation's decisions, with history and restore; <b>🔖</b> next to it opens your memory. <b>Go to</b> jumps to a message, and <b>← Back</b> above the composer returns to where you were.</li>
     <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) drafts one from the message, saved when you tap <b>Save</b>. Tap a fact to edit or delete it; with many facts, search them.</li>
-    <li><b>⋯ → Exclude from history</b> leaves a message out of what the model sees, on this branch and the ones that continue from it.</li>
-    <li>The <b>layers</b> button under an answer shows how its prompt was built: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. The layers button next to "Writing in …" previews your next prompt.</li>
+    <li>The <b>eye</b> under a message excludes it from history: the model doesn't see it, on this branch and the ones that continue from it. Tap it again to include it.</li>
+    <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. The layers button next to "Writing in …" previews your next prompt.</li>
     <li>An answer written before later decisions says so: <b>Re-ask</b> writes it again with them. Re-asking in the middle of a chain opens a new branch.</li></ul>` },
   { id: 'models', title: 'Models and web search', cards: ['F-30', 'F-33'], body: `
     <p class="help-why">A cheap model for small jobs, and the tokens in view.</p>
@@ -3096,6 +3098,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
+  { version: 'Unreleased', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
     'Fixed: on a phone, wide tables in answers scroll sideways instead of breaking words.',
