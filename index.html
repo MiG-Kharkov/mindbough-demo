@@ -130,6 +130,10 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .sample-link{display:block;margin:-4px 14px 12px;padding:4px 2px;border:0;background:none;color:var(--accent);font-size:13px;text-align:left;text-decoration:underline;text-underline-offset:3px}
 #roBanner{display:none;margin:4px 14px 14px;padding:12px;border-radius:12px;background:var(--panel);border:1px solid var(--line);font-size:13px;color:var(--muted)}
 #roBanner b{display:block;color:var(--ink);font-size:14px;margin-bottom:4px}
+.robar{display:none;align-items:center;gap:10px;justify-content:space-between;border-top:1px solid var(--line);background:var(--panel);padding:10px 14px calc(10px + env(safe-area-inset-bottom));font-size:13px;color:var(--muted)}
+.robar b{color:var(--ink)}
+.robar button{flex:none;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:9px;padding:8px 12px;font-weight:600}
+body.readonly .robar{display:flex}
 #roBanner button{margin-top:10px;width:100%;display:flex;gap:6px;align-items:center;justify-content:center;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:9px;padding:8px;font-weight:600}
 body.readonly #roBanner{display:block}
 body.readonly #newChat,body.readonly .side-tools,body.readonly .sample-link,body.readonly #openSettings,body.readonly #keyHint,body.readonly .ctxpill,body.readonly .conv .rowbtn,
@@ -188,6 +192,7 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 .set-hint{font-size:13px;color:var(--muted);margin:8px 0}
 .set-hint.warn{color:var(--ink);background:var(--flag-soft);padding:8px 12px;border-radius:10px;margin-top:0}
 .set-hint a{color:var(--accent)}
+.set-hint.ok{color:var(--ink);background:var(--accent-soft);padding:8px 12px;border-radius:10px;margin-top:0}
 /* prompt view */
 .pv-meta{font-size:13px;color:var(--muted);margin:0 0 10px;display:flex;gap:6px 12px;flex-wrap:wrap}
 .pv-meta b{color:var(--ink);font-weight:600}
@@ -546,6 +551,7 @@ button.model-chip svg.i{width:11px;height:11px}
     </header>
     <div id="backPill" class="backpill" hidden><button type="button" class="bp-go" data-back="go">← Back to <b></b></button><button type="button" class="bp-x" data-back="hide" aria-label="Hide">×</button></div>
     <div id="viewport"><div id="canvas"><svg id="wires"></svg></div></div>
+    <div id="roBar" class="robar"><span><b>Read-only copy.</b> Download it to continue in the demo or give it to an agent.</span><button type="button" id="roBarDl">Download Thinking State</button></div>
     <div class="composer">
       <div id="keyHint" class="keyhint" hidden>To chat, add a Gemini API key in <button type="button" data-open="settings">Settings</button>, or <button type="button" data-open="sample">try a sample conversation</button>.</div>
       <div class="to"><span id="toLabel"></span><button id="promptPreview" class="ib" type="button" title="Preview the prompt your next message would send" aria-label="Preview the next prompt"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg></button><button id="webSearch" class="ib" type="button" aria-pressed="false" aria-label="Web search" title="Web search: the model may search Google when it needs fresh facts. Tap to turn it off or on"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg><span class="lbl">Web</span></button><label class="modelpick" title="Model for the next request"><select id="model" aria-label="Model for the next request"></select></label></div>
@@ -617,7 +623,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 549ab93'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main fbc1018'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -781,7 +787,7 @@ function nativeRecord() {
       bundles[c.id] = { files: Object.fromEntries(files.map(f => [f.name.slice(f.name.indexOf('/') + 1), f.text])) };
     } catch (err) { console.error(err); bundles[c.id] = { json: JSON.stringify(c) }; } // kept as it is, so a reload doesn't lose it
     const bs = Object.values(c.branches);
-    view[c.id] = { focus: c.focus, collapsed: bs.filter(b => b.collapsed).map(b => b.id), ofold: bs.filter(b => b.ofold).map(b => b.id), ...(c.named ? { named: c.named } : {}) };
+    view[c.id] = { focus: c.focus, collapsed: bs.filter(b => b.collapsed).map(b => b.id), ofold: bs.filter(b => b.ofold).map(b => b.id), ...(c.named ? { named: c.named } : {}), ...(c.sample ? { sample: true } : {}) };
   }
   if (given) idsGiven = true;
   return { v: 2, rev: db.rev | 0, mirror: mirrorSig, savedAt: Date.now(), settings: { key: db.key || '', model: db.model || '', helpers: db.helpers || {}, web: !!db.web, ...(db.webOff ? { webOff: true } : {}) },
@@ -820,6 +826,7 @@ function restoreNative() {
       const v = (NATIVE.view || {})[cid] || {};
       if (v.focus && c.branches[v.focus]) c.focus = v.focus;
       if (v.named === 'you' || v.named === 'model') c.named = v.named;
+      if (v.sample) c.sample = true;
       (v.collapsed || []).forEach(b => { if (c.branches[b]) c.branches[b].collapsed = true; });
       (v.ofold || []).forEach(b => { if (c.branches[b]) c.branches[b].ofold = true; });
       db.convos[cid] = c;
@@ -838,6 +845,8 @@ const colEls = {};
 let pos = {};
 
 function newConvo() {
+  const empty = db.order.map(id => db.convos[id]).find(x => x && x.title === NEW_TITLE && !Object.keys(x.messages).length && Object.keys(x.branches).length === 1);
+  if (empty) { db.current = empty.id; db.order = [empty.id].concat(db.order.filter(id => id !== empty.id)); save(); renderAll(false); $('#input').focus(); return; } // one empty conversation is enough (DATA-7)
   const nid = nodeId(Date.now(), new Set()), rid = 'b' + nid; // the id a reload gives the root branch of its node, from the start (B14)
   const c = { id: uid(), title: NEW_TITLE, created: Date.now(), updated: Date.now(), root: rid, counter: 0,
     branches: { [rid]: { id: rid, parentId: null, forkMsgId: null, msgIds: [], n: 0, created: Date.now(), nodeId: nid } },
@@ -1294,7 +1303,7 @@ $('#foldAll').onclick = () => {
 };
 function renderChrome() {
   const c = cur(); if (!c) return;
-  paintSend();
+  paintSend(); renderKeyState();
   updateFoldAll();
   renderDecCount();
   const path = ancestry(c, c.focus);
@@ -2494,8 +2503,13 @@ keyInput.value = db.key || '';
 function setKeyState(s) { $('#keyDot').className = 'dot ' + (s || ''); renderKeyState(); }
 // No key (or a rejected one): a hint above the composer and a dot on the Settings button
 function renderKeyState() {
-  const has = !!keyInput.value.trim();
-  $('#keyHint').hidden = !!RO || has;
+  const has = !!keyInput.value.trim(), c = cur(), inSample = !!(c && c.sample), hint = $('#keyHint');
+  if (hint.dataset.sample !== String(inSample)) { // in a sample, everything works without a key but asking (DATA-2)
+    hint.dataset.sample = String(inSample);
+    hint.innerHTML = inSample ? 'This sample works without a key: open every branch, prompt and comparison. To ask your own questions, add a Gemini API key in <button type="button" data-open="settings">Settings</button>.'
+      : 'To chat, add a Gemini API key in <button type="button" data-open="settings">Settings</button>, or <button type="button" data-open="sample">try a sample conversation</button>.';
+  }
+  hint.hidden = !!RO || has;
   $('#openSettings').classList.toggle('warn', !has || $('#keyDot').classList.contains('bad'));
 }
 function pickBest(list) {
@@ -2530,6 +2544,11 @@ async function loadModels() {
       .sort((a, b) => b.localeCompare(a));
     setKeyState('ok');
     if (list.length) fillModels(list, true);
+    const sh = $('#settingsHint');
+    if (sheetView && sheetView.settings && !sh.hidden) { // it asked for a key: say it works, and what next (SET-1)
+      sh.className = 'set-hint ok';
+      sh.innerHTML = `Key works: ${list.length} model${list.length === 1 ? '' : 's'}. ${input.value.trim() ? '<button type="button" class="linkbtn" data-key-send>Send your message</button>' : 'Close Settings and ask away.'}`;
+    }
   } catch (e) { setKeyState(''); }
 }
 let kT;
@@ -2898,6 +2917,7 @@ function openSheet(view) {
 function closeSheet() { $('#sheet').hidden = true; sheetView = null; $('#sheetDyn').innerHTML = ''; memDraft = null; } // a fact not saved is not kept
 $('#sheet').addEventListener('click', e => {
   if (e.target.closest('[data-sheet-close]')) { closeSheet(); return; }
+  if (e.target.closest('[data-key-send]')) { closeSheet(); send(); return; } // the key works now (SET-1)
   if (e.target.closest('#sheetBack')) { if (sheetView && sheetView.back) sheetView.back(); return; }
   if (sheetView && sheetView.onClick) sheetView.onClick(e);
 });
@@ -2911,7 +2931,7 @@ function openSettings(hint) {
   $('#storageInfo').textContent = storage === 'IndexedDB'
     ? `Your data is saved only in this browser (IndexedDB), as Thinking State bundles: the same files an export holds. About ${fmtMB((nativeChars || savedChars) / 1048576)} MB.`
     : `Your data is saved only in this browser (${storage}), about ${fmtMB(mb)} MB.`;
-  $('#settingsHint').textContent = hint || '';
+  $('#settingsHint').textContent = hint || ''; $('#settingsHint').className = 'set-hint warn';
   $('#settingsHint').hidden = !hint;
   fillHelperUse();
   if (!keyInput.value.trim()) keyInput.focus();
@@ -3301,7 +3321,8 @@ const WHATS_NEW = [
     'Fixed: text pasted from a PDF no longer breaks an export, and the menu’s conversations open with Enter or Space.',
     'Fixed: with two tabs open, one no longer pulls the other to its conversation or closes what you are typing there.',
     'On a phone a column head has room for its name: Rename and Delete branch are under <b>⋯</b>, the breadcrumbs show where you are, and Fold all moved to the Branches panel.',
-    'On a phone, Back closes a sheet or a panel instead of leaving the app; a swipe no longer opens a rejected, folded branch first.'] },
+    'On a phone, Back closes a sheet or a panel instead of leaving the app; a swipe no longer opens a rejected, folded branch first.',
+    'A sample says what works without a key; a key that works says so in Settings, with <b>Send your message</b>. On a phone, <b>Share</b> opens the share sheet.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -4204,8 +4225,13 @@ function exportReadOnly(id) {
   const page = PRISTINE.replace(/<link rel="(?:manifest|apple-touch-icon)"[^>]*>\n?/g, '');
   const at = page.indexOf(marker);
   if (at < 0) { toast('Could not build the shared page'); return; }
-  const inject = `<${S}>window.__GTC_READONLY__=${json};</${S}>\n`;
-  download(`${slug(c.title)}-shared.html`, page.slice(0, at) + inject + page.slice(at), 'text/html');
+  const inject = `<${S}>window.__GTC_READONLY__=${json};</${S}>\n`, name = `${slug(c.title)}-shared.html`, html = page.slice(0, at) + inject + page.slice(at);
+  const file = typeof File === 'function' ? new File([html], name, { type: 'text/html' }) : null;
+  if (touchScreen() && file && navigator.canShare && navigator.canShare({ files: [file] })) { // a phone: its share sheet (DATA-4)
+    navigator.share({ files: [file], title: c.title }).then(() => toast('Read-only page shared')).catch(err => { if (err && err.name !== 'AbortError') { download(name, html, 'text/html'); toast('Read-only page downloaded — send this file to anyone'); } });
+    return;
+  }
+  download(name, html, 'text/html');
   toast('Read-only page downloaded — send this file to anyone');
 }
 function parseImport(text) {
@@ -4477,7 +4503,7 @@ async function openSample(x) {
   try {
     const y = await importZip(await r.arrayBuffer(), { memory: false, reuse: true });
     if (!y.added.length) { finishImport(y.added, y.failed, 1, 0); return; }
-    db.order = y.added.concat(db.order.filter(id => !y.added.includes(id))); db.current = y.added[0];
+    db.order = y.added.concat(db.order.filter(id => !y.added.includes(id))); db.current = y.added[0]; db.convos[y.added[0]].sample = true;
     save(); renderAll(false); $('#sidebar').classList.remove('open');
     toast(`${y.again ? 'Opened your copy of' : 'Opened'} the sample “${db.convos[y.added[0]].title}”`);
   } catch (err) { toast(err.message || 'Couldn’t open the sample'); }
@@ -4485,6 +4511,7 @@ async function openSample(x) {
 $('#sampleBtn').onclick = openSamples;
 $('#exportAllBtn').onclick = exportAllStates;
 $('#roDownload').onclick = () => exportThinkingState(db.current);
+$('#roBarDl').onclick = () => exportThinkingState(db.current);
 
 /* ---------------- panels & outline ---------------- */
 const UIKEY = 'gemini_tree_chat_ui';
