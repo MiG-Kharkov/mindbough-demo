@@ -478,7 +478,7 @@ button.model-chip svg.i{width:11px;height:11px}
 #send.stop{background:var(--danger);color:var(--danger-ink)}
 #send:disabled{opacity:.45;cursor:default}
 
-.toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 32px);box-sizing:border-box;background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
+.toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 32px);box-sizing:border-box;background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:90}
 .toast.show{opacity:1}
 .toast.act{pointer-events:auto;display:flex;align-items:center;gap:12px;padding:6px 6px 6px 14px}
 .toast button{border:0;background:var(--accent);color:var(--accent-ink);border-radius:7px;padding:5px 12px;font-weight:600;font-size:13px}
@@ -611,7 +611,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 8d10bd8'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 9e73a20'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1324,11 +1324,12 @@ $('#canvas').addEventListener('click', async e => {
     const b = c.branches[bid];
     const sub = []; const walk = id => { sub.push(id); childrenOf(c, id).forEach(k => walk(k.id)); }; walk(bid);
     const extra = sub.length > 1 ? ` and ${sub.length - 1} nested branch${sub.length === 2 ? '' : 'es'}` : '';
-    if (!confirm(`Delete ${branchName(b)}${extra}?`)) return;
     if (busy && busy.convoId === c.id && sub.includes(c.messages[busy.msgId]?.branchId)) busy.controller.abort();
-    sub.forEach(id => { c.branches[id].msgIds.forEach(mid => delete c.messages[mid]); delete c.branches[id]; });
-    if (!c.branches[c.focus]) c.focus = b.parentId;
-    save(); renderCanvas(); renderSidebar(); focusBranch(c.focus);
+    undoable(c, `Deleted “${branchName(b, c)}”${extra}`, () => {
+      sub.forEach(id => { c.branches[id].msgIds.forEach(mid => delete c.messages[mid]); delete c.branches[id]; });
+      if (!c.branches[c.focus]) c.focus = b.parentId;
+      c.updated = Date.now(); save(); renderCanvas(); renderSidebar(); focusBranch(c.focus); renderDecCount();
+    });
     return;
   }
   if (!m) return;
@@ -1815,6 +1816,7 @@ async function summarize(c, m, force) {
   const prompt = 'Write the decision or key point of the message below as one short sentence (at most 25 words), in the language of the message. Reply with the sentence only.\n\n'
     + (q ? `Question it answers:\n${q.text.slice(0, 1500)}\n\n` : '') + `Message:\n${(m.text || '').slice(0, 6000)}`;
   const sig = sigOf(m.text || ''); // the text being summarized, even if it changes while the helper writes
+  const live = () => { const lc = db.convos[c.id]; return [lc || c, (lc && lc.messages[m.id]) || m]; };
   m.decision.pending = true; inflight++; touched.add(c.id);
   rerenderMsg(c.id, m.id); scheduleLayout();
   try {
@@ -1826,16 +1828,20 @@ async function summarize(c, m, force) {
     const j = await r.json();
     const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
     const text = parts.filter(p => p.text && !p.thought).map(p => p.text).join(' ').replace(/\s+/g, ' ').trim().replace(/^["“'«]+|["”'»]+$/g, '');
-    recordCall(c, { task: 'summary', model, prompt, mid: m.id, usage: usageOf(j), output: text, ...(text ? {} : { error: 'empty reply' }) });
+    // the conversation may have been replaced meanwhile (an Undo, another tab): write into the one shown now (FLOW-13)
+    const [lc, lm] = live();
+    recordCall(lc, { task: 'summary', model, prompt, mid: m.id, usage: usageOf(j), output: text, ...(text ? {} : { error: 'empty reply' }) });
     if (!text) throw new Error('empty');
-    if (m.decision && (force || !m.decision.summary)) setDecision(m, text.slice(0, 300), model, sig);
+    if (lm.decision && (force || !lm.decision.summary)) setDecision(lm, text.slice(0, 300), model, sig);
   } catch (err) {
-    if (!/^empty$/.test(err.message)) recordCall(c, { task: 'summary', model, prompt, mid: m.id, error: err.message });
+    if (!/^empty$/.test(err.message)) recordCall(live()[0], { task: 'summary', model, prompt, mid: m.id, error: err.message });
     toast('Couldn’t write the summary. Tap the decision to write it yourself.');
   }
   finally {
     inflight--; setTimeout(settled);
+    const lm = live()[1];
     if (m.decision) delete m.decision.pending;
+    if (lm.decision) delete lm.decision.pending;
     save();
     if (db.current === c.id) { rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline(); renderDecCount(); }
   }
@@ -1861,10 +1867,10 @@ async function helperJSON(prompt, schema, task, at) {
     if (!found) throw new Error('the reply had no JSON');
     const data = JSON.parse(found[0]);
     let output = ''; try { output = at && at.output ? String(at.output(data) || '') : ''; } catch (e) {}
-    const call = at ? recordCall(at.c, { task, model, prompt, mid: at.mid, usage, output }) : null;
+    const call = at ? recordCall(db.convos[at.c.id] || at.c, { task, model, prompt, mid: at.mid, usage, output }) : null; // the live conversation
     return { data, model, call };
   } catch (err) {
-    if (at) recordCall(at.c, { task, model, prompt, mid: at.mid, usage, error: err.message });
+    if (at) recordCall(db.convos[at.c.id] || at.c, { task, model, prompt, mid: at.mid, usage, error: err.message });
     throw err;
   } finally { inflight--; setTimeout(settled); }
 }
@@ -2253,7 +2259,8 @@ function statusClick(e) {
   const was = statusOf(b);
   setStatus(c, b, x.dataset.status);
   closeSheet();
-  if (was !== statusOf(b)) toast(`“${branchName(b, c)}” is ${statusLabel(b).toLowerCase()}`, { label: 'Undo', fn: () => { setStatus(c, b, was); toast(`“${branchName(b, c)}” is ${statusLabel(b).toLowerCase()} again`); } });
+  const cid = c.id, bid = b.id;
+  if (was !== statusOf(b)) toast(`“${branchName(b, c)}” is ${statusLabel(b).toLowerCase()}`, { label: 'Undo', fn: () => { const lc = db.convos[cid], lb = lc && lc.branches[bid]; if (!lb) return; setStatus(lc, lb, was); toast(`“${branchName(lb, lc)}” is ${statusLabel(lb).toLowerCase()} again`); } });
 }
 function setStatus(c, b, st) {
   if (st === 'open' || !BRANCH_STATUS.some(x => x.id === st)) delete b.status; else b.status = st;
@@ -2273,10 +2280,11 @@ async function nameBranch(c, am) {
   try {
     const { data } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, output: d => d.title });
     const name = clean(data && data.title, 60).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim();
-    if (!name || b.name || !c.branches[b.id] || !db.convos[c.id]) return;
-    b.name = name;
+    const lc = db.convos[c.id], lb = lc && lc.branches[b.id]; // the live ones: an Undo or another tab may have replaced them
+    if (!name || !lb || lb.name) return;
+    lb.name = name;
     save();
-    if (db.current === c.id) paintBranchName(c, b);
+    if (db.current === c.id) paintBranchName(lc, lb);
   } catch (err) {} // the name taken from the first message stays
 }
 // The first answer of a conversation gives it a title, unless someone named it (c.named)
@@ -2290,8 +2298,9 @@ async function nameConvo(c, am) {
   try {
     const { data } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, output: d => d.title });
     const name = clean(data && data.title, 80).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim();
-    if (!name || c.named || !db.convos[c.id]) return;
-    c.title = name; c.named = 'model';
+    const lc = db.convos[c.id]; // the live one: an Undo or another tab may have replaced it
+    if (!name || !lc || lc.named) return;
+    lc.title = name; lc.named = 'model';
     save(); renderSidebar();
   } catch (err) {} // the first words of the message stay
 }
@@ -2340,26 +2349,32 @@ function deleteMessages(c, ids) {
   }
   ids.forEach(id => delete c.messages[id]);
 }
-// Delete messages with an Undo option
+// A delete you can take back for a few seconds (UI-4): Undo puts the conversation back as it was. It refuses once anything changed
+// since (a flag, a summary, an exclusion: B06), or while an answer or a helper is still writing into it (FLOW-13), so nothing is lost
+function undoable(c, msg, apply) {
+  const snapshot = JSON.stringify(c), cid = c.id;
+  apply();
+  const after = sigOf(JSON.stringify(c));
+  toast(msg, { label: 'Undo', fn: () => {
+    const now = db.convos[cid];
+    if (!now) return;
+    const writing = (busy && busy.convoId === cid) || (fanOut && fanOut.cid === cid) || Object.values(now.messages).some(x => x.decision && x.decision.pending);
+    if (writing || sigOf(JSON.stringify(now)) !== after) { toast('Can’t undo: the conversation has changed since'); return; }
+    const back = JSON.parse(snapshot); repairConvo(back); // an answer stopped by the delete comes back as stopped
+    db.convos[cid] = back;
+    save(); renderAll(false); renderDecCount();
+    toast('Restored');
+  } });
+}
+// Delete messages, with Undo
 function removeMessages(c, ids, what) {
   if (busy && busy.convoId === c.id && ids.has(busy.msgId)) busy.controller.abort();
-  const snapshot = JSON.stringify(c);
   const moved = Object.values(c.branches).filter(k => ids.has(k.forkMsgId)).length; // they continue from the message before
-  if (editing && ids.has(editing.mid)) editing = null;
-  deleteMessages(c, ids);
-  const at = c.updated = Date.now();
-  save(); renderCanvas(); renderSidebar(); focusBranch(c.focus, true, 'none');
-  toast(`${what || `Deleted ${ids.size} message${ids.size === 1 ? '' : 's'}`}${moved ? ` · ${moved} branch${moved === 1 ? ' now continues' : 'es now continue'} from the message before` : ''}`, {
-    label: 'Undo',
-    fn: () => {
-      const now = db.convos[c.id];
-      if (!now) return;
-      // the snapshot predates anything done after the delete, so restoring it then would lose that work
-      if (now.updated !== at || (busy && busy.convoId === c.id)) { toast('Can’t undo: the conversation has changed since'); return; }
-      db.convos[c.id] = JSON.parse(snapshot);
-      save(); renderAll(false);
-      toast('Restored');
-    },
+  undoable(c, `${what || `Deleted ${ids.size} message${ids.size === 1 ? '' : 's'}`}${moved ? ` · ${moved} branch${moved === 1 ? ' now continues' : 'es now continue'} from the message before` : ''}`, () => {
+    if (editing && ids.has(editing.mid)) editing = null;
+    deleteMessages(c, ids);
+    c.updated = Date.now();
+    save(); renderCanvas(); renderSidebar(); focusBranch(c.focus, true, 'none');
   });
 }
 
@@ -2998,7 +3013,7 @@ function renderDecisionsPanel() {
            <div class="dp-actions"><button class="btn" data-dp="goto">Go to</button><button class="btn" data-dp="edit">Edit</button>
              ${keyInput.value.trim() ? '<button class="btn" data-dp="auto">Write for me</button>' : ''}
              ${hist.length ? `<button class="btn" data-dp="hist" aria-expanded="${panelHist === m.id}">History (${hist.length})</button>` : ''}
-             <button class="btn danger" data-dp="remove">Remove</button></div>`;
+             <button class="btn danger" data-dp="remove" title="It leaves the prompts; the summary is kept">Unflag</button></div>`;
       const versions = panelHist === m.id && hist.length ? `<ol class="dp-hist">${hist.map((h, i) => `<li><span>${esc(h.summary)}</span><small>${esc(shortDate(h.at))}${h.model ? ' · ' + esc(h.model) : ' · by you'}</small><button class="btn" data-dp="restore" data-i="${i}">Restore</button></li>`).join('')}</ol>` : '';
       return `<article class="dp-card" data-mid="${m.id}">${body}${versions}</article>`;
     }).join('');
@@ -3096,7 +3111,9 @@ function contextPanelClick(e) {
       if (x === memDraft) { if (text) { db.memory.unshift({ ...memDraft, text, at: Date.now() }); memOp('add', db.memory[0]); if (writing()) factsHere.add(memDraft.id); } memDraft = null; }
       else if (text) { Object.assign(x, { text, at: Date.now() }); memOp('edit', x); } else { drop(x.id); memOp('del', x); }
       memEdit = null; save(); paintFactSource(x); break; }
-    case 'delete': drop(x.id); memOp('del', x); memEdit = null; save(); paintFactSource(x); break;
+    case 'delete': { const at = db.memory.indexOf(x); drop(x.id); memOp('del', x); memEdit = null; save(); paintFactSource(x);
+      toast('Deleted the fact', { label: 'Undo', fn: () => { if (db.memory.some(y => y.id === x.id)) return; db.memory.splice(Math.min(at, db.memory.length), 0, x); memOp('add', x); save(); refreshContextPanel(); paintFactSource(x); renderDecCount(); toast('Fact restored'); } });
+      break; }
     case 'goto': { jumpAway(); closeSheet(); memEdit = null; if (db.current !== x.src.cid) { db.current = x.src.cid; save(); renderAll(false); } goToMessage(x.src.mid); showBack(); return; }
   }
   renderDecCount();
@@ -3117,7 +3134,10 @@ function decisionsPanelClick(e) {
     case 'auto': summarize(c, m, true).then(refreshDecisions); break;
     case 'hist': panelHist = panelHist === m.id ? null : m.id; break;
     case 'restore': { const i = +btn.dataset.i, h = m.decision.history[i]; m.decision.history.splice(i, 1); setDecision(m, h.summary, h.model); c.updated = Date.now(); save(); break; }
-    case 'remove': m.flagged = false; panelEdit = panelHist = null; c.updated = Date.now(); save(); break;
+    case 'remove': { m.flagged = false; panelEdit = panelHist = null; c.updated = Date.now(); save(); rerenderMsg(c.id, m.id);
+      const cid = c.id, mid = m.id;
+      toast('Unflagged: it leaves the prompts', { label: 'Undo', fn: () => { const lc = db.convos[cid], lm = lc && lc.messages[mid]; if (!lm) return; lm.flagged = true; lc.updated = Date.now(); save(); if (db.current === cid) { rerenderMsg(cid, mid); renderOutline(); renderDecCount(); } refreshDecisions(); toast('Flagged again'); } });
+      break; }
   }
   refreshDecisions();
   if (panelEdit) { const ta = $('.dp-area'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
@@ -3158,11 +3178,11 @@ const HELP = [
     <p class="help-why">Try alternatives without mixing them.</p>
     <ul><li><b>Branch out</b> under an answer: a new column that continues from there. The model sees only that branch's path, so dead ends don't pollute the context. Under your own message, <b>Branch out</b> offers <b>Edit in a new branch</b> or an answer from any model.</li>
     <li>Under a message: <b>Branch out</b>, the flag (a decision), the bookmark (<b>Remember</b>) and the eye (<b>Exclude from history</b>): what the next prompts carry. <b>⋯</b> holds the rest: how the prompt of an answer was built, branch into options, edit, copy the message or the conversation up to here, and delete.</li>
-    <li><b>Delete</b>: your question goes with its answer; an answer goes alone, and its question waits with <b>Answer</b>. <b>Undo</b> in the toast brings it back.</li>
+    <li><b>Delete</b>: your question goes with its answer; an answer goes alone, and its question waits with <b>Answer</b>. <b>Undo</b> in the toast brings it back, unless the conversation changed since. Deleting a branch, a memory fact, or unflagging in the decisions panel works the same way; only deleting a whole conversation asks first.</li>
     <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place too. Either way the earlier text is kept, so an answer's prompt still shows what the model saw, marked <b>changed later</b>.</li>
     <li>Tap an answer's model chip to regenerate it with any model. The old answer stays as a version (<b>N versions</b> next to the model); in the middle of a chain the new one opens in a new branch. Every version is kept, and <b>Restore</b> puts an earlier one back as a new version.</li>
     <li>The <b>status</b> chip on a branch: Open, Accepted, Parked or Rejected. The decisions of a parked or rejected branch, and of the branches under it, leave the prompts.</li>
-    <li>Branches name themselves; the pencil on a column renames it (on a desktop, a double-click too). The × on a column deletes it, with the branches under it, after asking.</li>
+    <li>Branches name themselves; the pencil on a column renames it (on a desktop, a double-click too). The × on a column deletes it, with the branches under it; <b>Undo</b> in the toast brings them back.</li>
     <li>Fold a column with its chevron, or all of them with the top-bar button: a folded column shows its last message and its decisions.</li>
     <li>Move around: <b>Back</b>, the ↳ badges and the breadcrumbs. On a phone, swipe left and right; on a desktop, drag the canvas or use Alt+← / Alt+→. The <b>Branches panel</b> (right) shows the tree and a filter.</li></ul>` },
   { id: 'choose', title: 'Options, compare and choose', cards: ['F-27', 'F-28'], body: `
@@ -3206,7 +3226,8 @@ const WHATS_NEW = [
     'An answer you stop or that is cut off keeps what arrived, tagged <b>stopped</b> or <b>cut off</b>, and the app’s own words are never sent to the model as the answer.',
     'Under your own message, <b>Branch out</b> offers <b>Edit in a new branch</b>. A prompt view says when messages go to the model as one turn.',
     'Fixed: a saved comparison says it has changed when any branch, the conversation up to them or the decisions change, and a branch left empty no longer counts in <b>Compare N</b>.',
-    'An answer asked again in a new branch is linked to the old one, here and in the export; a last answer says when a message above it changed.'] },
+    'An answer asked again in a new branch is linked to the old one, here and in the export; a last answer says when a message above it changed.',
+    'Deleting a branch, a fact, or unflagging a decision in the panel happens at once, with <b>Undo</b>, like deleting a message. Only a whole conversation still asks first.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
