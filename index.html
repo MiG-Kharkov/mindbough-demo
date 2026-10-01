@@ -596,7 +596,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.5.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 2a15ba4'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main c8abfb9'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2417,12 +2417,31 @@ function mergeFrom(next) {
   db.order = next.order.filter(id => db.convos[id]).concat(db.order.filter(id => touched.has(id) && !next.order.includes(id) && db.convos[id]));
   const theirs = Array.isArray(next.memory) ? next.memory : [];
   db.memory = theirs.concat(db.memory.filter(f => factsHere.has(f.id) && !theirs.some(x => x.id === f.id)));
+  const mine = reapplyMemOps();
   for (const k of ['key', 'model', 'helpers', 'web', 'webOff']) { if (next[k] !== undefined) db[k] = next[k]; else delete db[k]; }
   db.rev = Math.max(db.rev | 0, next.rev | 0);
   if (!db.convos[db.current]) db.current = db.order[0] || null;
   renderSidebar(); if (db.current && !touched.has(db.current)) renderAll(false);
+  refreshContextPanel();
+  if (mine) save();
 }
 const factsHere = new Set(); // facts this tab added while writing
+// Memory changes this tab made in the last seconds, put back on top of another tab's save that this tab takes: two tabs that
+// save at the same moment each keep their fact, and both end with both (F-17, F-23)
+let memOps = [];
+const MEM_OPS_MS = 10000;
+function memOp(op, x) { if (x) memOps = memOps.filter(o => Date.now() - o.at < MEM_OPS_MS).concat({ op, id: x.id, fact: op === 'del' ? null : { ...x }, at: Date.now() }); }
+function reapplyMemOps() {
+  memOps = memOps.filter(o => Date.now() - o.at < MEM_OPS_MS);
+  let changed = false;
+  for (const o of memOps) {
+    const i = db.memory.findIndex(y => y.id === o.id);
+    if (o.op === 'del') { if (i >= 0) { db.memory.splice(i, 1); changed = true; } }
+    else if (i < 0) { db.memory.unshift({ ...o.fact }); changed = true; }
+    else if (db.memory[i].text !== o.fact.text && (db.memory[i].at || 0) <= o.fact.at) { db.memory[i] = { ...db.memory[i], text: o.fact.text, at: o.fact.at }; changed = true; }
+  }
+  return changed;
+}
 function settled() { if (!writing()) { touched.clear(); factsHere.clear(); } }
 function takeFrom(next) {
   if (!next || !next.convos || !Array.isArray(next.order)) return;
@@ -2433,8 +2452,13 @@ function takeFrom(next) {
   keyInput.value = db.key || '';
   fillModels([...modelSel.options].map(o => o.value));
   editing = null;
+  const mine = reapplyMemOps();
   if (db.current) renderAll(false); else newConvo();
+  refreshContextPanel();
+  if (mine) save();
 }
+// Decisions and memory, open while another tab saves, shows what it saved, unless something is being written in it
+function refreshContextPanel() { if (sheetView && sheetView.context && !memEdit && !memDraft && !panelEdit) $('#sheetDyn').innerHTML = renderContextPanel(); }
 window.addEventListener('storage', e => {
   if (RO || storage !== 'localStorage' || e.key !== LS || !e.newValue) return;
   try { const next = JSON.parse(e.newValue); if (writing()) mergeFrom(next); else takeFrom(next); } catch (err) {}
@@ -2962,10 +2986,10 @@ function contextPanelClick(e) {
     case 'edit': memDraft = null; memEdit = x.id; break;
     case 'cancel': if (x === memDraft) memDraft = null; memEdit = null; break;
     case 'save': { const text = card.querySelector('.dp-area').value.replace(/\s+/g, ' ').trim().slice(0, 300);
-      if (x === memDraft) { if (text) { db.memory.unshift({ ...memDraft, text, at: Date.now() }); if (writing()) factsHere.add(memDraft.id); } memDraft = null; }
-      else if (text) Object.assign(x, { text, at: Date.now() }); else drop(x.id);
+      if (x === memDraft) { if (text) { db.memory.unshift({ ...memDraft, text, at: Date.now() }); memOp('add', db.memory[0]); if (writing()) factsHere.add(memDraft.id); } memDraft = null; }
+      else if (text) { Object.assign(x, { text, at: Date.now() }); memOp('edit', x); } else { drop(x.id); memOp('del', x); }
       memEdit = null; save(); paintFactSource(x); break; }
-    case 'delete': drop(x.id); memEdit = null; save(); paintFactSource(x); break;
+    case 'delete': drop(x.id); memOp('del', x); memEdit = null; save(); paintFactSource(x); break;
     case 'goto': { jumpAway(); closeSheet(); memEdit = null; if (db.current !== x.src.cid) { db.current = x.src.cid; save(); renderAll(false); } goToMessage(x.src.mid); showBack(); return; }
   }
   renderDecCount();
@@ -3065,7 +3089,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Fixed: an answer’s prompt shows the text the model saw, even after you edit a message of its history in place, marked edited later.', 'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.'] },
+  { version: 'Unreleased', items: ['Fixed: an answer’s prompt shows the text the model saw, even after you edit a message of its history in place, marked edited later.', 'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.', 'Fixed: two tabs that change memory at the same moment both keep their change.'] },
   { version: '0.5.0', items: ['<b>🔖</b> next to <b>⚑</b> in the top bar opens your memory, which says what it adds to every request; facts are compact rows you tap to edit, with search. <b>← Back</b> returns after Go to.',
     'In the menu, <b>⋯</b> on a conversation holds Rename, Export as a Thinking State, Share and Delete, so its title has room.'] },
   { version: '0.4.0', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.',
