@@ -580,9 +580,9 @@ const NEW_TITLE = 'New conversation';
 const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return (cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.3.0';
+const APP_VERSION = '0.4.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main caee726'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 0e67a89'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2990,7 +2990,18 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.', 'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.', '<b>Remember</b> drafts a fact that you save, and a remembered message shows it. On a phone the breadcrumbs show the branch you are in.', 'The prompt view says what each block is, and what the prompt left out: the other branches, excluded messages, dropped decisions.', 'Help starts with what this is and the first 2 minutes; What’s new is at the end, with earlier versions.', 'Conversations name themselves after the first answer, and the pencil in the menu renames them.', 'The sample is a recorded Thinking State: options, a comparison and a choice, versions, a web search, and every prompt with its tokens.', 'Fixed: an empty conversation no longer comes back as a card after a reload.', 'Fixed: with two tabs open, one tab no longer overwrites the other while it writes an answer; a reload during a regeneration brings back the original answer.', 'Fixed: a file made elsewhere with broken or hostile values now imports, survives a reload and exports again, instead of breaking the page.', 'Fixed: a second export keeps an opened Thinking State’s node types, links and decisions, and a new choice or a refreshed comparison replaces the old one in the export.', 'Fixed: an export whose folder name has non-Latin letters now unzips in a Mac terminal too.'] },
+  { version: '0.4.0', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.',
+    'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.',
+    '<b>Remember</b> drafts a fact that you save, and a remembered message shows it. On a phone the breadcrumbs show the branch you are in.',
+    'The prompt view says what each block is, and what the prompt left out: the other branches, excluded messages, dropped decisions.',
+    'Help starts with what this is and the first 2 minutes; What’s new is at the end, with earlier versions.',
+    'Conversations name themselves after the first answer, and the pencil in the menu renames them.',
+    'The sample is a recorded Thinking State: options, a comparison and a choice, versions, a web search, and every prompt with its tokens.',
+    'Fixed: an empty conversation no longer comes back as a card after a reload.',
+    'Fixed: with two tabs open, one tab no longer overwrites the other while it writes an answer; a reload during a regeneration brings back the original answer.',
+    'Fixed: a file made elsewhere with broken or hostile values now imports, survives a reload and exports again, instead of breaking the page.',
+    'Fixed: a second export keeps an opened Thinking State’s node types, links and decisions, and a new choice or a refreshed comparison replaces the old one in the export.',
+    'Fixed: an export whose folder name has non-Latin letters now unzips in a Mac terminal too.'] },
   { version: '0.3.0', items: ['<b>Help</b>: this guide, and what’s new in each version.',
     'Your conversations are stored as Thinking States, the same files an export holds. <b>Export all</b> saves them all with your memory, and an import brings back the whole conversation.',
     'More of what you do is data: helper calls with their tokens, options, comparisons and choices, branch statuses, earlier versions of an answer, and which memory each prompt used.',
