@@ -582,7 +582,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.3.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main a98c898'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main db53eba'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -737,7 +737,7 @@ function nativeRecord() {
       const out = thinkingStateFiles(c, true, true), files = out.files;
       if (out.given) given = true;
       bundles[c.id] = { files: Object.fromEntries(files.map(f => [f.name.slice(f.name.indexOf('/') + 1), f.text])) };
-    } catch (err) { console.error(err); continue; }
+    } catch (err) { console.error(err); bundles[c.id] = { json: JSON.stringify(c) }; } // kept as it is, so a reload doesn't lose it
     const bs = Object.values(c.branches);
     view[c.id] = { focus: c.focus, collapsed: bs.filter(b => b.collapsed).map(b => b.id), ofold: bs.filter(b => b.ofold).map(b => b.id), ...(c.named ? { named: c.named } : {}) };
   }
@@ -768,6 +768,7 @@ function restoreNative() {
   const mirror = stored.v1 && stored.v1.convos ? stored.v1.convos : {};
   for (const [cid, rec] of Object.entries(NATIVE.bundles || {})) {
     try {
+      if (typeof rec.json === 'string') { const c = JSON.parse(rec.json); if (!c || !c.branches || !c.branches[c.root]) throw new Error('unreadable copy'); c.id = cid; db.convos[cid] = c; continue; }
       const files = Object.entries(rec.files || {}).map(([name, text]) => ({ name, text: String(text) }));
       const readme = files.find(f => f.name === 'README.md'), fm = readme && frontmatter(readme.text);
       if (!fm || !fm.meta.thinking || !fm.meta.thinking.root) throw new Error('no manifest');
@@ -811,14 +812,14 @@ const autoBranchName = (b, c = cur()) => {
   return (first && first.text && sentenceOf(first.text.slice(0, 300), 32)) || defaultBranchName(b);
 };
 const branchName = (b, c) => (b.name && b.name.trim()) || autoBranchName(b, c);
-function depthOf(c, bid) { let d = 0, b = c.branches[bid]; while (b && b.parentId) { d++; b = c.branches[b.parentId]; } return d; }
+function depthOf(c, bid) { let d = 0, b = c.branches[bid]; const seen = new Set(); while (b && b.parentId && !seen.has(b.id)) { seen.add(b.id); d++; b = c.branches[b.parentId]; } return d; }
 function childrenOf(c, bid) {
   const p = c.branches[bid];
   return Object.values(c.branches).filter(b => b.parentId === bid)
     .sort((a, b) => (p.msgIds.indexOf(a.forkMsgId) - p.msgIds.indexOf(b.forkMsgId)) || (a.created - b.created));
 }
-function dfs(c) { const out = []; const walk = id => { out.push(c.branches[id]); childrenOf(c, id).forEach(k => walk(k.id)); }; walk(c.root); return out; }
-function ancestry(c, bid) { const out = []; let b = c.branches[bid]; while (b) { out.unshift(b); b = c.branches[b.parentId]; } return out; }
+function dfs(c) { const out = [], seen = new Set(); const walk = id => { if (seen.has(id) || !c.branches[id]) return; seen.add(id); out.push(c.branches[id]); childrenOf(c, id).forEach(k => walk(k.id)); }; walk(c.root); return out; }
+function ancestry(c, bid) { const out = [], seen = new Set(); let b = c.branches[bid]; while (b && !seen.has(b.id)) { seen.add(b.id); out.unshift(b); b = c.branches[b.parentId]; } return out; }
 
 // Only "our" version: ancestors up to the fork point + this branch
 function historyFor(c, bid, uptoMsgId) {
@@ -2012,7 +2013,7 @@ async function compareWithAI(c, m) {
   v.loading = true; v.error = ''; renderCompareIfOpen();
   try {
     const { data, model, call } = await helperJSON(prompt, schema, 'compare', { c, mid: m.id, output: d => [d.question, d.relation].filter(Boolean).join(' · ') });
-    const relation = RELATIONS[data.relation] ? data.relation : 'alternatives', alt = relation === 'alternatives';
+    const relation = Object.prototype.hasOwnProperty.call(RELATIONS, data.relation) ? data.relation : 'alternatives', alt = relation === 'alternatives';
     const criteria = alt ? (Array.isArray(data.criteria) ? data.criteria : []).map(x => ({ name: clean(x && (x.name || x), 60), why: clean(x && x.why, 140) })).filter(x => x.name).slice(0, 5) : [];
     if (alt && !criteria.length) throw new Error('no criteria in the reply');
     const opts = Array.isArray(data.options) ? data.options : [];
@@ -2979,7 +2980,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.', 'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.', '<b>Remember</b> drafts a fact that you save, and a remembered message shows it. On a phone the breadcrumbs show the branch you are in.', 'The prompt view says what each block is, and what the prompt left out: the other branches, excluded messages, dropped decisions.', 'Help starts with what this is and the first 2 minutes; What’s new is at the end, with earlier versions.', 'Conversations name themselves after the first answer, and the pencil in the menu renames them.', 'The sample is a recorded Thinking State: options, a comparison and a choice, versions, a web search, and every prompt with its tokens.', 'Fixed: an empty conversation no longer comes back as a card after a reload.', 'Fixed: with two tabs open, one tab no longer overwrites the other while it writes an answer; a reload during a regeneration brings back the original answer.'] },
+  { version: 'Unreleased', items: ['Under a message: <b>Branch out</b>, the flag, <b>Remember</b> and the prompt; the rest is under <b>⋯</b>, with words, including <b>Copy the conversation up to here</b>.', 'Deleting your question takes its answer with it; deleting an answer leaves the question with <b>Answer</b>. <b>Send</b> with nothing typed answers a waiting question too.', '<b>Remember</b> drafts a fact that you save, and a remembered message shows it. On a phone the breadcrumbs show the branch you are in.', 'The prompt view says what each block is, and what the prompt left out: the other branches, excluded messages, dropped decisions.', 'Help starts with what this is and the first 2 minutes; What’s new is at the end, with earlier versions.', 'Conversations name themselves after the first answer, and the pencil in the menu renames them.', 'The sample is a recorded Thinking State: options, a comparison and a choice, versions, a web search, and every prompt with its tokens.', 'Fixed: an empty conversation no longer comes back as a card after a reload.', 'Fixed: with two tabs open, one tab no longer overwrites the other while it writes an answer; a reload during a regeneration brings back the original answer.', 'Fixed: a file made elsewhere with broken or hostile values now imports, survives a reload and exports again, instead of breaking the page.'] },
   { version: '0.3.0', items: ['<b>Help</b>: this guide, and what’s new in each version.',
     'Your conversations are stored as Thinking States, the same files an export holds. <b>Export all</b> saves them all with your memory, and an import brings back the whole conversation.',
     'More of what you do is data: helper calls with their tokens, options, comparisons and choices, branch statuses, earlier versions of an answer, and which memory each prompt used.',
@@ -3065,7 +3066,7 @@ function exportAllStates() {
     taken.add(x.itemId);
     const c = x.src && db.convos[x.src.cid], m = c && c.messages[x.src.mid];
     const text = x.text.replace(/\s+/g, ' ').trim();
-    items.push({ id: x.itemId, title: shortTitle(text), description: text, at: new Date(x.at || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z'),
+    items.push({ id: x.itemId, title: shortTitle(text), description: text, at: isoOf(x.at),
       source: m && c.tsId && c.sessionId ? { resource: `mindbough://${c.tsId}/sessions/${c.sessionId}.jsonl#${m.id}`, title: c.title } : null });
   }
   items.sort((a, b) => (a.id < b.id ? -1 : 1));
@@ -3122,8 +3123,11 @@ const TS_TYPES = ['Thought', 'Question', 'Hypothesis', 'Finding', 'Decision', 'A
 const sentenceOf = (t, max) => { const x = firstSentence(plain(t || '')); return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x; };
 const shortTitle = t => { const w = plain(t).split(/(?<=[.!?])\s|[:;]\s| [—–-] /)[0].replace(/\.$/, '').split(/\s+/).filter(Boolean); return w.slice(0, 10).join(' ') + (w.length > 10 ? '…' : ''); };
 const snippetOf = (t, max) => { const x = plain(t || ''); return x.length > max ? x.slice(0, max - 1).trimEnd() + '…' : x; };
+// A time as ISO seconds; one out of range reads as now
+const MAX_T = 8.64e15, okTime = v => Number.isFinite(v) && Math.abs(v) <= MAX_T;
+function isoOf(t) { const d = new Date(t || Date.now()); return (isNaN(d.getTime()) ? new Date() : d).toISOString().replace(/\.\d+Z$/, 'Z'); }
 function nodeId(t, taken) {
-  const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz', day = new Date(t || Date.now()).toISOString().slice(0, 10).replace(/-/g, '');
+  const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz', day = isoOf(t).slice(0, 10).replace(/-/g, '');
   let id;
   do { const r = crypto.getRandomValues(new Uint8Array(6)); id = day + '-' + [...r].map(b => alphabet[b % 36]).join(''); } while (taken.has(id));
   taken.add(id); return id;
@@ -3151,20 +3155,21 @@ function nodeDoc(n, ids) {
 function thinkingStateFiles(c, quiet, mine) {
   const taken = new Set(), nodes = [], byBranch = {};
   const keep = (v, t) => { const id = typeof v === 'string' && TS_ID.test(v) && !taken.has(v) ? v : nodeId(t, taken); taken.add(id); return id; };
-  const iso = t => new Date(t || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z');
+  const iso = isoOf;
   let given = false;
   if (!(typeof c.tsId === 'string' && TS_ID.test(c.tsId))) { c.tsId = nodeId(c.created, new Set()); given = true; }
   if (!(typeof c.sessionId === 'string' && TS_ID.test(c.sessionId))) { c.sessionId = nodeId(c.created, new Set([c.tsId])); given = true; }
   taken.add(c.sessionId);
-  const folder = slug(c.title), session = `sessions/${c.sessionId}.jsonl`, at = new Date(c.updated || c.created || Date.now()).toISOString().replace(/\.\d+Z$/, 'Z');
+  const folder = slug(c.title), session = `sessions/${c.sessionId}.jsonl`, at = isoOf(c.updated || c.created);
   const who = m => m.role === 'user' ? '**You:**' : `**Gemini**${m.model ? ` (\`${m.model}\`)` : ''}:`;
   const transcript = ids => ids.map(id => c.messages[id]).filter(Boolean).map(m => (!mine && m.streaming && m.prev ? { ...m, ...m.prev } : m)).map(m => `${who(m)}${m.hidden ? ' _(excluded from history)_' : ''}\n\n${(m.text || m.error || '').trim()}`).join('\n\n');
   for (const b of dfs(c)) {
     const msgs = b.msgIds.map(id => c.messages[id]).filter(Boolean);
     const first = msgs.find(m => m.role === 'user');
     const own = msgs.find(m => m.node && m.node.id); // a branch that came from a Thinking State is that node again
-    const id = own ? own.node.id : keep(b.nodeId, b.created); taken.add(id);
-    if (!own && b.nodeId !== id) { b.nodeId = id; given = true; }
+    const ownId = own && !taken.has(own.node.id) ? own.node.id : null; // a card's node, unless another node already has that id
+    const id = ownId || keep(b.nodeId, b.created); taken.add(id);
+    if (!ownId && b.nodeId !== id) { b.nodeId = id; given = true; }
     byBranch[b.id] = id;
     const isRoot = !b.parentId, eo = b.editOf && c.messages[b.editOf], nd = own && own.node;
     const title = nd ? nd.title : isRoot ? c.title : (b.name && b.name.trim()) || (first ? sentenceOf(first.text, 80) : branchName(b));
@@ -3175,13 +3180,13 @@ function thinkingStateFiles(c, quiet, mine) {
     // a flag is an open Decision, a summary accepts it, and an unflagged one keeps its summary as a parked Decision (spec §7.1)
     for (const m of msgs.filter(x => x !== own && (x.flagged || (x.decision && x.decision.summary)))) {
       const d = m.decision || {}, summary = d.summary || sentenceOf(m.text, 240);
-      const did = m.node && m.node.id && m.node.id !== id ? m.node.id : keep(m.nodeId, m.ts);
+      const did = m.node && m.node.id && m.node.id !== id && !taken.has(m.node.id) ? m.node.id : keep(m.nodeId, m.ts); taken.add(did);
       if (!(m.node && m.node.id === did) && m.nodeId !== did) { m.nodeId = did; given = true; }
       const actor = x => x.model ? `mindbough-demo/${x.model}` : 'human:me';
       const revisions = (d.history || []).filter(h => h.summary).map(h => ({ title: sentenceOf(h.summary, 120), description: h.summary, generated: { by: actor(h), at: iso(h.at) } }));
       nodes.push({ id: did, type: 'Decision', title: sentenceOf(summary, 120), description: summary, status: !m.flagged ? 'parked' : d.summary ? 'accepted' : 'open', parent: id, revisions,
         generated: { by: m.decision && m.decision.summary ? (m.decision.model ? `mindbough-demo/${m.decision.model}` : 'human:me') : (m.role === 'model' && m.model ? `mindbough-demo/${m.model}` : 'human:me'),
-          at: new Date((m.decision && m.decision.at) || m.ts).toISOString().replace(/\.\d+Z$/, 'Z') },
+          at: isoOf((m.decision && m.decision.at) || m.ts) },
         sources: [{ resource: `/${session}#${m.id}`, title: 'The flagged message', author: m.role === 'model' ? `mindbough-demo/${m.model || 'unknown'}` : 'human:me' }], body: (m.text || '').trim() });
     }
   }
@@ -3253,7 +3258,7 @@ function thinkingStateFiles(c, quiet, mine) {
     return { id: iid, title: shortTitle(text), description: text, at: iso(x.at), sources };
   }).sort((a, b) => (a.id < b.id ? -1 : 1));
   const kids = {}; nodes.forEach(n => { if (n.parent) (kids[n.parent] = kids[n.parent] || []).push(n); });
-  const tree = []; const walk = (n, d) => { tree.push(`${'  '.repeat(d)}* [${n.title.replace(/[[\]]/g, '')}](${n.id}.md) - ${n.type} · ${n.status}: ${n.description}`); (kids[n.id] || []).forEach(k => walk(k, d + 1)); };
+  const tree = [], walked = new Set(); const walk = (n, d) => { if (walked.has(n.id)) return; walked.add(n.id); tree.push(`${'  '.repeat(d)}* [${n.title.replace(/[[\]]/g, '')}](${n.id}.md) - ${n.type} · ${n.status}: ${n.description}`); (kids[n.id] || []).forEach(k => walk(k, d + 1)); };
   walk(root, 0);
   const files = [
     { name: 'README.md', text: `---\ntype: Thinking State\ntitle: ${yq(c.title)}\ndescription: ${yq('Exported from a Mindbough demo conversation.')}\nthinking:\n  profile: "${FORMAT_PROFILE}"\n  id: ${c.tsId}\n  root: ${root.id}\ngenerated: { by: ${yq('mindbough-demo/' + APP_VERSION)}, at: ${yq(at)} }\n---\n\n# ${c.title}\n\nA Thinking State exported from the Mindbough demo on ${at.slice(0, 10)}. Start at the [thought tree](nodes/index.md): every branch of the conversation is a node, and every flagged message a decision.\n\nThe raw conversation is in \`${session}\`, which is git-ignored by default because conversations can hold private data.\n\nTo continue with an agent: \`python3 skills/mindbough/scripts/mb.py context ${folder} root\`.\n` },
@@ -3288,13 +3293,16 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
     if (Array.isArray(b.ids) && typeof b.text !== 'string') return { ...out, entries: b.ids.filter(id => c.messages[id]) };
     return { ...out, ...(b.text ? { text: b.text } : {}) };
   };
+  const idsUsed = new Set(Object.keys(c.messages));
+  const derive = base => { let id = base; for (let k = 2; idsUsed.has(id); k++) id = `${base}-${k}`; idsUsed.add(id); return id; };
   for (const b of dfs(c)) {
     const node = byBranch[b.id];
     let after = null;
     if (b.parentId) {
       const fork = b.forkMsgId && c.messages[b.forkMsgId] ? b.forkMsgId : null;
-      lines.push({ id: 'br' + b.id, kind: 'branch', node, after: fork, by: 'human:me', at: iso(b.created), ext: { 'mindbough-demo': { n: b.n, ...(b.option ? { option: b.option } : {}) } } });
-      after = 'br' + b.id;
+      const brId = derive('br' + b.id);
+      lines.push({ id: brId, kind: 'branch', node, after: fork, by: 'human:me', at: iso(b.created), ext: { 'mindbough-demo': { n: b.n, ...(b.option ? { option: b.option } : {}) } } });
+      after = brId;
     }
     const reqOf = r => ({ at: iso(r.at), chars: r.chars | 0, blocks: (r.blocks || []).map(block) });
     const useOf = r => r.usage ? { usage: { input: r.usage.prompt | 0, output: r.usage.answer | 0, ...(r.usage.thoughts ? { reasoning: r.usage.thoughts | 0 } : {}) } } : {};
@@ -3307,7 +3315,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       const variant = i === 0 && b.editOf && c.messages[b.editOf] ? { variant_of: b.editOf } : {};
       let prev = null;
       vs.forEach((v, k) => {
-        const id = k === 0 ? m.id : `${m.id}r${k}`, src = srcOf(v.search);
+        const id = k === 0 ? m.id : derive(`${m.id}r${k}`), src = srcOf(v.search);
         const tools = v.request && (v.request.blocks || []).some(x => x.kind === 'tools'), rq = v.request && !v.edited ? reqOf(v.request) : null;
         if (rq && tools) { rq.tools = ['web_search']; rq.blocks = rq.blocks.filter(x => x.kind !== 'tools'); }
         lines.push({ id, kind: 'message', node, after, role: 'assistant', by: v.edited ? 'human:me' : `mindbough-demo/${v.model || 'unknown'}`, at: iso(v.editedAt || v.ts),
@@ -3316,7 +3324,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       });
       const human = vs.length && m.edited;
       // an option's first message is written by the demo from a template (spec §14.2, P3)
-      const e = { id: vs.length ? `${m.id}r${vs.length}` : m.id, kind: 'message', node, after, role: m.role === 'user' ? 'user' : 'assistant',
+      const e = { id: vs.length ? derive(`${m.id}r${vs.length}`) : m.id, kind: 'message', node, after, role: m.role === 'user' ? 'user' : 'assistant',
         by: human ? 'human:me' : b.option && i === 0 && m.role === 'user' && !m.edited ? 'process:mindbough-demo' : who(m), at: iso(human && m.editedAt ? m.editedAt : m.ts), ...(prev ? { replaces: prev } : {}) };
       if (m.streaming) e.pending = true; // still being written: readers skip it, and the demo resumes it after a crash (spec §10.3)
       if (m.text) e.text = m.text;
@@ -3334,7 +3342,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       if (Object.keys(own).length) e.ext = { 'mindbough-demo': own };
       if (m.search) {
         const src = (m.search.sources || []).map(x => ({ resource: x.uri, title: x.title }));
-        lines.push({ id: m.id + 'ws', kind: 'tool', node, after, tool: 'web_search', input: { queries: m.search.queries || [] }, ...(src.length ? { sources: src } : {}), by: who(m), at: iso(m.ts) });
+        lines.push({ id: derive(m.id + 'ws'), kind: 'tool', node, after, tool: 'web_search', input: { queries: m.search.queries || [] }, ...(src.length ? { sources: src } : {}), by: who(m), at: iso(m.ts) });
         if (src.length) e.sources = src;
       }
       if (e.request && m.request.blocks.some(b => b.kind === 'tools')) {
@@ -3563,7 +3571,13 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     tsId: r.fm.meta.thinking.id != null ? String(r.fm.meta.thinking.id) : undefined, sessionId: sid, facts: [] };
   const withEntries = new Set(slots.map(e => String(e.node)).concat([...branchEntry.keys()]));
   withEntries.add(rootId);
-  const bidOf = nid => { const be = branchEntry.get(nid); return nid === rootId ? 'b' + nid : be && be.id.startsWith('br') && be.id.length > 5 ? be.id.slice(2) : 'b' + nid; };
+  const bidMap = new Map(), bidUsed = new Set();
+  const freshBid = base => { let id = base; for (let k = 2; bidUsed.has(id); k++) id = `${base}-${k}`; bidUsed.add(id); return id; };
+  const bidOf = nid => {
+    if (!bidMap.has(nid)) { const be = branchEntry.get(nid); bidMap.set(nid, freshBid(nid === rootId ? 'b' + nid : be && be.id.startsWith('br') && be.id.length > 5 ? be.id.slice(2) : 'b' + nid)); }
+    return bidMap.get(nid);
+  };
+  bidOf(rootId); // the root first, so no branch can take its id
   // the nearest ancestor that is a branch
   const up = nid => { let p = th(nodes.get(nid)).parent, seen = new Set(); while (p && !seen.has(String(p))) { p = String(p); seen.add(p); if (withEntries.has(p) && nodes.has(p)) return p; const n = nodes.get(p); p = n && th(n).parent; } return rootId; };
   const order = [rootId, ...[...branchEntry.keys()].filter(n => n !== rootId && nodes.has(n)), ...[...withEntries].filter(n => n !== rootId && !branchEntry.has(n) && nodes.has(n))];
@@ -3673,13 +3687,13 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     const fm = frontmatter(f.text); if (!fm || !fm.meta.description) continue;
     const src = (Array.isArray(fm.meta.sources) ? fm.meta.sources : []).filter(isObj).map(x => String(x.resource || '')).find(x => x.startsWith(`/sessions/${sid}.jsonl#`));
     const mid = src && toMsg.get(src.split('#')[1]);
-    if (mid) convo.facts.push({ text: String(fm.meta.description).slice(0, 300), at: time(isObj(fm.meta.generated) ? fm.meta.generated.at : null, now), itemId: rel.slice(7, -3), mid });
+    convo.facts.push({ text: String(fm.meta.description).slice(0, 300), at: time(isObj(fm.meta.generated) ? fm.meta.generated.at : null, now), itemId: rel.slice(7, -3), ...(mid ? { mid } : {}) });
   }
   // nodes the session doesn't cover stay cards, under the nearest branch above them
   for (const [nid, node] of nodes) {
     if (used.has(nid)) continue;
     const t = th(node), type = String(node.meta.type || 'Thought'), status = TS_STATUSES.includes(t.status) ? t.status : 'open';
-    const parent = convo.branches[bidOf(up(nid))] ? bidOf(up(nid)) : convo.root, bid = 'b' + nid, mid = 'm' + nid;
+    const parent = convo.branches[bidOf(up(nid))] ? bidOf(up(nid)) : convo.root, bid = freshBid('b' + nid), mid = 'm' + nid;
     convo.messages[mid] = { id: mid, role: 'user', text: [`**${type} · ${status}** — ${String(node.meta.title || nid)}`, node.meta.description ? `_${node.meta.description}_` : '', node.body].filter(Boolean).join('\n\n'), branchId: bid, ts: now,
       node: { id: nid, type, status, title: String(node.meta.title || nid), description: String(node.meta.description || ''), links: {} } };
     convo.branches[bid] = { id: bid, parentId: parent, forkMsgId: null, msgIds: [mid], n: ++n, name: String(node.meta.title || nid).slice(0, 60), created: now, ...(['rejected', 'superseded', 'parked'].includes(status) ? { collapsed: true } : {}) };
@@ -3782,7 +3796,7 @@ function mergeMemory(items) {
   for (const x of items || []) {
     const text = x && typeof x.text === 'string' ? x.text.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
     if (!text || db.memory.some(y => y.text === text)) continue;
-    db.memory.push({ id: uid(), text, at: Number.isFinite(x.at) ? x.at : Date.now(), ...(typeof x.from === 'string' && x.from ? { from: x.from.slice(0, 200) } : {}), ...(TS_ID.test(String(x.itemId || '')) ? { itemId: String(x.itemId) } : {}) });
+    db.memory.push({ id: uid(), text, at: okTime(x.at) ? x.at : Date.now(), ...(typeof x.from === 'string' && x.from ? { from: x.from.slice(0, 200) } : {}), ...(TS_ID.test(String(x.itemId || '')) && !db.memory.some(y => y.itemId === String(x.itemId)) ? { itemId: String(x.itemId) } : {}) });
     n++;
   }
   return n;
@@ -3795,7 +3809,7 @@ function adoptConvo(src) {
   const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   if (!isObj(src) || !isObj(src.branches) || !isObj(src.messages) || !own(src.branches, src.root) || !isObj(src.branches[src.root])) return null;
   const str = (v, max) => (typeof v === 'string' ? v : v == null ? '' : String(v)).slice(0, max);
-  const time = v => Number.isFinite(v) ? v : Date.now();
+  const time = v => okTime(v) ? v : Date.now();
   const kids = new Map();
   for (const [k, b] of Object.entries(src.branches)) {
     if (k === src.root || !isObj(b)) continue;
@@ -3805,6 +3819,7 @@ function adoptConvo(src) {
   const bid = new Map(), mid = new Map(), order = [], queue = [src.root], taken = new Set();
   // an id that is safe (it goes into data- attributes) and unique in this conversation is kept, so a Thinking State round trip
   // keeps its entry ids; anything else gets a fresh one
+  const cardIds = new Set();
   const keepId = k => { const id = typeof k === 'string' && /^[0-9a-z][0-9a-z_-]{3,31}$/.test(k) && !taken.has(k) ? k : uid(); taken.add(id); return id; };
   while (queue.length) {
     const k = queue.shift();
@@ -3827,7 +3842,8 @@ function adoptConvo(src) {
       if (x.error) nm.error = str(x.error, 2000);
       if (x.flagged) nm.flagged = true;
       if (tsIdOk(x.nodeId)) nm.nodeId = x.nodeId;
-      if (isObj(x.node) && TS_ID.test(x.node.id)) {
+      if (isObj(x.node) && TS_ID.test(x.node.id) && !cardIds.has(x.node.id)) {
+        cardIds.add(x.node.id);
         const links = {};
         for (const k of TS_LINKS) if (isObj(x.node.links) && Array.isArray(x.node.links[k])) links[k] = x.node.links[k].filter(v => typeof v === 'string' && TS_ID.test(v)).slice(0, 50);
         nm.node = { id: x.node.id, type: str(x.node.type, 40) || 'Thought', status: TS_STATUSES.includes(x.node.status) ? x.node.status : 'open', title: str(x.node.title, 200), description: str(x.node.description, 500), links };
@@ -3866,7 +3882,7 @@ function adoptConvo(src) {
     const cols = (Array.isArray(k.cols) ? k.cols : []).filter(isObj).slice(0, 8).map(y => ({ bid: bid.get(y.bid), cells: (Array.isArray(y.cells) ? y.cells : []).slice(0, 5).map(v => str(v, 140)), summary: str(y.summary, 240) })).filter(y => y.bid);
     if (cols.length < 2) return null;
     const blocks = isObj(k.request) && Array.isArray(k.request.blocks) ? k.request.blocks.filter(isObj).slice(0, 20).map(b => ({ kind: /^[a-z]{2,12}$/.test(b.kind) ? b.kind : 'other', label: str(b.label, 80), text: str(b.text, 20000), chars: count(b.chars), ...(b.omitted ? { omitted: true } : {}) })) : [];
-    return { at: time(k.at), model: str(k.model, 100), question: str(k.question, 200), relation: RELATIONS[k.relation] ? k.relation : 'alternatives', relationWhy: str(k.relationWhy, 240),
+    return { at: time(k.at), model: str(k.model, 100), question: str(k.question, 200), relation: Object.prototype.hasOwnProperty.call(RELATIONS, k.relation) ? k.relation : 'alternatives', relationWhy: str(k.relationWhy, 240),
       criteria: (Array.isArray(k.criteria) ? k.criteria : []).filter(isObj).slice(0, 5).map(y => ({ name: str(y.name, 60), why: str(y.why, 140) })).filter(y => y.name), cols,
       ...(isObj(k.pick) && bid.has(k.pick.bid) ? { pick: { bid: bid.get(k.pick.bid), why: str(k.pick.why, 240) } } : {}), ...(k.next ? { next: str(k.next, 300) } : {}), ...(k.focus ? { focus: str(k.focus, 300) } : {}),
       request: { chars: count(isObj(k.request) ? k.request.chars : 0), blocks }, sig: str(k.sig, 4000).split('|').map(p => { const a = p.split(':'); a[0] = bid.get(a[0]) || ''; return a.join(':'); }).join('|'),
@@ -3937,17 +3953,17 @@ async function importZip(buf, { memory = true } = {}) {
     if (!id) { failed++; return; }
     added.push(id);
     for (const f of memory ? c.facts || [] : []) { // facts remembered from this conversation (spec §9), linked to their messages again
-      if (!db.convos[id].messages[f.mid]) continue;
+      if (f.mid && !Object.prototype.hasOwnProperty.call(db.convos[id].messages, f.mid)) continue;
       const known = db.memory.find(x => (f.itemId && x.itemId === f.itemId) || x.text === f.text);
       if (known) { if (!(known.src && db.convos[known.src.cid])) known.src = { cid: id, mid: f.mid }; continue; } // a fact whose conversation is gone follows it here
-      db.memory.push({ id: uid(), text: f.text, at: f.at, src: { cid: id, mid: f.mid }, from: db.convos[id].title, ...(TS_ID.test(f.itemId) ? { itemId: f.itemId } : {}) }); facts++;
+      db.memory.push({ id: uid(), text: f.text, at: f.at, ...(f.mid ? { src: { cid: id, mid: f.mid } } : {}), from: db.convos[id].title, ...(TS_ID.test(f.itemId) && !db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}) }); facts++;
     }
   });
   for (const f of memory ? convos.home || [] : []) { // global memory from Export all
-    const c = f.bundle && Object.values(db.convos).find(x => x.tsId === f.bundle && x.messages[f.mid]);
+    const c = f.bundle && Object.values(db.convos).find(x => x.tsId === f.bundle && Object.prototype.hasOwnProperty.call(x.messages, f.mid));
     const known = db.memory.find(x => x.itemId === f.itemId || x.text === f.text);
     if (known) { if (c && !(known.src && db.convos[known.src.cid])) known.src = { cid: c.id, mid: f.mid }; continue; }
-    db.memory.push({ id: uid(), text: f.text, at: f.at, itemId: f.itemId, ...(c ? { src: { cid: c.id, mid: f.mid }, from: c.title } : f.from ? { from: f.from } : {}) }); facts++;
+    db.memory.push({ id: uid(), text: f.text, at: f.at, ...(!db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}), ...(c ? { src: { cid: c.id, mid: f.mid }, from: c.title } : f.from ? { from: f.from } : {}) }); facts++;
   }
   return { added, failed, facts };
 }
