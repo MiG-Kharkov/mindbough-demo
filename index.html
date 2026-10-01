@@ -442,6 +442,8 @@ button.decision:not(:disabled):hover{box-shadow:0 0 0 3px var(--flag-soft)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
 .btn.primary:hover{filter:brightness(1.07)}
 .tag.e{opacity:.75;font-weight:500;font-style:italic}
+.tag.c{border:1px solid var(--flag);color:var(--flag)}
+.cut-note{margin-top:8px;font-size:12.5px;color:var(--muted)}
 .kid.edit{border-style:dashed}
 .reask{display:flex;align-items:center;gap:8px;margin-top:6px;padding:6px 6px 6px 10px;border:1px dashed var(--flag);border-radius:10px;font-size:12.5px;color:var(--muted)}
 .reask>span{flex:1;min-width:0;overflow-wrap:anywhere}
@@ -608,7 +610,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 0ee181c'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 9bcde3f'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -730,9 +732,13 @@ db.web = !db.webOff;
 let repaired = false; // saved at start, so the repair is stored at once
 function repairConvo(c) {
   Object.values(c.messages).forEach(m => {
-    if (m.streaming) { repaired = true; m.streaming = false; if (m.prev) Object.assign(m, m.prev); else if (!m.text) m.text = '(response interrupted)'; } // a half-written regeneration is dropped
+    if (m.streaming) { repaired = true; m.streaming = false; if (m.prev) Object.assign(m, m.prev); else if (m.text) m.cut = 'Cut off: the page was closed or reloaded before the end.'; else m.error = 'The page was closed or reloaded before the answer arrived.'; } // a half-written regeneration is dropped
     delete m.prev;
     if (m.decision) delete m.decision.pending;
+    // earlier versions stored the app's own words as the answer's (FLOW-04): an empty answer is an error, a cut-off one is marked
+    if (m.role === 'model' && !m.error && (m.text === '_(stopped)_' || m.text === '(response interrupted)')) { repaired = true; m.error = m.text === '_(stopped)_' ? 'Stopped before any text arrived.' : 'The page was closed or reloaded before the answer arrived.'; m.text = ''; }
+    const lost = m.role === 'model' && typeof m.text === 'string' && m.text.match(/\n\n> ⚠ (Couldn’t reach Gemini\. Check your internet connection\.)$/);
+    if (lost) { repaired = true; m.text = m.text.slice(0, lost.index); m.cut = `Cut off: ${lost[1]}`; }
   });
 }
 Object.values(db.convos).forEach(repairConvo);
@@ -1056,7 +1062,7 @@ function msgHTML(c, m) {
   const isEdit = editing && editing.cid === c.id && editing.mid === m.id;
   const cls = ['msg', m.role, m.hidden && 'hidden', m.flagged && 'flagged', m.error && 'error', isEdit && 'editing'].filter(Boolean).join(' ');
   const who = m.role === 'user' ? 'You' : 'Gemini';
-  const tags = (m.hidden ? '<span class="tag h">excluded from history</span>' : '') + (m.edited ? '<span class="tag e">edited</span>' : '');
+  const tags = (m.hidden ? '<span class="tag h">excluded from history</span>' : '') + (m.edited ? '<span class="tag e">edited</span>' : '') + (m.cut && !m.streaming ? `<span class="tag c" title="${esc(m.cut)}">${/^Stopped/.test(m.cut) ? 'stopped' : 'cut off'}</span>` : '');
   let chip = '';
   if (m.role === 'model' && !m.streaming) {
     const label = esc(m.model || 'unknown model');
@@ -1114,7 +1120,7 @@ function msgHTML(c, m) {
     </div>`;
   }
   return `<div class="${cls}" data-mid="${m.id}">
-    <div class="bubble"><div class="role">${who}${chip}${tags}</div><div class="content">${body}</div>${sourcesHTML(m)}</div>
+    <div class="bubble"><div class="role">${who}${chip}${tags}</div><div class="content">${body}</div>${m.cut && !m.streaming ? `<div class="cut-note">${esc(m.cut)}</div>` : ''}${sourcesHTML(m)}</div>
     ${dec}${isEdit ? '' : reaskHTML(c, m) + answerHTML(c, m)}${acts}${kidsHTML}</div>`;
 }
 
@@ -1517,7 +1523,7 @@ function canGenerate() {
 // none moves, so each keeps its place, and its entry id, in the session (spec §14.5, S6). A Restore is a version that names, by its
 // place, the earlier one it puts back (`restores`), and when (`restoredAt`)
 const versionOf = x => ({ text: x.text || '', ...(x.model ? { model: x.model } : {}), ts: x.ts, ...(x.edited ? { edited: true } : {}), ...(x.editedAt ? { editedAt: x.editedAt } : {}),
-  ...(x.request ? { request: x.request } : {}), ...(x.search ? { search: x.search } : {}), ...(Number.isInteger(x.restores) ? { restores: x.restores, restoredAt: x.restoredAt } : {}) });
+  ...(x.request ? { request: x.request } : {}), ...(x.search ? { search: x.search } : {}), ...(Number.isInteger(x.restores) ? { restores: x.restores, restoredAt: x.restoredAt } : {}), ...(x.cut ? { cut: x.cut } : {}) });
 function addVersion(m, x) { if (x && x.text) m.versions = (m.versions || []).concat(versionOf(x)); }
 // The version of a message that a request sent (F-06, F-20, spec §14.5): the one whose signature the request kept, or, for a
 // request without one, the version current at its time. A signature that no version has left means the text it sent is gone.
@@ -1538,11 +1544,11 @@ function regenerateInPlace(c, m, model) {
   const b = branchOf(c, m.id); if (!b) return;
   const ids = pathIds(c, m.id);
   const req = buildRequest(c, ids.slice(0, -1).map(id => c.messages[id]), m.id); // not its own decision: that is what is written again
-  const backup = { text: m.text, model: m.model, edited: m.edited, ts: m.ts, request: m.request, ...(m.editedAt ? { editedAt: m.editedAt } : {}), ...(m.search ? { search: m.search } : {}),
-    ...(Number.isInteger(m.restores) ? { restores: m.restores, restoredAt: m.restoredAt } : {}) };
+  const backup = m.error && !m.text ? null : { text: m.text, model: m.model, edited: m.edited, ts: m.ts, request: m.request, ...(m.editedAt ? { editedAt: m.editedAt } : {}), ...(m.search ? { search: m.search } : {}),
+    ...(Number.isInteger(m.restores) ? { restores: m.restores, restoredAt: m.restoredAt } : {}), ...(m.cut ? { cut: m.cut } : {}) }; // an error answer has nothing to keep (B01)
   if (editing && editing.mid === m.id) editing = null;
-  m.prev = backup; // saved with the message until the new answer is complete, so a reload or crash can't lose the original
-  m.text = ''; delete m.error; m.edited = false; delete m.editedAt; delete m.search; delete m.restores; delete m.restoredAt; m.model = model; m.ts = Date.now(); m.streaming = true;
+  if (backup) m.prev = backup; else delete m.prev; // saved with the message until the new answer is complete, so a reload or crash can't lose the original
+  m.text = ''; delete m.error; delete m.cut; m.edited = false; delete m.editedAt; delete m.search; delete m.restores; delete m.restoredAt; m.model = model; m.ts = Date.now(); m.streaming = true;
   m.request = requestRecord(req, model);
   c.updated = Date.now();
   b.collapsed = false;
@@ -1565,6 +1571,7 @@ function laterDecisions(c, m) {
 function waiting(c, m) { const b = c.branches[m.branchId]; return !!b && m.role === 'user' && b.msgIds[b.msgIds.length - 1] === m.id; }
 function answerHTML(c, m) {
   if (RO || !waiting(c, m) || c.branches[m.branchId].collapsed) return '';
+  if (m.hidden) return `<div class="reask answer-now"><span>No answer yet. The question is excluded from history: include it again to get an answer.</span></div>`;
   return `<div class="reask answer-now"><span>No answer yet.</span><button class="btn primary" data-act="answer" title="Ask the model now, with the model picked above the message box">Answer</button></div>`;
 }
 function answerWaiting(c, m) {
@@ -2595,6 +2602,8 @@ async function sendToBranch(c, bid, text, modelOverride) {
   let model = modelOverride || picked;
 
   const req = buildRequest(c, historyFor(c, bid));
+  const end = req.turns[req.turns.length - 1];
+  if (!end || end.role !== 'user') { save(); renderCanvas(); toast('Nothing to answer: the question is excluded from history. Include it again first.'); return; } // FLOW-05
   const am = { id: uid(), role: 'model', text: '', branchId: bid, ts: Date.now(), streaming: true, model, request: requestRecord(req, model) };
   c.messages[am.id] = am; b.msgIds.push(am.id);
   save(); renderSidebar(); renderCanvas(); focusBranch(bid, true);
@@ -2752,12 +2761,13 @@ async function streamInto(c, am, req, key, picked, backup) {
     }
     done = !am.error;
   } catch (err) {
-    if (err.name === 'AbortError') { if (!am.text && !backup) am.text = '_(stopped)_'; }
+    // what arrived stays the model's words, marked as cut off; the reason is the app's, kept apart (FLOW-04)
+    if (err.name === 'AbortError') { if (backup) am.text = ''; else if (am.text) am.cut = 'Stopped by you before the end.'; else am.error = 'Stopped before any text arrived.'; }
     else {
       const offline = err instanceof TypeError;
       const msg = offline ? 'Couldn’t reach Gemini. Check your internet connection.' : err.message;
       if (backup) { am.text = ''; am.error = msg; } // failed regeneration: the previous answer is restored below
-      else if (am.text) am.text += `\n\n> ⚠ ${msg}`; else am.error = msg;
+      else if (am.text) am.cut = `Cut off: ${msg}`; else am.error = msg;
     }
   } finally {
     // failed in-place regeneration: keep the previous answer
@@ -3118,7 +3128,7 @@ const HELP = [
   { id: 'start', title: 'Getting started', cards: ['F-02', 'F-03', 'F-15', 'F-18'], body: `
     <ul><li><b>Settings</b> (the gear, top right): paste a Gemini API key. It stays in this browser and goes only to Google's Gemini API.</li>
     <li>No key yet? Menu → <b>Try a sample conversation</b>: three recorded ones, a decision, a troubleshooting session and a pricing plan, with options, comparisons and choices, branch statuses, decisions, web searches, formulas, and every prompt with its tokens.</li>
-    <li>On a desktop, Enter sends and Shift+Enter adds a line. On a phone, Enter adds a line: tap <b>Send</b>. <b>Stop</b> ends an answer and keeps what arrived; it shows in the conversation the answer is coming in, and one answer comes at a time. Answers show Markdown, code and formulas.</li>
+    <li>On a desktop, Enter sends and Shift+Enter adds a line. On a phone, Enter adds a line: tap <b>Send</b>. <b>Stop</b> ends an answer and keeps what arrived, tagged <b>stopped</b>; it shows in the conversation the answer is coming in, and one answer comes at a time. An answer cut off by a lost connection or a reload is tagged <b>cut off</b>, with the reason under it. Answers show Markdown, code and formulas.</li>
     <li>Menu → <b>New conversation</b> starts one. Its first answer gives it a short title. <b>⋯</b> on a conversation in the menu renames, exports, shares or deletes it.</li>
     <li>On a phone, add it to the home screen: iPhone Safari → Share → <b>Add to Home Screen</b>; Android Chrome → ⋮ → <b>Add to Home screen</b>.</li></ul>` },
   { id: 'branches', title: 'Branches', cards: ['F-04', 'F-05', 'F-06', 'F-07', 'F-10', 'F-11', 'F-12', 'F-19', 'F-24', 'F-29', 'F-32'], body: `
@@ -3169,7 +3179,8 @@ const WHATS_NEW = [
     'Fixed: choosing again among branches, after a reload too, leaves only the new choice in prompts; Choose asks before it takes the place of your own decision.',
     'Fixed: <b>Stop</b> shows only in the conversation an answer is coming in. Elsewhere <b>Send</b> says where it is, with <b>Go there</b>.',
     'A decision follows its message: after a regeneration, an edit or a Restore, the helper writes its summary again, and a summary you wrote says it was written for an earlier version, with <b>Update</b> and <b>Keep</b>.',
-    'Every version of an answer is kept, and <b>Restore</b> puts an earlier one back as a new version. A prompt shows a message deleted since as deleted.'] },
+    'Every version of an answer is kept, and <b>Restore</b> puts an earlier one back as a new version. A prompt shows a message deleted since as deleted.',
+    'An answer you stop or that is cut off keeps what arrived, tagged <b>stopped</b> or <b>cut off</b>, and the app’s own words are never sent to the model as the answer.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -3557,7 +3568,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
         if (rq && tools) { rq.tools = ['web_search']; rq.blocks = rq.blocks.filter(x => x.kind !== 'tools'); }
         const by = back ? 'human:me' : m.role === 'user' ? (k === 0 && !v.edited && b.option && i === 0 ? 'process:mindbough-demo' : 'human:me') : v.edited ? 'human:me' : `mindbough-demo/${v.model || 'unknown'}`;
         lines.push({ id, kind: 'message', node, after, role: m.role === 'user' ? 'user' : 'assistant', by, at: iso(back ? v.restoredAt : v.editedAt || v.ts),
-          ...(prev ? { replaces: prev } : variant), ...(back ? { restores: back } : {}), text: v.text, ...(rq ? { request: rq, ...useOf(v.request) } : {}), ...(src.length && !back ? { sources: src } : {}) });
+          ...(prev ? { replaces: prev } : variant), ...(back ? { restores: back } : {}), text: v.text, ...(v.cut ? { error: v.cut } : {}), ...(rq ? { request: rq, ...useOf(v.request) } : {}), ...(src.length && !back ? { sources: src } : {}) });
         prev = id; ids.push(id);
       });
       const back = Number.isInteger(m.restores) && ids[m.restores] ? ids[m.restores] : null, human = (vs.length && m.edited) || !!back;
@@ -3569,6 +3580,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       if (m.streaming) e.pending = true; // still being written: readers skip it, and the demo resumes it after a crash (spec §10.3)
       if (m.text) e.text = m.text;
       if (m.error) e.error = m.error;
+      if (m.cut && m.text) e.error = m.cut; // cut off: the text arrived, the reason is the app's
       if (!m.text && !m.error) e.text = '';
       if (m.hidden) e.excluded = true;
       if (!vs.length) Object.assign(e, variant);
@@ -3875,7 +3887,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
       if (restored) { m.restores = backAt(v); m.restoredAt = time(v.at, now); if (gen !== o) { m.edited = true; m.editedAt = time(o.at, now); } }
       else if (gen !== v) m.editedAt = time(v.at, now);
       const model = role === 'model' ? modelOf(gen.by) : ''; if (model) m.model = model;
-      if (v.error) m.error = String(v.error);
+      if (v.error) { if (m.text) m.cut = String(v.error).slice(0, 300); else m.error = String(v.error); } // text and an error: cut off
       if (slot.excluded || v.excluded) m.hidden = true;
       const ext = isObj(v.ext) && isObj(v.ext['mindbough-demo']) ? v.ext['mindbough-demo'] : {};
       if (ext.edited) m.edited = true;
@@ -3895,7 +3907,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
         const human = !modelOf(x.by), ts = time(x.at, now), srcs = (Array.isArray(x.sources) ? x.sources : []).filter(isObj);
         const found = srcs.length ? webSearchOf({ webSearchQueries: [], groundingChunks: srcs.map(y => ({ web: { uri: y.resource, title: y.title } })) }) : null;
         return { text: typeof x.text === 'string' ? x.text : '', ...(modelOf(x.by) ? { model: modelOf(x.by) } : {}), ts, ...(human ? { edited: true, editedAt: ts } : {}),
-          ...(isObj(x.request) ? { request: recBack(x, modelOf(x.by), ts) } : {}), ...(found ? { search: found } : {}) };
+          ...(isObj(x.request) ? { request: recBack(x, modelOf(x.by), ts) } : {}), ...(found ? { search: found } : {}), ...(x.error && x.text ? { cut: String(x.error).slice(0, 300) } : {}) };
       };
       // every version, in the order it was made; a Restore is one too, with what the version it puts back had
       if (role === 'model' && chain.length > 1) m.versions = chain.slice(0, -1).map(x => backAt(x) >= 0 ? { ...asVersion(origin(x)), text: typeof x.text === 'string' ? x.text : '', restores: backAt(x), restoredAt: time(x.at, now) } : asVersion(x));
@@ -4117,6 +4129,7 @@ function adoptConvo(src) {
       const nm = { id: keepId(m), role: x.role, text: str(x.text, 1e6), branchId: id, ts: time(x.ts) };
       if (x.model) nm.model = str(x.model, 100);
       if (x.error) nm.error = str(x.error, 2000);
+      if (typeof x.cut === 'string' && x.cut && nm.text) nm.cut = str(x.cut, 300); // an answer cut off (FLOW-04)
       if (x.flagged) nm.flagged = true;
       if (tsIdOk(x.nodeId)) nm.nodeId = x.nodeId;
       if (isObj(x.node) && TS_ID.test(x.node.id) && !cardIds.has(x.node.id)) {
@@ -4199,7 +4212,7 @@ function adoptConvo(src) {
     if (Array.isArray(x.versions)) {
       const vs = x.versions.filter(isObj).slice(-200).map(v => { const ws = searchOf(v.search); return { text: str(v.text, 1e6), ...(v.model ? { model: str(v.model, 100) } : {}), ts: time(v.ts), ...(v.edited ? { edited: true } : {}),
         ...(Number.isFinite(v.editedAt) ? { editedAt: v.editedAt } : {}), ...(isObj(v.request) ? { request: recOf(v.request) } : {}), ...(ws ? { search: ws } : {}),
-        ...(Number.isFinite(v.restoredAt) ? { restores: v.restores, restoredAt: v.restoredAt } : {}) }; });
+        ...(Number.isFinite(v.restoredAt) ? { restores: v.restores, restoredAt: v.restoredAt } : {}), ...(typeof v.cut === 'string' && v.cut ? { cut: str(v.cut, 300) } : {}) }; });
       vs.forEach((v, k) => { if (!(Number.isInteger(v.restores) && v.restores >= 0 && v.restores < k)) { delete v.restores; delete v.restoredAt; } }); // a Restore names an earlier version
       if (vs.length) nm.versions = vs;
       if (vs.length && Number.isInteger(x.restores) && x.restores >= 0 && x.restores < vs.length && Number.isFinite(x.restoredAt)) { nm.restores = x.restores; nm.restoredAt = x.restoredAt; }
