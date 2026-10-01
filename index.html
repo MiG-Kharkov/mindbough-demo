@@ -612,7 +612,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main dd57b26'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 036f8ff'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -679,6 +679,8 @@ let busy = null; // {controller, convoId, msgId}: the answer being written
 let inflight = 0;
 const touched = new Set(); // conversations this tab wrote into while it was writing
 const writing = () => !!busy || inflight > 0;
+// something is being typed in this tab: a message or a decision being edited, a name, a fact (B11)
+const editingNow = () => !!(editing || decEdit || memDraft || memEdit || panelEdit || document.querySelector('.name-input'));
 async function loadStored() {
   try {
     if (!window.indexedDB) throw new Error('no IndexedDB');
@@ -972,6 +974,7 @@ function md(src) {
 /* ---------------- sidebar ---------------- */
 function renderSidebar() {
   const el = $('#convList');
+  if (el.querySelector('.name-input')) return; // a rename is being typed: the list repaints when it ends (B15)
   if (!db.order.length) { el.innerHTML = '<div class="empty">No conversations yet</div>'; return; }
   el.innerHTML = db.order.map(id => {
     const c = db.convos[id];
@@ -1360,7 +1363,7 @@ $('#canvas').addEventListener('click', async e => {
     if (m.flagged) { if (!m.decision) m.decision = { summary: '', at: Date.now() }; delete m.decision.replacedBy; if (!m.decision.summary) summarize(c, m); }
   }
   if (act === 'dec-edit') { startDecisionEdit(c, m); return; }
-  if (act === 'dec-cancel') { decEdit = null; rerenderMsg(c.id, m.id); scheduleLayout(); return; }
+  if (act === 'dec-cancel') { decEdit = null; rerenderMsg(c.id, m.id); scheduleLayout(); setTimeout(settled); return; }
   if (act === 'dec-save') { saveDecision(c, m); return; }
   if (act === 'dec-auto') { decEdit = null; summarize(c, m, true); return; }
   if (act === 'dec-keep') { if (m.decision) m.decision.sig = sigOf(m.text || ''); c.updated = Date.now(); save(); rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline(); return; }
@@ -1401,6 +1404,8 @@ function inlineRename(b, targetEl, small) {
       c.updated = Date.now();
       save();
     }
+    if (document.activeElement === input) input.blur(); // removing a focused input fires blur in the middle of removing it
+    if (input.isConnected) input.remove(); setTimeout(settled); // so the lists repaint now (B15), and other tabs' saves apply again (B11)
     renderCanvas(); renderChrome();
   };
   input.addEventListener('click', e => e.stopPropagation());
@@ -1409,7 +1414,8 @@ function inlineRename(b, targetEl, small) {
     if (e.key === 'Enter') { e.preventDefault(); finish(true); }
     if (e.key === 'Escape') { e.preventDefault(); finish(false); }
   });
-  input.addEventListener('blur', () => finish(true));
+  // after the event: a blur can come from a render that is removing the input, and finishing inside it would render again (B15)
+  input.addEventListener('blur', () => setTimeout(() => finish(true)));
 }
 function startRename(bid) {
   const c = cur(); const b = c && c.branches[bid]; const col = colEls[bid];
@@ -1677,6 +1683,7 @@ function stopEdit() {
   if (!editing) return;
   const prev = editing; editing = null;
   rerenderMsg(prev.cid, prev.mid); scheduleLayout();
+  setTimeout(settled); // done typing: other tabs' saves apply again (B11)
 }
 function sizeEdit(ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; }
 function editValue(el) { const ta = el && el.querySelector('.edit-area'); return ta ? ta.value.trim() : ''; }
@@ -1751,7 +1758,7 @@ function textChanged(c, m, before) {
 function saveDecision(c, m) {
   const ta = document.querySelector(`.msg[data-mid="${m.id}"] .dec-area`);
   setDecision(m, (ta ? ta.value : '').replace(/\s+/g, ' ').trim().slice(0, 300));
-  decEdit = null; c.updated = Date.now(); save();
+  decEdit = null; c.updated = Date.now(); save(); setTimeout(settled);
   rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline(); renderDecCount();
 }
 document.addEventListener('input', e => { if (decEdit && e.target.classList && e.target.classList.contains('dec-area')) decEdit.draft = e.target.value; });
@@ -2328,11 +2335,14 @@ function renameConvo(id) {
     if (done) return; done = true;
     const v = input.value.replace(/\s+/g, ' ').trim();
     if (commit && v && v !== c.title) { c.title = v.slice(0, 80); c.named = 'you'; c.updated = Date.now(); save(); }
+    if (document.activeElement === input) input.blur();
+    if (input.isConnected) input.remove(); setTimeout(settled); // so the list repaints now (B15)
     renderSidebar();
   };
   input.addEventListener('click', e => e.stopPropagation());
   input.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') { e.preventDefault(); finish(false); } });
-  input.addEventListener('blur', () => finish(true));
+  // after the event: a blur can come from a render that is removing the input, and finishing inside it would render again (B15)
+  input.addEventListener('blur', () => setTimeout(() => finish(true)));
 }
 // Update the name where it is shown without re-rendering the canvas, which could be holding an edit in progress
 function paintBranchName(c, b) {
@@ -2549,10 +2559,12 @@ function reapplyMemOps() {
   }
   return changed;
 }
-function settled() { if (!writing()) { touched.clear(); factsHere.clear(); } }
+function settled() { if (!writing() && !editingNow()) { touched.clear(); factsHere.clear(); } }
 function takeFrom(next) {
   if (!next || !next.convos || !Array.isArray(next.order)) return;
+  const here = db.current, focus = db.convos[here] && db.convos[here].focus; // this tab stays where it is (B11)
   db = next;
+  if (db.convos[here]) { db.current = here; if (focus && db.convos[here].branches[focus]) db.convos[here].focus = focus; }
   if (!Array.isArray(db.memory)) db.memory = [];
   if (!db.helpers || typeof db.helpers !== 'object') db.helpers = {};
   if (!db.convos[db.current]) db.current = db.order[0] || null;
@@ -2568,7 +2580,7 @@ function takeFrom(next) {
 function refreshContextPanel() { if (sheetView && sheetView.context && !memEdit && !memDraft && !panelEdit) $('#sheetDyn').innerHTML = renderContextPanel(); }
 window.addEventListener('storage', e => {
   if (RO || storage !== 'localStorage' || e.key !== LS || !e.newValue) return;
-  try { const next = JSON.parse(e.newValue); if (writing()) mergeFrom(next); else takeFrom(next); } catch (err) {}
+  try { const next = JSON.parse(e.newValue); if (editingNow()) touched.add(db.current); if (writing() || editingNow()) mergeFrom(next); else takeFrom(next); } catch (err) {}
 });
 if (tabs) tabs.onmessage = async e => {
   if (RO || storage !== 'IndexedDB') return;
@@ -2578,7 +2590,8 @@ if (tabs) tabs.onmessage = async e => {
     if (!text) return;
     savedChars = text.length;
     const next = JSON.parse(text);
-    if (writing()) mergeFrom(next); else takeFrom(next);
+    if (editingNow()) touched.add(db.current); // the conversation being typed in keeps this tab's version until you are done (B11)
+    if (writing() || editingNow()) mergeFrom(next); else takeFrom(next);
   } catch (err) {}
 };
 // Phones kill background tabs without warning: save whatever is pending when the page is hidden
@@ -2835,9 +2848,7 @@ async function streamInto(c, am, req, key, picked, backup) {
     c.updated = Date.now();
     setBusy(null);
     save();
-    updateMsgEl(c, am, true);
-    renderSidebar();
-    renderOutline();
+    try { updateMsgEl(c, am, true); renderSidebar(); renderOutline(); } catch (err) { console.error(err); } // never keep the answer from being named (B15)
   }
   if (changed !== null) textChanged(c, am, changed);
   if (done) { nameBranch(c, am); nameConvo(c, am); }
@@ -3259,7 +3270,8 @@ const WHATS_NEW = [
     'The <b>⚑</b> count is the decisions in prompts, a parked or rejected branch says so where you write, and an excluded flagged message keeps its decision in the prompts.',
     '<b>Remember</b> drafts a fact about you, never a decision. A reworded fact keeps its earlier wordings, also in Export all.',
     'A sample or a Thinking State you have already opens again instead of adding a copy. Another tool’s session keeps who wrote what.',
-    'Fixed: text pasted from a PDF no longer breaks an export, and the menu’s conversations open with Enter or Space.'] },
+    'Fixed: text pasted from a PDF no longer breaks an export, and the menu’s conversations open with Enter or Space.',
+    'Fixed: with two tabs open, one no longer pulls the other to its conversation or closes what you are typing there.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -4504,6 +4516,7 @@ function snippetAround(text, q) {
 }
 function countDesc(c, bid) { return childrenOf(c, bid).reduce((n, k) => n + 1 + countDesc(c, k.id), 0); }
 function renderOutline() {
+  if (document.querySelector('#oTree .name-input')) return; // a rename is being typed (B15)
   if (!ui.outline) return;
   const c = cur(); const tree = $('#oTree');
   if (!c) { tree.innerHTML = ''; return; }
