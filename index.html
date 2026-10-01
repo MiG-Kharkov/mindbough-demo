@@ -606,7 +606,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.6.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main a12560e'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 10b5cca'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1332,7 +1332,7 @@ $('#canvas').addEventListener('click', async e => {
   if (act === 'flag') {
     m.flagged = !m.flagged;
     // a flag makes the message a decision; its one-line summary is what later prompts carry (unflag keeps the text)
-    if (m.flagged) { if (!m.decision) m.decision = { summary: '', at: Date.now() }; if (!m.decision.summary) summarize(c, m); }
+    if (m.flagged) { if (!m.decision) m.decision = { summary: '', at: Date.now() }; delete m.decision.replacedBy; if (!m.decision.summary) summarize(c, m); }
   }
   if (act === 'dec-edit') { startDecisionEdit(c, m); return; }
   if (act === 'dec-cancel') { decEdit = null; rerenderMsg(c.id, m.id); scheduleLayout(); return; }
@@ -2101,14 +2101,17 @@ function chooseBranch(c, m, bid) {
   const cmp = m.compare || {}, col = (cmp.cols || []).find(x => x.bid === bid);
   if (cmp.relation && cmp.relation !== 'alternatives' && !confirm(`${RELATIONS[cmp.relation]}, so choosing one may lose the others. Choose “${branchName(win, c)}” anyway?`)) return;
   const why = cmp.pick && cmp.pick.bid === bid && cmp.pick.why ? cmp.pick.why : col && col.summary ? col.summary : '';
+  // the answer a choice goes on may already hold a decision of yours: it would leave the prompts, so ask first (kept in its history)
+  const mine = target.flagged && target.decision && target.decision.summary && target.decision.choice !== m.id;
+  if (mine && !confirm(`The last answer of “${branchName(win, c)}” holds your decision “${snippetOf(target.decision.summary, 120)}”. The choice takes its place in prompts, and your wording stays in its history. Choose anyway?`)) return;
   const names = others.map(b => branchName(b, c));
   const over = names.length > 3 ? ` over ${names.length} other options` : names.length ? ` over ${names.join(', ')}` : '';
-  const earlier = Object.values(c.messages).filter(x => x !== target && x.decision && x.decision.choice === m.id); // a choice made before at this fork
+  const earlier = Object.values(c.messages).filter(x => x !== target && x.flagged && x.decision && x.decision.choice === m.id); // a choice made before at this fork
   const undo = { flagged: !!target.flagged, decision: target.decision ? JSON.parse(JSON.stringify(target.decision)) : null, folds: others.concat(win).map(b => [b, !!b.collapsed]), chosen: cmp.chosen,
     status: others.concat(win).map(b => [b, b.status]), earlier: earlier.map(x => [x, !!x.flagged]) };
-  earlier.forEach(x => { x.flagged = false; delete x.decision.choice; });
+  earlier.forEach(x => { x.flagged = false; x.decision.replacedBy = target.id; }); // choosing again supersedes the earlier choice (spec W2)
   target.flagged = true;
-  setDecision(target, clean(`Chose ${branchName(win, c)}${over}${why ? `: ${why}` : '.'}`, 300));
+  setDecision(target, clean(`Chose ${branchName(win, c)}${over}${why ? `: ${/[.!?…]$/.test(why.trim()) ? why.trim() : why.trim() + '.'}` : '.'}`, 300));
   target.decision.choice = m.id; // the choice at this fork (spec §14.4)
   others.forEach(b => { b.collapsed = true; if (!cmp.relation || cmp.relation === 'alternatives') b.status = 'rejected'; });
   win.collapsed = false; win.status = 'accepted';
@@ -2122,7 +2125,7 @@ function chooseBranch(c, m, bid) {
     if (undo.decision) target.decision = undo.decision; else delete target.decision;
     undo.folds.forEach(([b, was]) => { b.collapsed = was; });
     undo.status.forEach(([b, was]) => { if (was) b.status = was; else delete b.status; });
-    undo.earlier.forEach(([x, was]) => { x.flagged = was; x.decision.choice = m.id; });
+    undo.earlier.forEach(([x, was]) => { x.flagged = was; x.decision.choice = m.id; delete x.decision.replacedBy; });
     if (undo.chosen) m.compare.chosen = undo.chosen; else delete m.compare.chosen;
     c.updated = Date.now(); save();
     renderCanvas(); renderSidebar(); renderDecCount();
@@ -2897,7 +2900,7 @@ function renderDecisionsPanel() {
     + list.map(m => {
       const d = m.decision || {}, b = branchOf(c, m.id), hist = d.history || [];
       const out = b && droppedAt(c, b.id);
-      const meta = [b && branchName(b), d.summary && (d.model ? `by ${d.model}` : 'by you'), d.at && shortDate(d.at), out && `not in prompts: “${branchName(out, c)}” is ${statusLabel(out).toLowerCase()}`].filter(Boolean).join(' · ');
+      const meta = [b && branchName(b), d.summary && (d.model ? `by ${d.model}` : d.choice ? 'chosen by you' : 'by you'), d.at && shortDate(d.at), out && `not in prompts: “${branchName(out, c)}” is ${statusLabel(out).toLowerCase()}`].filter(Boolean).join(' · ');
       const body = panelEdit === m.id
         ? `<textarea class="dp-area" rows="3" maxlength="300" aria-label="Decision summary">${esc(d.summary || '')}</textarea>
            <div class="dp-actions"><button class="btn" data-dp="cancel">Cancel</button><button class="btn primary" data-dp="save">Save</button></div>`
@@ -3077,7 +3080,7 @@ const HELP = [
     <p class="help-why">When there is more than one way, explore them side by side, then decide.</p>
     <ul><li><b>⋯ → Branch into options</b>: the model proposes options, you tick the ones to explore, and each becomes a branch, answered now or later.</li>
     <li><b>Compare N</b> next to the branch badges: the branches side by side. With AI, alternatives get a table of criteria that matter here and a suggestion; branches that aren't alternatives get what each contributes and a next step. <b>Compare by…</b> sets your own question.</li>
-    <li><b>Choose</b> turns the chosen branch's last answer into a decision, "Chose X over Y", folds the others and sets the statuses. <b>Undo</b> in the toast puts it all back.</li></ul>` },
+    <li><b>Choose</b> turns the chosen branch's last answer into a decision, "Chose X over Y", folds the others and sets the statuses, also without <b>Compare with AI</b>. If that answer holds your own decision, it asks first. <b>Undo</b> in the toast puts it all back. Choose again later, and the new choice replaces the earlier one in prompts and in the export.</li></ul>` },
   { id: 'context', title: 'Decisions, memory and the prompt', cards: ['F-08', 'F-09', 'F-20', 'F-21', 'F-22', 'F-23', 'F-31'], body: `
     <p class="help-why">Say it once: every request carries it.</p>
     <ul><li>The <b>flag</b> under a message makes it a decision: a one-line summary that every prompt of the conversation carries. Tap the Decision box to edit it, or <b>Write for me</b>.</li>
@@ -3106,7 +3109,8 @@ const HELP = [
 const WHATS_NEW = [
   { version: 'Unreleased', items: ['Fixed: on a phone, the branch you write in and the model are no longer cut mid-letter, the buttons under a message are bigger, and toasts no longer cover the message box.',
     'Fixed: the app opens again on iPhones with iOS older than 16.4, where it showed nothing at all.',
-    'Fixed: a shared read-only page no longer holds your memory facts in the earlier versions of a regenerated answer.'] },
+    'Fixed: a shared read-only page no longer holds your memory facts in the earlier versions of a regenerated answer.',
+    'Fixed: choosing again among branches, after a reload too, leaves only the new choice in prompts; Choose asks before it takes the place of your own decision.'] },
   { version: '0.6.1', items: ['Under a message: Branch out, the flag, the bookmark and the eye, <b>Exclude from history</b>. How the prompt was built is the first item under <b>⋯</b>.'] },
   { version: '0.6.0', items: ['<b>Try a sample</b> offers three recorded conversations: a decision, a troubleshooting session with a branch per cause, and a pricing plan with formulas.',
     'Importing a conversation’s Thinking State asks before it adds facts to your memory; Export all doesn’t.',
@@ -3335,7 +3339,8 @@ function thinkingStateFiles(c, quiet, mine) {
       if (!(m.node && m.node.id === did) && m.nodeId !== did) { m.nodeId = did; given = true; }
       const actor = x => x.model ? `mindbough-demo/${x.model}` : 'human:me';
       const revisions = (d.history || []).filter(h => h.summary).map(h => ({ title: sentenceOf(h.summary, 120), description: h.summary, generated: { by: actor(h), at: iso(h.at) } }));
-      nodes.push({ id: did, type: 'Decision', title: sentenceOf(summary, 120), description: summary, status: !m.flagged ? 'parked' : d.summary ? 'accepted' : 'open', parent: id, revisions,
+      const by = d.replacedBy && c.messages[d.replacedBy], replaced = !m.flagged && by && by.flagged; // chosen again at the same fork (spec W2)
+      nodes.push({ id: did, type: 'Decision', title: sentenceOf(summary, 120), description: summary, status: replaced ? 'superseded' : !m.flagged ? 'parked' : d.summary ? 'accepted' : 'open', parent: id, revisions,
         generated: { by: m.decision && m.decision.summary ? (m.decision.model ? `mindbough-demo/${m.decision.model}` : 'human:me') : (m.role === 'model' && m.model ? `mindbough-demo/${m.model}` : 'human:me'),
           at: isoOf((m.decision && m.decision.at) || m.ts) },
         sources: [{ resource: `/${session}#${m.id}`, title: 'The flagged message', author: m.role === 'model' ? `mindbough-demo/${m.model || 'unknown'}` : 'human:me' }], body: (m.text || '').trim() });
@@ -3346,13 +3351,14 @@ function thinkingStateFiles(c, quiet, mine) {
   const nodeOf = id => nodes.find(n => n.id === id);
   const imported = b => b.msgIds.some(id => c.messages[id] && c.messages[id].node && c.messages[id].node.id === byBranch[b.id]);
   for (const b of dfs(c)) for (const m of b.msgIds.map(id => c.messages[id]).filter(Boolean)) {
-    const cmp = m.compare && Array.isArray(m.compare.cols) && m.compare.cols.length ? m.compare : null;
-    const opts = compareKids(c, m).filter(k => byBranch[k.id] && !imported(k) && (k.option || (cmp && cmp.cols.some(x => x.bid === k.id))));
+    const cmp = m.compare && Array.isArray(m.compare.cols) && m.compare.cols.length ? m.compare : null, chosen = m.compare && m.compare.chosen;
+    // the branches that answer this fork: options, compared branches, and, once you chose among them, all of them
+    const opts = compareKids(c, m).filter(k => byBranch[k.id] && !imported(k) && (k.option || chosen || (cmp && cmp.cols.some(x => x.bid === k.id))));
     if (!opts.length) continue;
     const qid = keep(m.choiceId, m.ts); if (m.choiceId !== qid) { m.choiceId = qid; given = true; }
     const q = m.role === 'model' ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : m;
-    const dm = cmp && cmp.chosen && opts.some(k => k.id === cmp.chosen) ? Object.values(c.messages).find(x => x.flagged && x.decision && x.decision.choice === m.id && byBranch[x.branchId] && (x.branchId === cmp.chosen || isUnder(c, x.branchId, cmp.chosen))) : null;
-    const alt = !cmp || !cmp.relation || cmp.relation === 'alternatives';
+    const dm = chosen && opts.some(k => k.id === chosen) ? Object.values(c.messages).find(x => x.flagged && x.decision && x.decision.choice === m.id && byBranch[x.branchId] && (x.branchId === chosen || isUnder(c, x.branchId, chosen))) : null;
+    const alt = !m.compare || !m.compare.relation || m.compare.relation === 'alternatives';
     const name = bid => c.branches[bid] ? branchName(c.branches[bid], c) : 'a branch';
     nodes.push({ id: qid, type: 'Question', title: ((cmp && cmp.question) || sentenceOf(q ? q.text : m.text, 120) || 'A choice').slice(0, 120),
       description: dm ? `Answered: ${dm.decision.summary}` : `A choice point: ${opts.length} option${opts.length === 1 ? '' : 's'} explored from here.`, status: dm ? 'accepted' : 'open', parent: byBranch[b.id],
@@ -3367,9 +3373,11 @@ function thinkingStateFiles(c, quiet, mine) {
         n.generated = { by: call ? `mindbough-demo/${call.model || 'unknown'}` : 'human:me', at: iso(k.created) };
         if (call) n.sources.push({ resource: `/${session}#${call.id}`, title: 'The helper call that proposed it' });
       }
-      if (dm && alt && k.id !== cmp.chosen && n.status === 'rejected') {
+      if (dm && alt && k.id !== chosen && n.status === 'rejected') {
+        // why it lost: the comparison's "In short" for it, else the option that won
+        const col = cmp && cmp.cols.find(x => x.bid === k.id), short = col && String(col.summary || '').trim();
         n.revisions = [{ title: n.title, description: n.description, generated: n.generated || { by: 'human:me', at: iso(k.created) } }];
-        n.description = `Not chosen: ${n.description}`;
+        n.description = short ? `Not chosen: ${/[.!?…]$/.test(short) ? short : short + '.'} ${name(chosen)} was chosen.` : `Not chosen: ${name(chosen)} was chosen instead.`;
       }
     }
     let fid = null;
@@ -3401,6 +3409,13 @@ function thinkingStateFiles(c, quiet, mine) {
     if (dn && dn.type === 'Decision') {
       dn.parent = qid; dn.links = { ...(dn.links || {}), answers: [qid] };
       if (fid) dn.sources.push({ resource: `/nodes/${fid}.md`, title: 'The comparison' });
+    }
+    // the choices made here before it answered the same Question, and the later one supersedes them
+    for (const x of Object.values(c.messages).filter(x => x !== dm && x.decision && x.decision.choice === m.id && x.nodeId)) {
+      const on = nodeOf(x.nodeId), by = c.messages[x.decision.replacedBy], bn = by && by.nodeId && nodeOf(by.nodeId);
+      if (!on || on.type !== 'Decision' || on.status !== 'superseded' || !bn || bn.type !== 'Decision') continue;
+      on.parent = qid; on.links = { ...(on.links || {}), answers: [qid] };
+      bn.links = { ...(bn.links || {}), supersedes: [...((bn.links && bn.links.supersedes) || []), on.id] };
     }
   }
   const root = nodes[0];
@@ -3847,6 +3862,13 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     }
     m.nodeId = nid; used.add(nid);
   }
+  // a Decision that supersedes earlier ones (choosing again, spec W2): each earlier one knows the message that replaced it
+  const decAt = new Map(Object.values(convo.messages).filter(x => x.nodeId).map(x => [x.nodeId, x]));
+  for (const [nid, node] of nodes) {
+    const t = th(node), by = String(node.meta.type) === 'Decision' && decAt.get(nid);
+    if (!by || !Array.isArray(t.supersedes)) continue;
+    t.supersedes.map(String).map(x => decAt.get(x)).filter(x => x && x !== by && x.decision && !x.flagged).forEach(x => { x.decision.replacedBy = by.id; });
+  }
   // the facts remembered from this conversation's messages (spec §9); the demo's own storage keeps them with the settings
   for (const f of own ? [] : files) {
     const rel = f.name.slice(r.dir.length);
@@ -4061,6 +4083,7 @@ function adoptConvo(src) {
     const nm = c.messages[mid.get(k)];
     if (isObj(x.compare)) { const cmp = cmpOf(x.compare); if (cmp) nm.compare = cmp; }
     if (nm.decision && isObj(x.decision) && mid.has(x.decision.choice)) nm.decision.choice = mid.get(x.decision.choice);
+    if (nm.decision && isObj(x.decision) && mid.has(x.decision.replacedBy)) nm.decision.replacedBy = mid.get(x.decision.replacedBy);
   }
   const recOf = r => {
     const blocks = (Array.isArray(r.blocks) ? r.blocks : []).filter(isObj).slice(0, 20).map(b => {
