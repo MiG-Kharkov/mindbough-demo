@@ -632,9 +632,9 @@ const NEW_TITLE = 'New conversation';
 const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return (cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.8.0';
+const APP_VERSION = '0.9.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 1f8b284'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 61a739f'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -3805,8 +3805,8 @@ $('#keyHint').addEventListener('click', e => {
 // that every card of demo/FEATURES.md is covered and that WHATS_NEW has the current version.
 const HELP = [
   { id: 'what', title: 'What this is', cards: ['F-01', 'F-16'], body: `
-    <p>AI chats force thinking into one long thread: alternatives get mixed, the model forgets what you decided, you can't see what each step costs, and your work stays locked in one app. Mindbough keeps your thinking as a <b>tree you own</b>. Each idea gets a branch, and a request sends the model only that branch's path, your decisions and your memory. Every answer keeps a receipt: its model, its prompt and its tokens.</p>
-    <p>Everything is kept as a <b>Thinking State</b>: open files that any app or agent can read and continue. This app is the MVP of that format.</p>` },
+    <p>Long AI chats pollute their own context: every dead end rides along into the next answer, and the threads you were following get lost. Here you think in branches instead. Each branch sends the model only its own path, what a branch settles reaches the others as a decision, and what holds for you everywhere is memory. Every answer keeps a receipt: its model, what its prompt was built from, and its tokens.</p>
+    <p>Your work isn't locked in this app either: everything is kept as a <b>Thinking State</b>, open files that any app or agent can read and continue. This app is the MVP of that format.</p>` },
   { id: 'tour', title: 'The first 2 minutes', cards: [], body: `
     <ol><li>No key? Menu → <b>Try a sample conversation</b>, and pick one of three. Have one? <b>Settings</b> (the gear) → paste it.</li>
     <li>Ask something, then tap <b>Branch out</b> under the answer and ask a follow-up: the new column sees only its own path.</li>
@@ -3864,7 +3864,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Images in your messages: the paperclip attaches a photo or a screenshot, the model sees it on the branch’s path, and an export keeps it as a file.',
+  { version: '0.9.0', items: ['Images in your messages: the paperclip attaches a photo or a screenshot, the model sees it on the branch’s path, and an export keeps it as a file.',
     'Edits keep what was answered: <b>edited</b> opens a message’s versions, and a line on the first message an edit made out of date lets you regenerate it in place, keep it as valid, or answer in a new branch.',
     'Branches are answered at the same time: send in one, move to another and send there too. <b>Stop</b> stops the branch you are in, and options are answered all at once.',
     'Saving writes only the conversations that changed, and an answer still streaming is kept in its own Thinking State.',
@@ -3874,7 +3874,8 @@ const WHATS_NEW = [
     'Fixed: a choice whose branch you park or reject no longer stands, in the comparison, the prompts and the export, and <b>Undo</b> of a choice takes you back where you were.',
     'A session another tool wrote comes back from an export as it was read, line by line, with what you said here after it; a Thinking State you only opened comes back with no session added.',
     'Cards of another tool’s Thinking State say what node they show and who wrote it, nest as their nodes do, and have no <b>Answer</b>. A shared page holds the Thinking State itself, and gives it back as it holds it.',
-    'Fixed: every helper call stays in the export, a restored answer keeps its web searches, and an answer from <b>Branch out</b> under your message is another version of its answer.'] },
+    'Fixed: every helper call stays in the export, a restored answer keeps its web searches, and an answer from <b>Branch out</b> under your message is another version of its answer.',
+    'The samples are recorded again with this version.'] },
   { version: '0.8.0', items: ['Fixed: two tabs on the same conversation keep each other’s changes, and when the browser’s storage doesn’t answer, the demo says so instead of opening an old copy.',
     'A Thinking State made by another tool keeps, byte for byte, what you didn’t change when you export it: authors, sources, tags, memory, log and session entries. <b>Export all</b> writes each fact once.',
     'An answer Gemini cut short is tagged <b>cut off</b>, with the reason. An error has <b>Try again</b>, and can’t become a decision.',
