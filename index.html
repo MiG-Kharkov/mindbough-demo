@@ -245,6 +245,7 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 .dp-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .dp-actions .btn{padding:5px 10px}
 .btn.danger:hover{border-color:var(--danger);color:var(--danger)}
+.dp-det-area{margin-top:6px}
 .dp-area{display:block;width:100%;border:1px solid var(--accent);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;padding:8px;resize:vertical}
 .dp-hist{margin:8px 0 0;padding-left:18px;font-size:13px}
 .dp-hist li{margin:8px 0}
@@ -365,6 +366,9 @@ button.decision:not(:disabled):hover{box-shadow:0 0 0 3px var(--flag-soft)}
 .decision .dlabel svg.i{width:12px;height:12px}
 .decision .dtext{flex:1;min-width:0;overflow-wrap:anywhere}
 .decision .dtext i{color:var(--muted)}
+.decision .ddet,.dp-det{display:block;margin:4px 0 0;padding:0;list-style:none;font-size:13px;line-height:1.4}
+.decision .ddet span,.dp-det li{display:block;position:relative;padding-left:12px;margin:2px 0 0}
+.decision .ddet span::before,.dp-det li::before{content:'•';position:absolute;left:1px;color:var(--flag)}
 .dec-stale{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;margin:4px 2px 0;font-size:12.5px;color:var(--muted)}
 .dec-stale .linkbtn{font-size:13px;padding:6px 0}
 .to-out{color:var(--flag);font-weight:600}
@@ -633,9 +637,9 @@ const NEW_TITLE = 'New conversation';
 const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return (cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.9.0';
+const APP_VERSION = '0.10.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 63c24d7'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 5928154'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1226,11 +1230,12 @@ function msgHTML(c, m) {
     if (decEdit && decEdit.cid === c.id && decEdit.mid === m.id) {
       dec = `<div class="decision editing"><span class="dlabel">${ICON.flagOn}Decision</span>
         <textarea class="dec-area" rows="2" maxlength="300" aria-label="Decision summary" placeholder="One sentence: what was decided, and why">${esc(decEdit.draft ?? d.summary ?? '')}</textarea>
+        <textarea class="dec-area dec-det" rows="3" aria-label="Details, one per line" placeholder="Details, one per line: the conditions, numbers and trade-offs it rests on">${esc(decEdit.det ?? detailsOf(d).join('\n'))}</textarea>
         <div class="edit-actions"><span class="hint hint-desk">Enter — save · Esc — cancel</span>
           ${keyInput.value.trim() ? '<button class="btn" data-act="dec-auto" title="Let the model for summaries (Settings) write it">Write for me</button>' : ''}
           <button class="btn" data-act="dec-cancel">Cancel</button><button class="btn primary" data-act="dec-save">Save</button></div></div>`;
     } else {
-      const txt = d.summary ? esc(d.summary) : d.pending ? '<i>Writing a summary…</i>' : `<i>${RO ? 'No summary' : 'Add a one-line summary'}</i>`;
+      const txt = d.summary ? esc(d.summary) + (detailsOf(d).length ? `<span class="ddet">${detailsOf(d).map(x => `<span>${esc(x)}</span>`).join('')}</span>` : '') : d.pending ? '<i>Writing a summary…</i>' : `<i>${RO ? 'No summary' : 'Add a summary'}</i>`;
       dec = `<button class="decision" data-act="dec-edit" type="button"${RO ? ' disabled' : ' title="Edit the summary that goes into prompts"'}><span class="dlabel">${ICON.flagOn}Decision</span><span class="dtext">${txt}</span></button>`;
       const out = droppedAt(c, m.branchId);
       if (out && d.summary) dec += `<div class="dec-stale"><span>Not in prompts: “${esc(branchName(out, c))}” is ${esc(statusLabel(out).toLowerCase())}.</span></div>`;
@@ -1510,7 +1515,7 @@ $('#canvas').addEventListener('click', async e => {
   }
   if (act === 'flag') {
     m.flagged = !m.flagged;
-    // a flag makes the message a decision; its one-line summary is what later prompts carry (unflag keeps the text)
+    // a flag makes the message a decision; its summary, a sentence and its details, is what later prompts carry (unflag keeps the text)
     if (m.flagged) { if (!m.decision) m.decision = { summary: '', at: Date.now() }; delete m.decision.replacedBy; if (!m.decision.summary) summarize(c, m); }
   }
   if (act === 'dec-edit') { startDecisionEdit(c, m); return; }
@@ -1812,11 +1817,14 @@ function regenerateInPlace(c, m, model) {
 function laterDecisions(c, m) {
   if (!m.request || !Array.isArray(m.request.blocks)) return [];
   const rec = m.request.blocks.find(k => k.kind === 'decisions');
-  const had = new Set(rec && rec.text ? rec.text.split('\n').filter(l => l.startsWith('- ')).map(l => l.slice(2)) : []);
+  // each decision it was sent with, as the block wrote it: its line, and its details' lines under it
+  const sent = [];
+  for (const l of rec && rec.text ? rec.text.split('\n') : []) if (l.startsWith('- ')) sent.push(l); else if (l.startsWith('  - ') && sent.length) sent[sent.length - 1] += '\n' + l;
+  const had = new Set(sent);
   // by the decisions' messages (or nodes, from an opened Thinking State), else by their wording, for requests recorded before.
   // A decision it sent whose summary changed since counts too, marked changed: the answer had an earlier wording
   const named = d => rec && Array.isArray(rec.ids) ? rec.ids.includes(d.id) : rec && Array.isArray(rec.nodes) ? rec.nodes.includes(d.nodeId) : false;
-  return decisionsIn(c).filter(d => d !== m && !had.has(d.decision.summary) && !pathIds(c, d.id).includes(m.id)).map(d => named(d) ? Object.assign(Object.create(d), { changed: true }) : d);
+  return decisionsIn(c).filter(d => d !== m && !had.has(decisionLine(d.decision)) && !pathIds(c, d.id).includes(m.id)).map(d => named(d) ? Object.assign(Object.create(d), { changed: true }) : d);
 }
 // Your question at the end of a branch, with no answer after it: an option branch made unanswered, or its answer deleted (F-10)
 function waiting(c, m) { const b = c.branches[m.branchId]; return !!b && m.role === 'user' && b.msgIds[b.msgIds.length - 1] === m.id; }
@@ -1843,7 +1851,7 @@ function reaskHTML(c, m) {
   const what = fresh && !changed ? `${pl(fresh, 'decision')} came after this answer${fresh > 1 ? ', the latest' : ''}`
     : changed && !fresh ? `${pl(changed, 'decision')} changed after this answer`
     : `Since this answer: ${[fresh && pl(fresh, 'new decision'), changed && pl(changed, 'changed decision')].filter(Boolean).join(', ')}`;
-  return `<div class="reask" data-sig="${esc(later.map(d => d.id + d.decision.summary.length).join())}"><span>${ICON.flagOn}${what}${quote}</span><button class="btn" data-act="reask" title="Ask again: the new answer gets the current decisions and messages">Re-ask</button></div>`;
+  return `<div class="reask" data-sig="${esc(later.map(d => d.id + decisionLine(d.decision).length).join())}"><span>${ICON.flagOn}${what}${quote}</span><button class="btn" data-act="reask" title="Ask again: the new answer gets the current decisions and messages">Re-ask</button></div>`;
 }
 // Decisions changed: update those lines, leaving alone a message you are working in
 function refreshReask() {
@@ -1955,19 +1963,36 @@ document.addEventListener('keydown', e => {
 }, true);
 
 /* ---------------- decisions ---------------- */
-let decEdit = null; // { cid, mid, draft }
+let decEdit = null; // { cid, mid, draft, det }: the sentence and the details being typed
 function startDecisionEdit(c, m) {
   if (RO) return;
   decEdit = { cid: c.id, mid: m.id };
   rerenderMsg(c.id, m.id); scheduleLayout();
+  document.querySelectorAll(`.msg[data-mid="${m.id}"] .dec-area`).forEach(sizeEdit); // the sentence and the details, whole
   const ta = document.querySelector(`.msg[data-mid="${m.id}"] .dec-area`);
-  if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); setTimeout(() => ta.closest('.decision').scrollIntoView({ block: 'nearest' }), 50); }
+  if (ta) { scheduleLayout(); ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); setTimeout(() => ta.closest('.decision').scrollIntoView({ block: 'nearest' }), 50); }
+}
+// A decision's details: the specifics its sentence rests on, one point each, from a list or from lines typed (F-21)
+const detailsOf = d => (d && Array.isArray(d.details) ? d.details : []);
+const cleanDetails = v => (Array.isArray(v) ? v : String(v || '').split('\n')).filter(x => typeof x === 'string')
+  .map(x => x.replace(/^\s*[-*•]\s+/, '').replace(/\s+/g, ' ').trim().slice(0, 300)).filter(Boolean).slice(0, 6);
+// a decision as prompts carry it: its sentence, and its details under it
+const decisionLine = d => `- ${d.summary}${detailsOf(d).map(x => `\n  - ${x}`).join('')}`;
+// in a Decision node, its details are a section of its body, and of a revision's (spec §8.5); read back from either
+const detailsDoc = d => `## Details\n\n${detailsOf(d).map(x => `- ${x}`).join('\n')}`;
+const decisionBody = (d, text) => { const t = (text || '').trim(); return d && d.summary && detailsOf(d).length ? [detailsDoc(d), t && `## Message\n\n${t}`].filter(Boolean).join('\n\n') : t; }; // its details, then the message it quotes
+function detailsIn(body) {
+  const lines = String(body || '').replace(/\r\n?/g, '\n').split('\n'), at = lines.findIndex(l => /^## Details\s*$/.test(l)), out = [];
+  if (at < 0) return [];
+  for (const l of lines.slice(at + 1)) { if (/^#{1,6}\s/.test(l)) break; const x = l.match(/^\s*[-*]\s+(.*)$/); if (x) out.push(x[1]); }
+  return cleanDetails(out);
 }
 // Every change keeps the previous text (newest first, up to 10), so a decision can be rolled back
-function setDecision(m, summary, model, sig) {
-  const d = m.decision || (m.decision = { summary: '', at: Date.now() });
-  if (d.summary && d.summary !== summary) d.history = [{ summary: d.summary, at: d.at, ...(d.model ? { model: d.model } : {}) }, ...(d.history || [])].slice(0, 10);
+function setDecision(m, summary, model, sig, details) {
+  const d = m.decision || (m.decision = { summary: '', at: Date.now() }), next = summary ? cleanDetails(details) : []; // no sentence, no details
+  if (d.summary && (d.summary !== summary || detailsOf(d).join('\n') !== next.join('\n'))) d.history = [{ summary: d.summary, ...(detailsOf(d).length ? { details: d.details } : {}), at: d.at, ...(d.model ? { model: d.model } : {}) }, ...(d.history || [])].slice(0, 10);
   d.summary = summary; d.at = Date.now();
+  if (next.length) d.details = next; else delete d.details;
   if (model) d.model = model; else delete d.model; // no model = written by hand
   d.sig = sig || sigOf(m.text || ''); // the text the summary describes (F-21)
 }
@@ -1981,18 +2006,18 @@ function textChanged(c, m, before) {
   if (decisionStale(m) && d.model && helperModel('summary') && keyInput.value.trim()) summarize(c, m, true);
 }
 function saveDecision(c, m) {
-  const ta = document.querySelector(`.msg[data-mid="${m.id}"] .dec-area`);
-  setDecision(m, (ta ? ta.value : '').replace(/\s+/g, ' ').trim().slice(0, 300));
+  const ta = document.querySelector(`.msg[data-mid="${m.id}"] .dec-area:not(.dec-det)`), dt = document.querySelector(`.msg[data-mid="${m.id}"] .dec-det`);
+  setDecision(m, (ta ? ta.value : '').replace(/\s+/g, ' ').trim().slice(0, 300), undefined, undefined, dt ? dt.value : detailsOf(m.decision));
   decEdit = null; c.updated = Date.now(); save(); setTimeout(settled);
   rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline(); renderDecCount();
 }
-document.addEventListener('input', e => { if (decEdit && e.target.classList && e.target.classList.contains('dec-area')) decEdit.draft = e.target.value; });
+document.addEventListener('input', e => { if (decEdit && e.target.classList && e.target.classList.contains('dec-area')) { decEdit[e.target.classList.contains('dec-det') ? 'det' : 'draft'] = e.target.value; sizeEdit(e.target); scheduleLayout(); } });
 document.addEventListener('keydown', e => {
   if (!e.target.classList || !e.target.classList.contains('dec-area')) return;
   const el = e.target.closest('.msg'), c = cur(), m = c && el && c.messages[el.dataset.mid];
   if (!m) return;
   if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); decEdit = null; rerenderMsg(c.id, m.id); scheduleLayout(); }
-  else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); saveDecision(c, m); }
+  else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229 && (!e.target.classList.contains('dec-det') || e.ctrlKey || e.metaKey)) { e.preventDefault(); saveDecision(c, m); }
 }, true);
 // Helper calls use the cheapest model the key can reach (a lite model, then a flash one), not the one picked for chatting
 function cheapModel() {
@@ -2008,6 +2033,7 @@ const HELPER_TASKS = [
   { id: 'name', label: 'Names of branches and conversations', off: 'Off: name after the first message' },
   { id: 'options', label: 'Finding options' },
   { id: 'compare', label: 'Comparing branches' },
+  { id: 'memory', label: 'Memory drafts', off: 'Off: write them yourself' },
 ];
 function helperModel(task) {
   const v = db.helpers[task];
@@ -2016,7 +2042,7 @@ function helperModel(task) {
 }
 // Each helper call is kept on its conversation (F-30), and becomes a call entry of its session (spec §10.3, §14.8):
 // the task, the model, the prompt template it used, its tokens and a short text of what came back
-const PROMPT_IDS = { summary: 'summary@1', name: 'name@1', options: 'options@1', compare: 'compare@2' };
+const PROMPT_IDS = { summary: 'summary@2', name: 'name@1', options: 'options@1', compare: 'compare@2', memory: 'memory@1' };
 const usageOf = j => j && j.usageMetadata ? { prompt: j.usageMetadata.promptTokenCount | 0, answer: j.usageMetadata.candidatesTokenCount | 0, thoughts: j.usageMetadata.thoughtsTokenCount | 0 } : null;
 function recordCall(c, { task, model, prompt, mid, usage, output, error }) {
   if (!c || db.convos[c.id] !== c) return null;
@@ -2057,8 +2083,13 @@ async function summarize(c, m, force) {
   if (!model) return;
   const b = branchOf(c, m.id); if (!b) return;
   const q = m.role === 'model' ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
-  const prompt = 'Write the decision or key point of the message below as one short sentence (at most 25 words), in the language of the message. Reply with the sentence only.\n\n'
-    + (q ? `Question it answers:\n${withMarks(q).slice(0, 1500)}\n\n` : '') + `Message:\n${withMarks(m).slice(0, 6000)}`;
+  // the decision goes into every later prompt of the conversation, often without its message: so it keeps what was decided and
+  // the specifics it rests on, read from the whole message (a long one's conclusion is often at its end)
+  const prompt = 'Write the decision or key point of the message below, which the user flagged in their conversation. Every later prompt of the conversation, in every branch, carries what you write, often without the message, so it must keep what was decided and what it rests on. Read the whole message: its conclusion is often at the end.\n'
+    + '- decision: one sentence, at most 30 words: what was decided or recommended, and the main reason. When the message weighs options, name the one it recommends, or the one the user chose, not the list.\n'
+    + '- details: 2 to 5 short points, at most 25 words each, fewer for a short message: the specifics the decision rests on, such as conditions, numbers, names, limits, trade-offs and next steps. Take them from the message only, and leave out general advice and background.\n'
+    + 'Write in the language of the message.\n\n'
+    + (q ? `Question it answers:\n${withMarks(q).slice(0, 8000)}\n\n` : '') + `Message:\n${withMarks(m).slice(0, 40000)}`;
   const sig = sigOf(m.text || ''); // the text being summarized, even if it changes while the helper writes
   const live = () => { const lc = db.convos[c.id]; return [lc || c, (lc && lc.messages[m.id]) || m]; };
   m.decision.pending = true; inflight++; holdConvo(c.id);
@@ -2066,18 +2097,23 @@ async function summarize(c, m, force) {
   try {
     const r = await fetch(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: tempFor(model, 0.2) }),
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { ...tempFor(model, 0.2), responseMimeType: 'application/json',
+        responseSchema: { type: 'OBJECT', required: ['decision', 'details'], properties: { decision: { type: 'STRING' }, details: { type: 'ARRAY', items: { type: 'STRING' } } } } } }),
     });
     if (!r.ok) throw new Error(`Error ${r.status}`);
     const j = await r.json();
     const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
-    const text = parts.filter(p => p.text && !p.thought).map(p => p.text).join(' ').replace(/\s+/g, ' ').trim().replace(/^["“'«]+|["”'»]+$/g, '');
+    const raw = parts.filter(p => p.text && !p.thought).map(p => p.text).join(' '), found = raw.match(/\{[\s\S]*\}/);
+    let data = null; try { data = found && JSON.parse(found[0]); } catch (e) {}
+    // a reply that isn't the JSON asked for is read as the sentence alone, as replies were before
+    const text = data && typeof data === 'object' ? clean(data.decision, 300) : raw.replace(/\s+/g, ' ').trim().replace(/^["“'«]+|["”'»]+$/g, '');
+    const details = data && typeof data === 'object' ? cleanDetails(data.details) : [];
     // the conversation may have been replaced meanwhile (an Undo, another tab): write into the one shown now
     const [lc, lm] = live();
     const why = cutWhy(finishOf(j));
     recordCall(lc, { task: 'summary', model, prompt, mid: m.id, usage: usageOf(j), output: text, ...(why ? { error: why } : text ? {} : { error: 'empty reply' }) });
     if (!text || why) throw new Error('empty');
-    if (lm.decision && (force || !lm.decision.summary)) setDecision(lm, text.slice(0, 300), model, sig);
+    if (lm.decision && (force || !lm.decision.summary)) setDecision(lm, text.slice(0, 300), model, sig, details);
   } catch (err) {
     if (!/^empty$/.test(err.message)) recordCall(live()[0], { task: 'summary', model, prompt, mid: m.id, error: err.message });
     toast('Couldn’t write the summary. Write it yourself in the Decision box.');
@@ -2335,7 +2371,7 @@ function compareBlocks(c, m, kids, focus, cols, at) {
   const said = x => `${x.role === 'user' ? 'User' : 'Assistant'}: ${withMarks(x).slice(0, x.id === m.id ? 3000 : 1500)}`;
   const decisions = decisionsIn(c).filter(x => !under(x) && !(at && (x.decision.at || 0) > at && pathIds(c, x.id).includes(m.id))), memory = db.memory.filter(x => x.text);
   const blocks = [{ kind: 'fork', label: 'Conversation up to the fork', text: path.map(said).join('\n\n') }];
-  if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions in force:\n' + decisions.map(x => `- ${x.decision.summary}`).join('\n') });
+  if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions in force:\n' + decisions.map(x => decisionLine(x.decision)).join('\n') });
   if (memory.length) blocks.push({ kind: 'memory', label: `Memory · ${memory.length}`, text: 'About the user and their work:\n' + memory.map(x => `- ${x.text}`).join('\n') });
   if (focus) blocks.push({ kind: 'focus', label: 'Compare by', text: `The user asks to compare by: ${focus}` });
   kids.forEach((k, i) => { const col = cols && cols.find(x => x.bid === k.id);
@@ -3239,7 +3275,7 @@ function systemBlocks(c, skip) {
   const memory = db.memory.filter(x => x.text);
   if (memory.length) blocks.push({ kind: 'memory', label: `Memory · ${memory.length}`, text: 'Things to remember about the user and their work (shared by all conversations):\n' + memory.map(x => `- ${x.text}`).join('\n'), items: memory.map(itemIdOf) });
   const decisions = decisionsIn(c).filter(m => m.id !== skip);
-  if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions made in this conversation:\n' + decisions.map(m => `- ${m.decision.summary}`).join('\n'), ids: decisions.map(m => m.id) });
+  if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions made in this conversation:\n' + decisions.map(m => decisionLine(m.decision)).join('\n'), ids: decisions.map(m => m.id) });
   if (blocks.length) blocks.unshift({ kind: 'harness', label: 'Harness', text: HARNESS });
   return blocks;
 }
@@ -3635,7 +3671,7 @@ const shortDate = t => new Date(t).toLocaleString('en-US', { day: 'numeric', mon
 function renderDecisionsPanel() {
   const c = cur(); if (!c) return '';
   const list = flaggedIn(c), off = Object.values(c.messages).filter(m => !m.flagged && m.decision && m.decision.summary).sort((a, b) => a.ts - b.ts);
-  if (!list.length && !off.length) return `<p class="pv-empty">No decisions yet. Flag an answer, or your own message, to make it a decision: its one-line summary then goes into every prompt of this conversation.</p>`;
+  if (!list.length && !off.length) return `<p class="pv-empty">No decisions yet. Flag an answer, or your own message, to make it a decision: its summary, a sentence and its details, then goes into every prompt of this conversation.</p>`;
   const inPrompt = decisionsIn(c).length, n = list.length;
   return (RO ? `<p class="pv-note">${n} decision${n === 1 ? '' : 's'} flagged in this conversation, ${inPrompt} in force.</p>`
     : `<p class="pv-note">In the prompts of this conversation: ${inPrompt} of ${n} decision${n === 1 ? '' : 's'}. <button class="linkbtn" type="button" data-dp="preview"${hasDraft() ? '' : ' disabled title="Write a message first: the next prompt is built around it"'}>See the next prompt</button></p>`)
@@ -3644,15 +3680,16 @@ function renderDecisionsPanel() {
       const out = b && droppedAt(c, b.id);
       const meta = [b && branchName(b), d.summary && (d.model ? `by ${d.model}` : d.choice ? 'chosen by you' : 'by you'), decisionStale(m) && 'written for an earlier version of the message', d.at && shortDate(d.at), out && `not in prompts: “${branchName(out, c)}” is ${statusLabel(out).toLowerCase()}`].filter(Boolean).join(' · ');
       const body = panelEdit === m.id
-        ? `<textarea class="dp-area" rows="3" maxlength="300" aria-label="Decision summary">${esc(d.summary || '')}</textarea>
+        ? `<textarea class="dp-area" rows="3" maxlength="300" aria-label="Decision summary" placeholder="One sentence: what was decided, and why">${esc(d.summary || '')}</textarea>
+           <textarea class="dp-area dp-det-area" rows="4" aria-label="Details, one per line" placeholder="Details, one per line: the conditions, numbers and trade-offs it rests on">${esc(detailsOf(d).join('\n'))}</textarea>
            <div class="dp-actions"><button class="btn" data-dp="cancel">Cancel</button><button class="btn primary" data-dp="save">Save</button></div>`
-        : `<div class="dp-text">${d.summary ? esc(d.summary) : d.pending ? '<i>Writing a summary…</i>' : '<i>No summary yet, so it is not in prompts.</i>'}</div>
+        : `<div class="dp-text">${d.summary ? esc(d.summary) : d.pending ? '<i>Writing a summary…</i>' : '<i>No summary yet, so it is not in prompts.</i>'}</div>${d.summary && detailsOf(d).length ? `<ul class="dp-det">${detailsOf(d).map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
            <div class="dp-meta">${esc(meta)}</div>
            <div class="dp-actions"><button class="btn" data-dp="goto">Go to</button>${RO ? '' : '<button class="btn" data-dp="edit">Edit</button>'}
              ${keyInput.value.trim() && !RO ? '<button class="btn" data-dp="auto">Write for me</button>' : ''}
              ${hist.length ? `<button class="btn" data-dp="hist" aria-expanded="${panelHist === m.id}">History (${hist.length})</button>` : ''}
              ${RO ? '' : '<button class="btn danger" data-dp="remove" title="It leaves the prompts; the summary is kept">Unflag</button>'}</div>`;
-      const versions = panelHist === m.id && hist.length ? `<ol class="dp-hist">${hist.map((h, i) => `<li><span>${esc(h.summary)}</span><small>${esc(shortDate(h.at))}${h.model ? ' · ' + esc(h.model) : ' · by you'}</small>${RO ? '' : `<button class="btn" data-dp="restore" data-i="${i}">Restore</button>`}</li>`).join('')}</ol>` : '';
+      const versions = panelHist === m.id && hist.length ? `<ol class="dp-hist">${hist.map((h, i) => `<li><span>${esc(h.summary)}</span>${detailsOf(h).length ? `<ul class="dp-det">${detailsOf(h).map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}<small>${esc(shortDate(h.at))}${h.model ? ' · ' + esc(h.model) : ' · by you'}</small>${RO ? '' : `<button class="btn" data-dp="restore" data-i="${i}">Restore</button>`}</li>`).join('')}</ol>` : '';
       return `<article class="dp-card" data-mid="${m.id}">${body}${versions}</article>`;
     }).join('')
     + (off.length ? `<h3 class="set-h">Not in force</h3><p class="pv-note">Decisions the Thinking State keeps, out of the prompts: unflagged (parked), or replaced by a later choice.</p>` + off.map(m => {
@@ -3685,13 +3722,13 @@ function renderMemoryPanel() {
   const note = `<p class="pv-note">Memory is about you: your role, your preferences and the answers you want. It is shared by all conversations, so every request carries it. <button class="linkbtn" type="button" data-dp="preview"${hasDraft() ? '' : ' disabled title="Write a message first: the next prompt is built around it"'}>See the next prompt</button></p>`;
   const tools = RO || memEdit || memDraft ? '' : `<div class="mem-tools"><button class="btn primary" data-mem="add">+ Add a fact</button>${n > MEM_SEARCH_FROM ? `<input class="mem-search" type="search" data-mem-search placeholder="Search memory" aria-label="Search memory" value="${esc(memQuery)}">` : ''}</div>`;
   const sum = n ? `<p class="mem-sum">${n} fact${n === 1 ? '' : 's'} in every request · about ${Math.max(1, Math.round(chars / 4)).toLocaleString('en-US')} tokens</p>` : '';
-  const editor = (x, draft) => `<article class="dp-card mem" data-id="${x.id}"><textarea class="dp-area" rows="2" maxlength="300" aria-label="Fact" placeholder="What should every conversation know about you? Your role, or how you want answers">${esc(x.text)}</textarea>
-      <div class="dp-meta">${draft ? `${x.src ? `From “${esc(x.hint || '')}”. ` : ''}Not saved yet: Save adds it to every request.` : `${esc(factFrom(x))} · ${esc(shortDate(x.at))}${(x.history || []).length ? ` · reworded ${x.history.length} time${x.history.length === 1 ? '' : 's'}` : ''}`}</div>
+  const editor = (x, draft) => `<article class="dp-card mem" data-id="${x.id}"><textarea class="dp-area" rows="2" maxlength="300" aria-label="Fact" placeholder="${x.pending ? 'Writing a draft from this message…' : 'What should every conversation know about you? Your role, or how you want answers'}">${esc(x.text)}</textarea>
+      <div class="dp-meta">${draft ? `${x.src ? `${x.drafted ? `Drafted by ${esc(x.by.replace(/^mindbough-demo\//, ''))} from` : 'From'} “${esc(x.hint || '')}”. ` : ''}${x.none ? 'Nothing in it about you to remember: write your own, or Cancel.' : x.drafted ? 'Edit it, then Save: it goes into every request.' : 'Not saved yet: Save adds it to every request.'}` : `${esc(factFrom(x))}${x.by ? ` · by ${esc(x.by.replace(/^mindbough-demo\//, ''))}` : ''} · ${esc(shortDate(x.at))}${(x.history || []).length ? ` · reworded ${x.history.length} time${x.history.length === 1 ? '' : 's'}` : ''}`}</div>
       <div class="dp-actions">${draft ? '' : `<button class="btn danger" data-mem="delete">Delete</button>${factSource(x) ? '<button class="btn" data-mem="goto">Go to source</button>' : ''}`}<button class="btn" data-mem="cancel">Cancel</button><button class="btn primary" data-mem="save"${x.text.trim() ? '' : ' disabled'}>Save</button></div></article>`;
   const draft = memDraft ? editor(memDraft, true) : '';
   if (!n) return note + tools + draft + (memDraft ? '' : `<p class="pv-empty">Nothing yet. Add who you are, your role or how you like answers, or use <b>Remember</b> under a message.</p>`);
   const rows = db.memory.map(x => memEdit === x.id ? editor(x, false)
-    : `<article class="dp-card mem row" data-id="${x.id}"${factSource(x) ? ' data-source' : ''}${factMatches(x, q) ? '' : ' hidden'}><button class="mem-row" type="button" data-mem="edit" aria-label="Edit this fact"><span class="dp-text">${esc(x.text)}</span><span class="dp-meta">${esc(factFrom(x))} · ${esc(shortDate(x.at))}${(x.history || []).length ? ` · reworded ${x.history.length} time${x.history.length === 1 ? '' : 's'}` : ''}</span></button></article>`).join('');
+    : `<article class="dp-card mem row" data-id="${x.id}"${factSource(x) ? ' data-source' : ''}${factMatches(x, q) ? '' : ' hidden'}><button class="mem-row" type="button" data-mem="edit" aria-label="Edit this fact"><span class="dp-text">${esc(x.text)}</span><span class="dp-meta">${esc(factFrom(x))}${x.by ? ` · by ${esc(x.by.replace(/^mindbough-demo\//, ''))}` : ''} · ${esc(shortDate(x.at))}${(x.history || []).length ? ` · reworded ${x.history.length} time${x.history.length === 1 ? '' : 's'}` : ''}</span></button></article>`).join('');
   const none = `<p class="pv-empty" data-mem-none${db.memory.some(x => factMatches(x, q)) ? ' hidden' : ''}>No fact matches.</p>`;
   return note + tools + draft + sum + rows + none;
 }
@@ -3734,10 +3771,35 @@ function rememberFrom(c, m) {
   panelEdit = panelHist = null; memQuery = '';
   const known = db.memory.find(x => x.src && x.src.cid === c.id && x.src.mid === m.id);
   if (known) { memDraft = null; memEdit = known.id; openContextPanel('memory'); toast('Already remembered: edit it here'); return; }
-  // memory is about you: the draft starts empty, for what every conversation should know, and says which message it is from
-  memDraft = { id: uid(), text: '', at: Date.now(), src: { cid: c.id, mid: m.id }, from: c.title, hint: snippetOf(m.text || '', 70) };
+  // memory is about you: the model for memory drafts writes what from this message every conversation should know, for you to
+  // edit; without a key, or with it off, the draft starts empty. It says which message it is from
+  const model = keyInput.value.trim() && (m.text || imgsOf(m).length) ? helperModel('memory') : null;
+  memDraft = { id: uid(), text: '', at: Date.now(), src: { cid: c.id, mid: m.id }, from: c.title, hint: snippetOf(m.text || '', 70), ...(model ? { pending: true } : {}) };
   memEdit = null;
   openContextPanel('memory');
+  if (model) draftFact(c, m, memDraft);
+}
+// One or two sentences about you from a message, by the model for memory drafts; the draft keeps them as the model's words until
+// you change them (P3)
+async function draftFact(c, m, draft) {
+  const b = branchOf(c, m.id);
+  const q = m.role === 'model' && b ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
+  const known = db.memory.filter(x => x.text).map(x => `- ${x.text}`).join('\n');
+  const prompt = 'Draft one fact for the user\'s memory from the conversation message below. Memory goes into every future conversation with this user, so the fact must stay true and useful outside this conversation: who the user is, their role and work, their projects and setup, their constraints, and their preferences, including how they want answers. Leave out the details of this one topic, and anything the message doesn\'t say. Write one or two short sentences in the first person ("I …"), at most 40 words, in the language of the message. If there is nothing lasting about the user, reply with an empty fact.'
+    + (known ? `\n\nAlready in memory (don't repeat these):\n${known.slice(0, 3000)}` : '')
+    + (q ? `\n\nThe user's question:\n${withMarks(q).slice(0, 4000)}` : '') + `\n\nMessage (${m.role === 'user' ? 'by the user' : 'by the assistant'}):\n${withMarks(m).slice(0, 20000)}`;
+  let text = '', model = '';
+  try {
+    const r = await helperJSON(prompt, { type: 'OBJECT', required: ['fact'], properties: { fact: { type: 'STRING' } } }, 'memory', { c, mid: m.id, output: d => d.fact });
+    text = clean(r.data && r.data.fact, 300); model = r.model;
+  } catch (e) { toast('Couldn’t draft the fact: write it yourself'); }
+  if (memDraft !== draft) return; // closed, or another draft opened meanwhile
+  delete draft.pending;
+  const ta = document.querySelector(`#sheetDyn .dp-card.mem[data-id="${draft.id}"] .dp-area`);
+  if (ta && ta.value.trim()) return; // you started writing: your words stay
+  if (text) { draft.text = text; draft.drafted = text; draft.by = `mindbough-demo/${model}`; }
+  else if (model) draft.none = true;
+  if (sheetView && sheetView.context) $('#sheetDyn').innerHTML = renderContextPanel();
 }
 // The message a fact came from shows it is remembered
 function paintFactSource(x) { if (x && x.src && db.current === x.src.cid && db.convos[x.src.cid] && db.convos[x.src.cid].messages[x.src.mid]) { rerenderMsg(x.src.cid, x.src.mid); scheduleLayout(); } }
@@ -3754,8 +3816,8 @@ function contextPanelClick(e) {
     case 'edit': memDraft = null; memEdit = x.id; break;
     case 'cancel': if (x === memDraft) memDraft = null; memEdit = null; break;
     case 'save': { const text = card.querySelector('.dp-area').value.replace(/\s+/g, ' ').trim().slice(0, 300);
-      if (x === memDraft) { if (text) { const { hint, ...fact } = memDraft; db.memory.unshift({ ...fact, text, at: Date.now() }); memOp('add', db.memory[0]); if (writing()) factsHere.add(memDraft.id); } memDraft = null; }
-      else if (text) { if (text !== x.text) x.history = [{ text: x.text, at: x.at }, ...(x.history || [])].slice(0, 10); Object.assign(x, { text, at: Date.now() }); memOp('edit', x); } else { drop(x.id); memOp('del', x); }
+      if (x === memDraft) { if (text) { const { hint, pending, drafted, none, by, ...fact } = memDraft; db.memory.unshift({ ...fact, text, at: Date.now(), ...(drafted && text === drafted ? { by } : {}) }); memOp('add', db.memory[0]); if (writing()) factsHere.add(memDraft.id); } memDraft = null; }
+      else if (text) { if (text !== x.text) { x.history = [{ text: x.text, at: x.at, ...(x.by ? { by: x.by } : {}) }, ...(x.history || [])].slice(0, 10); delete x.by; } Object.assign(x, { text, at: Date.now() }); memOp('edit', x); } else { drop(x.id); memOp('del', x); }
       memEdit = null; save(); paintFactSource(x); break; }
     case 'delete': { const at = db.memory.indexOf(x); drop(x.id); memOp('del', x); memEdit = null; save(); paintFactSource(x);
       toast('Deleted the fact', { label: 'Undo', fn: () => { if (db.memory.some(y => y.id === x.id)) return; db.memory.splice(Math.min(at, db.memory.length), 0, x); memOp('add', x); save(); refreshContextPanel(); paintFactSource(x); renderDecCount(); toast('Fact restored'); } });
@@ -3778,25 +3840,27 @@ function decisionsPanelClick(e) {
     case 'goto': jumpAway(); closeSheet(); goToMessage(m.id); showBack(); return;
     case 'edit': panelEdit = m.id; panelHist = null; break;
     case 'cancel': panelEdit = null; break;
-    case 'save': setDecision(m, card.querySelector('.dp-area').value.replace(/\s+/g, ' ').trim().slice(0, 300)); panelEdit = null; c.updated = Date.now(); save(); break;
+    case 'save': setDecision(m, card.querySelector('.dp-area:not(.dp-det-area)').value.replace(/\s+/g, ' ').trim().slice(0, 300), undefined, undefined, card.querySelector('.dp-det-area').value); panelEdit = null; c.updated = Date.now(); save(); break;
     case 'auto': summarize(c, m, true).then(refreshDecisions); break;
     case 'hist': panelHist = panelHist === m.id ? null : m.id; break;
     case 'reflag': m.flagged = true; delete m.decision.replacedBy; c.updated = Date.now(); save(); rerenderMsg(c.id, m.id); toast('Flagged again: it goes into the prompts'); break;
-    case 'restore': { const i = +btn.dataset.i, h = m.decision.history[i]; m.decision.history.splice(i, 1); setDecision(m, h.summary, h.model); c.updated = Date.now(); save(); break; }
+    case 'restore': { const i = +btn.dataset.i, h = m.decision.history[i]; m.decision.history.splice(i, 1); setDecision(m, h.summary, h.model, undefined, h.details); c.updated = Date.now(); save(); break; }
     case 'remove': { m.flagged = false; panelEdit = panelHist = null; c.updated = Date.now(); save(); rerenderMsg(c.id, m.id);
       const cid = c.id, mid = m.id;
       toast('Unflagged: it leaves the prompts', { label: 'Undo', fn: () => { const lc = db.convos[cid], lm = lc && lc.messages[mid]; if (!lm) return; lm.flagged = true; lc.updated = Date.now(); save(); if (db.current === cid) { rerenderMsg(cid, mid); renderOutline(); renderDecCount(); } refreshDecisions(); toast('Flagged again'); } });
       break; }
   }
   refreshDecisions();
-  if (panelEdit) { const ta = $('.dp-area'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
+  if (panelEdit) { $('#sheetDyn').querySelectorAll('.dp-area').forEach(sizeEdit); const ta = $('.dp-area'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
   setTimeout(settled); // once no decision is being edited
 }
+// a decision's sentence and details, and a fact, grow as you type
+document.addEventListener('input', e => { if (e.target.classList && e.target.classList.contains('dp-area')) sizeEdit(e.target); });
 // a fact is saved once it says something
 document.addEventListener('input', e => { const a = e.target.closest && e.target.closest('.mem .dp-area'); const b = a && a.closest('.dp-card').querySelector('[data-mem="save"]'); if (b) b.disabled = !a.value.trim(); });
 document.addEventListener('keydown', e => {
   if (!e.target.classList || !e.target.classList.contains('dp-area')) return;
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); e.target.closest('.dp-card').querySelector('[data-dp="save"], [data-mem="save"]').click(); }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229 && (!e.target.classList.contains('dp-det-area') || e.ctrlKey || e.metaKey)) { e.preventDefault(); e.target.closest('.dp-card').querySelector('[data-dp="save"], [data-mem="save"]').click(); }
 });
 $('#openDecisions').onclick = () => { panelEdit = panelHist = memEdit = null; openContextPanel('decisions'); };
 $('#openMemory').onclick = () => { panelEdit = panelHist = memEdit = null; memQuery = ''; openContextPanel('memory'); };
@@ -3817,7 +3881,7 @@ const HELP = [
     <li>Ask something, then tap <b>Branch out</b> under the answer and ask a follow-up: the new column sees only its own path.</li>
     <li>Tap the <b>flag</b> under an answer you agree with: it becomes a decision that every prompt of the conversation carries.</li>
     <li>Go <b>Back</b> to the first column, write a question, and tap <b>Prompt</b> above the message box (on a phone, the layers icon): your next prompt, block by block. The decision is in it, and <b>Not in this prompt</b> counts the branch you opened, which isn't.</li>
-    <li>Tap the <b>bookmark</b> under a message, write what every conversation should know about you, and <b>Save</b>: that fact now goes into every request.</li>
+    <li>Tap the <b>bookmark</b> under a message: with a key, the model drafts what in it every conversation should know about you. Edit it and <b>Save</b>: that fact now goes into every request.</li>
     <li>Menu → <b>⋯</b> on a conversation → <b>Export as a Thinking State</b>: a .zip any app or agent can read.</li></ol>` },
   { id: 'start', title: 'Getting started', cards: ['F-02', 'F-03', 'F-15', 'F-18', 'F-36'], body: `
     <ul><li><b>Settings</b> (the gear, top right): paste a Gemini API key. It stays in this browser and goes only to Google's Gemini API. With a free key, Google may use what you send to improve its products, and people may read it: keep private matters out, or use a paid key.</li>
@@ -3844,9 +3908,9 @@ const HELP = [
     <li><b>Choose</b> turns the chosen branch's last answer into a decision, "Chose X over Y", folds the others and sets the statuses, also without <b>Compare with AI</b>. If that answer holds your own decision, it asks first. <b>Undo</b> in the toast puts it all back, and takes you back to where you were. Choose another branch later, and the new choice replaces the earlier one in prompts and in the export; the branch chosen reads <b>Chosen ✓</b>. Park or reject the chosen branch, and the choice no longer holds until you open it again.</li></ul>` },
   { id: 'context', title: 'Decisions, memory and the prompt', cards: ['F-08', 'F-09', 'F-20', 'F-21', 'F-22', 'F-23', 'F-31'], body: `
     <p class="help-why">Say it once: every request carries it.</p>
-    <ul><li>The <b>flag</b> under a message makes it a decision: a one-line summary that every prompt of the conversation carries. Tap the Decision box to edit it, or <b>Write for me</b>. When the message changes (a regeneration, an edit, a Restore), a summary the helper wrote is written again; yours says it was written for an earlier version, with <b>Update</b> and <b>Keep</b>.</li>
+    <ul><li>The <b>flag</b> under a message makes it a decision: one sentence, what was decided and why, and under it the details it rests on (conditions, numbers, trade-offs), read from the whole message. Every prompt of the conversation carries them. Tap the Decision box to edit them, a detail per line, or <b>Write for me</b>. When the message changes (a regeneration, an edit, a Restore), a summary the helper wrote is written again; yours says it was written for an earlier version, with <b>Update</b> and <b>Keep</b>.</li>
     <li><b>⚑</b> in the top bar opens this conversation's decisions, with history and restore, and below them those not in force (unflagged, or replaced by a later choice); <b>🔖</b> next to it opens your memory. <b>Go to</b> jumps to a message, and <b>← Back</b> above the composer returns to where you were.</li>
-    <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) opens an empty one, for you to write about yourself, saved when you tap <b>Save</b>. Tap a fact to edit or delete it; with many facts, search them.</li>
+    <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) opens one the model for memory drafts writes from that message: what in it holds for you everywhere, for you to edit, and saved only when you tap <b>Save</b>. Without a key, or with memory drafts off, it starts empty. Tap a fact to edit or delete it; with many facts, search them.</li>
     <li>The <b>eye</b> under a message excludes it from history: the model doesn't see it, on this branch and the ones that continue from it. Tap it again to include it. A flagged message keeps its decision in the prompts: only its text leaves the history.</li>
     <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. Prompt views show each message as the model saw it, with ✎ on what changed since. <b>Prompt</b> above the message box previews your next prompt, once you have written it: it has the whole path so far, while an answer's prompt has the turns before its question.</li>
     <li>An answer written before later decisions, or before a message above it changed, says so: <b>Re-ask</b> writes it again with them. Re-asking in the middle of a chain opens a new branch, which says what it asks again, and the old answer says where it was asked.</li></ul>` },
@@ -3869,7 +3933,9 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['<b>Send</b> and <b>Prompt</b> wait until there is something to send, and each prompt view says whether it shows what an answer got or what your next message would send.'] },
+  { version: '0.10.0', items: ['<b>Decisions</b> keep their details: one sentence, what was decided and why, and under it the conditions, numbers and trade-offs it rests on, read from the whole message. Both go into every prompt, and you can edit them.',
+    '<b>Remember</b> under a message drafts the fact for you: what in it every conversation should know about you, to edit and save.',
+    '<b>Send</b> and <b>Prompt</b> wait until there is something to send, and each prompt view says whether it shows what an answer got or what your next message would send.'] },
   { version: '0.9.0', items: ['Images in your messages: the paperclip attaches a photo or a screenshot, the model sees it on the branch’s path, and an export keeps it as a file.',
     'Edits keep what was answered: <b>edited</b> opens a message’s versions, and a line on the first message an edit made out of date lets you regenerate it in place, keep it as valid, or answer in a new branch.',
     'Branches are answered at the same time: send in one, move to another and send there too. <b>Stop</b> stops the branch you are in, and options are answered all at once.',
@@ -4013,12 +4079,12 @@ async function exportAllStates() {
     taken.add(x.itemId);
     const c = x.src && db.convos[x.src.cid], m = c && c.messages[x.src.mid];
     const text = x.text.replace(/\s+/g, ' ').trim();
-    items.push({ id: x.itemId, title: shortTitle(text), description: text, at: isoOf(x.at), thinking: memThinking(x),
+    items.push({ id: x.itemId, title: shortTitle(text), description: text, at: isoOf(x.at), thinking: memThinking(x), ...(x.by ? { by: x.by } : {}),
       source: m && c.tsId && c.sessionId ? { resource: `mindbough://${c.tsId}/sessions/${c.sessionId}.jsonl#${m.id}`, title: c.title } : null });
   }
   items.sort((a, b) => (a.id < b.id ? -1 : 1));
   files.push({ name: 'home/memory/index.md', text: '# Memory\n\n' + (items.length ? items.map(x => `* [${x.title}](${x.id}.md) - ${x.description}`).join('\n') : '_Nothing remembered yet._') + '\n' });
-  items.forEach(x => files.push({ name: `home/memory/${x.id}.md`, text: ['---', 'type: Memory', `title: ${yq(x.title)}`, `description: ${yq(x.description)}`, `generated: { by: "human:me", at: ${yq(x.at)} }`,
+  items.forEach(x => files.push({ name: `home/memory/${x.id}.md`, text: ['---', 'type: Memory', `title: ${yq(x.title)}`, `description: ${yq(x.description)}`, `generated: { by: ${yq(x.by || 'human:me')}, at: ${yq(x.at)} }`,
     ...(x.source ? ['sources:', `  - { resource: ${yq(x.source.resource)}, title: ${yq(x.source.title)} }`] : []), ...x.thinking, '---', ''].join('\n') }));
   save(); // ids given on the way are kept
   download(`mindbough-${stamp()}.zip`, zipFiles(files, latest || Date.now()), 'application/zip');
@@ -4026,7 +4092,7 @@ async function exportAllStates() {
 }
 // A memory item's earlier wordings (thinking.revisions), newest first, as the demo keeps them
 const memHistoryOf = fm => (fm.meta.thinking && typeof fm.meta.thinking === 'object' && Array.isArray(fm.meta.thinking.revisions) ? fm.meta.thinking.revisions : [])
-  .filter(r => r && typeof r === 'object' && r.description).slice(0, 10).map(r => { const at = Date.parse(r.generated && r.generated.at); return { text: String(r.description).replace(/\s+/g, ' ').trim().slice(0, 300), at: Number.isFinite(at) ? at : 0 }; });
+  .filter(r => r && typeof r === 'object' && r.description).slice(0, 10).map(r => { const at = Date.parse(r.generated && r.generated.at); const by = r.generated && r.generated.by; return { text: String(r.description).replace(/\s+/g, ' ').trim().slice(0, 300), at: Number.isFinite(at) ? at : 0, ...(actorOk(by) && by !== 'human:me' ? { by } : {}) }; });
 // A Mindbough home in a zip (home/memory/<id>.md): global memory items, linked to the conversations they came from when those are here
 function homeFacts(files) {
   const out = [];
@@ -4037,7 +4103,8 @@ function homeFacts(files) {
     const src = (Array.isArray(fm.meta.sources) ? fm.meta.sources : []).find(x => x && /^mindbough:\/\/[0-9]{8}-[0-9a-z]{6}\/sessions\/[^#]+#./.test(String(x.resource || '')));
     const at = Date.parse(fm.meta.generated && fm.meta.generated.at);
     const history = memHistoryOf(fm);
-    out.push({ text: String(fm.meta.description).replace(/\s+/g, ' ').trim().slice(0, 300), at: Number.isFinite(at) ? at : Date.now(), itemId: m[2], ...(history.length ? { history } : {}),
+    const by = fm.meta.generated && fm.meta.generated.by; // a helper's words stay the helper's (P3)
+    out.push({ text: String(fm.meta.description).replace(/\s+/g, ' ').trim().slice(0, 300), at: Number.isFinite(at) ? at : Date.now(), itemId: m[2], ...(history.length ? { history } : {}), ...(actorOk(by) && by !== 'human:me' ? { by } : {}),
       ...(src ? { bundle: String(src.resource).slice(12, 27), mid: String(src.resource).split('#')[1], ...(typeof src.title === 'string' && src.title ? { from: src.title.slice(0, 200) } : {}) } : {}) });
   }
   return out;
@@ -4075,7 +4142,7 @@ const TS_TYPES = ['Thought', 'Question', 'Hypothesis', 'Finding', 'Decision', 'A
 const cutText = (x, max) => { if (x.length <= max) return x; const s = x.slice(0, max - 1), k = s.lastIndexOf(' '); return (k > max * 0.7 ? s.slice(0, k) : s).replace(/[\s,;:–—-]+$/, '') + '…'; };
 const sentenceOf = (t, max) => cutText(firstSentence(plain(t || '')), max);
 // A memory item's earlier wordings, newest first, as thinking.revisions lines of its document (spec §9.2, W11)
-const memRevisions = x => (Array.isArray(x.history) ? x.history : []).filter(h => h && h.text).slice(0, 10).map(h => { const t = h.text.replace(/\s+/g, ' ').trim(); return `    - { title: ${yq(shortTitle(t))}, description: ${yq(t)}, generated: { by: "human:me", at: ${yq(isoOf(h.at))} } }`; });
+const memRevisions = x => (Array.isArray(x.history) ? x.history : []).filter(h => h && h.text).slice(0, 10).map(h => { const t = h.text.replace(/\s+/g, ' ').trim(); return `    - { title: ${yq(shortTitle(t))}, description: ${yq(t)}, generated: { by: ${yq(h.by || 'human:me')}, at: ${yq(isoOf(h.at))} } }`; });
 const memThinking = x => { const r = memRevisions(x); return r.length ? ['thinking:', '  revisions:', ...r] : []; };
 // no regex lookbehind: it is a syntax error before iOS 16.4 and would stop the whole app (CI checks for it)
 const shortTitle = t => { const w = plain(t).replace(/([.!?])\s/, '$1\n').split(/\n|[:;]\s| [—–-] /)[0].replace(/\.$/, '').split(/\s+/).filter(Boolean); return w.slice(0, 10).join(' ') + (w.length > 10 ? '…' : ''); };
@@ -4099,7 +4166,7 @@ function nodeDoc(n, ids) {
   for (const [k, v] of Object.entries(n.links || {})) { const to = v.filter(x => ids.has(x)); if (to.length) out.push(`  ${k}: [${to.join(', ')}]`); }
   if (n.revisions && n.revisions.length) {
     out.push('  revisions:');
-    n.revisions.forEach(r => out.push(`    - { ${['title', 'description'].filter(k => r[k] != null).map(k => `${k}: ${yq(r[k])}, `).join('')}generated: { by: ${yq(r.generated.by)}, at: ${yq(r.generated.at)} } }`)); // the fields that changed (§8.5)
+    n.revisions.forEach(r => out.push(`    - { ${['title', 'description', 'body'].filter(k => r[k] != null).map(k => `${k}: ${yq(r[k])}, `).join('')}generated: { by: ${yq(r.generated.by)}, at: ${yq(r.generated.at)} } }`)); // the fields that changed (§8.5)
   }
   if (n.ext) out.push('  ext:', '    mindbough-demo:', ...Object.entries(n.ext).map(([k, v]) => `      ${k}: ${yq(String(v))}`)); // spec §5.3
   return out.concat('---', '', n.body || '').join('\n').trimEnd() + '\n';
@@ -4268,12 +4335,13 @@ function thinkingStateFiles(c, quiet, mine, all) {
       const did = m.node && m.node.id && m.node.id !== id && !taken.has(m.node.id) ? m.node.id : keep(m.nodeId, m.ts); taken.add(did);
       if (!(m.node && m.node.id === did) && m.nodeId !== did) { m.nodeId = did; given = true; }
       const actor = x => x.model ? `mindbough-demo/${x.model}` : 'human:me';
-      const revisions = (d.history || []).filter(h => h.summary).map(h => ({ title: sentenceOf(h.summary, 120), description: h.summary, generated: { by: actor(h), at: iso(h.at) } }));
+      const revisions = (d.history || []).filter(h => h.summary).map(h => ({ title: sentenceOf(h.summary, 120), description: h.summary, ...(detailsOf(h).length ? { body: detailsDoc(h) } : {}), generated: { by: actor(h), at: iso(h.at) } }));
       const by = d.replacedBy && c.messages[d.replacedBy], replaced = !m.flagged && by && by.flagged; // chosen again at the same fork (spec W2)
       nodes.push({ id: did, type: 'Decision', title: sentenceOf(summary, 120), description: summary, status: replaced ? 'superseded' : !m.flagged ? 'parked' : d.summary ? 'accepted' : 'open', parent: id, revisions,
         generated: { by: m.decision && m.decision.summary ? (m.decision.model ? `mindbough-demo/${m.decision.model}` : 'human:me') : (m.role === 'model' && m.model ? `mindbough-demo/${m.model}` : 'human:me'),
           at: isoOf((m.decision && m.decision.at) || m.ts) },
-        sources: [{ resource: `/${session}#${m.id}`, title: 'The flagged message', author: m.role === 'model' ? `mindbough-demo/${m.model || 'unknown'}` : 'human:me' }], body: (m.text || '').trim() });
+        sources: [{ resource: `/${session}#${m.id}`, title: 'The flagged message', author: m.role === 'model' ? `mindbough-demo/${m.model || 'unknown'}` : 'human:me' }],
+        body: decisionBody(d, m.text) });
     }
   }
   // options, comparisons and choices (spec §14.2–14.4): the message branches continue from is a choice point, a Question;
@@ -4355,7 +4423,7 @@ function thinkingStateFiles(c, quiet, mine, all) {
     const from = c.messages[x.src.mid], node = from && byBranch[from.branchId];
     const text = x.text.replace(/\s+/g, ' ').trim();
     const sources = [node && { resource: `/nodes/${node}.md`, title: branchName(c.branches[from.branchId], c) }, from && { resource: `/${session}#${from.id}`, title: 'The message it was remembered from' }].filter(Boolean);
-    return { id: iid, title: shortTitle(text), description: text, at: iso(x.at), sources, thinking: memThinking(x) };
+    return { id: iid, title: shortTitle(text), description: text, at: iso(x.at), sources, thinking: memThinking(x), ...(x.by ? { by: x.by } : {}) };
   }).sort((a, b) => (a.id < b.id ? -1 : 1));
   const kids = {}; nodes.forEach(n => { if (n.parent) (kids[n.parent] = kids[n.parent] || []).push(n); });
   const tree = [], walked = new Set(); const walk = (n, d) => { if (walked.has(n.id)) return; walked.add(n.id); tree.push(`${'  '.repeat(d)}* [${n.title.replace(/[[\]]/g, '')}](${n.id}.md) - ${n.type} · ${n.status}: ${n.description}`); (kids[n.id] || []).forEach(k => walk(k, d + 1)); };
@@ -4366,7 +4434,7 @@ function thinkingStateFiles(c, quiet, mine, all) {
     { name: 'index.md', text: `---\nokf_version: "0.2"\n---\n\n# Thinking State\n\n* [${c.title.replace(/[[\]]/g, '')}](README.md) - ${about.replace(/\s+/g, ' ')}\n* [Thought tree](nodes/index.md) - ${nodes.length} node${nodes.length === 1 ? '' : 's'}\n* [Memory](memory/index.md) - ${items.length} item${items.length === 1 ? '' : 's'}\n* [Log](log.md) - how the thinking changed, newest first\n` },
     { name: 'nodes/index.md', text: `# Thought tree\n\n${tree.join('\n')}\n` },
     { name: 'memory/index.md', text: '# Memory\n\n' + (items.length ? items.map(x => `* [${x.title}](${x.id}.md) - ${x.description}`).join('\n') : '_Nothing remembered yet: `mb.py remember <dir> "…" --by <actor>` adds an item._') + '\n' },
-    ...items.map(x => ({ name: `memory/${x.id}.md`, text: ['---', 'type: Memory', `title: ${yq(x.title)}`, `description: ${yq(x.description)}`, `generated: { by: "human:me", at: ${yq(x.at)} }`,
+    ...items.map(x => ({ name: `memory/${x.id}.md`, text: ['---', 'type: Memory', `title: ${yq(x.title)}`, `description: ${yq(x.description)}`, `generated: { by: ${yq(x.by || 'human:me')}, at: ${yq(x.at)} }`,
       ...(x.sources.length ? ['sources:', ...x.sources.map(y => `  - { resource: ${yq(y.resource)}, title: ${yq(y.title)} }`)] : []), ...x.thinking, '---', ''].join('\n') })),
     { name: 'log.md', text: logOf(c, nodes, byBranch, iso) },
     { name: '.gitignore', text: '# raw interaction logs may hold private data\nsessions/\n.mindbough/\n' },
@@ -4550,7 +4618,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
     const vs = versionsOf(m), hit = d.sig ? vs.map(v => sigOf(v.text || '')).lastIndexOf(d.sig) : -1, k = hit >= 0 ? hit : vs.length - 1, v = vs[k];
     src.resource = `/sessions/${c.sessionId}.jsonl#${ids[k] || ids[ids.length - 1]}`;
     src.author = m.role === 'model' && !v.edited ? `mindbough-demo/${v.model || 'unknown'}` : 'human:me';
-    n.body = (v.text || '').trim();
+    n.body = decisionBody(d, v.text);
   }
   // JSON.stringify leaves U+2028, U+2029 and U+0085 as they are, and a reader splitting on every line break would cut the line
   return lines.map(x => JSON.stringify(x).replace(/[\u2028\u2029\u0085]/g, ch => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'))).join('\n') + '\n';
@@ -4938,8 +5006,9 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     const t = th(node), status = TS_STATUSES.includes(t.status) ? t.status : 'open', by = isObj(node.meta.generated) ? String(node.meta.generated.by || '') : '';
     if (status === 'accepted' || status === 'open') m.flagged = true;
     if (status !== 'open') {
-      m.decision = { summary: String(node.meta.description || node.meta.title || '').replace(/\s+/g, ' ').trim().slice(0, 300), at: time(isObj(node.meta.generated) ? node.meta.generated.at : null, m.ts), ...(modelOf(by) ? { model: modelOf(by) } : {}) };
-      const hist = (Array.isArray(t.revisions) ? t.revisions : []).filter(x => isObj(x) && x.description).slice(0, 10).map(x => ({ summary: String(x.description).replace(/\s+/g, ' ').trim().slice(0, 300), at: time(isObj(x.generated) ? x.generated.at : null, m.ts), ...(isObj(x.generated) && modelOf(x.generated.by) ? { model: modelOf(x.generated.by) } : {}) }));
+      const det = detailsIn(node.body);
+      m.decision = { summary: String(node.meta.description || node.meta.title || '').replace(/\s+/g, ' ').trim().slice(0, 300), ...(det.length ? { details: det } : {}), at: time(isObj(node.meta.generated) ? node.meta.generated.at : null, m.ts), ...(modelOf(by) ? { model: modelOf(by) } : {}) };
+      const hist = (Array.isArray(t.revisions) ? t.revisions : []).filter(x => isObj(x) && x.description).slice(0, 10).map(x => ({ summary: String(x.description).replace(/\s+/g, ' ').trim().slice(0, 300), ...(detailsIn(x.body).length ? { details: detailsIn(x.body) } : {}), at: time(isObj(x.generated) ? x.generated.at : null, m.ts), ...(isObj(x.generated) && modelOf(x.generated.by) ? { model: modelOf(x.generated.by) } : {}) }));
       if (hist.length) m.decision.history = hist;
       const q = (Array.isArray(t.answers) ? t.answers : []).map(String).find(x => choiceAt.has(x));
       if (q) m.decision.choice = choiceAt.get(q); // the choice made at that fork (spec §14.4)
@@ -4962,7 +5031,8 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     const src = (Array.isArray(fm.meta.sources) ? fm.meta.sources : []).filter(isObj).map(x => String(x.resource || '')).find(x => x.startsWith(`/sessions/${sid}.jsonl#`));
     const mid = src && toMsg.get(src.split('#')[1]);
     const history = memHistoryOf(fm);
-    convo.facts.push({ text: String(fm.meta.description).slice(0, 300), at: time(isObj(fm.meta.generated) ? fm.meta.generated.at : null, now), itemId: rel.slice(7, -3), ...(mid ? { mid } : {}), ...(history.length ? { history } : {}) });
+    const by = isObj(fm.meta.generated) ? fm.meta.generated.by : null;
+    convo.facts.push({ text: String(fm.meta.description).slice(0, 300), at: time(isObj(fm.meta.generated) ? fm.meta.generated.at : null, now), itemId: rel.slice(7, -3), ...(mid ? { mid } : {}), ...(history.length ? { history } : {}), ...(actorOk(by) && by !== 'human:me' ? { by } : {}) });
   }
   // nodes the session doesn't cover stay cards, parents first, each under the nearest node above it that has a branch, a card's
   // too, and continuing from it, so writing there sends the path from the root (spec §13)
@@ -5019,9 +5089,10 @@ function bundleToConvo(r, files, own) {
     const accepted = type === 'Decision' && status === 'accepted', parked = type === 'Decision' && status === 'parked';
     const history = (Array.isArray(t.revisions) ? t.revisions : []).filter(r => r && r.description).slice(0, 10).map(r => {
       const by = r.generated && String(r.generated.by || ''), when = Date.parse(r.generated && r.generated.at);
-      return { summary: String(r.description).replace(/\s+/g, ' ').trim().slice(0, 300), at: Number.isFinite(when) ? when : now, ...(by.startsWith('mindbough-demo/') ? { model: by.slice(15) } : {}) };
+      return { summary: String(r.description).replace(/\s+/g, ' ').trim().slice(0, 300), ...(detailsIn(r.body).length ? { details: detailsIn(r.body) } : {}), at: Number.isFinite(when) ? when : now, ...(by.startsWith('mindbough-demo/') ? { model: by.slice(15) } : {}) };
     });
-    const decision = (accepted || parked) ? { decision: { summary: (desc || title(node)).replace(/\s+/g, ' ').trim().slice(0, 300), at: now, ...(history.length ? { history } : {}) } } : {};
+    const det = detailsIn(node.body);
+    const decision = (accepted || parked) ? { decision: { summary: (desc || title(node)).replace(/\s+/g, ' ').trim().slice(0, 300), ...(det.length ? { details: det } : {}), at: now, ...(history.length ? { history } : {}) } } : {};
     convo.messages[mid] = { id: mid, role: 'user', text, branchId: bid, ts: now, node: { id: node.id, type, status, title: title(node), description: desc, links, ...wroteOf(node) },
       ...(accepted || (type === 'Decision' && status === 'open') ? { flagged: true } : {}), ...decision }; // an open Decision is a flag waiting for its summary (spec §7.1)
     convo.branches[bid] = { id: bid, parentId: parentBranch, forkMsgId: parentMsg, msgIds: [mid], name: title(node).slice(0, 60), created: now,
@@ -5148,7 +5219,7 @@ function adoptConvo(src) {
         nm.node = { id: x.node.id, type: str(x.node.type, 40) || 'Thought', status: TS_STATUSES.includes(x.node.status) ? x.node.status : 'open', title: str(x.node.title, 200), description: str(x.node.description, 500), links, ...(actorOk(x.node.by) ? { by: x.node.by, ...(typeof x.node.at === 'string' && Number.isFinite(Date.parse(x.node.at)) ? { at: x.node.at } : {}) } : {}) };
       }
       if (isObj(x.decision)) {
-        const version = h => ({ summary: str(h.summary, 300).replace(/\s+/g, ' ').trim(), at: time(h.at), ...(h.model ? { model: str(h.model, 100) } : {}) });
+        const version = h => { const det = cleanDetails(h.details); return { summary: str(h.summary, 300).replace(/\s+/g, ' ').trim(), ...(det.length ? { details: det } : {}), at: time(h.at), ...(h.model ? { model: str(h.model, 100) } : {}) }; };
         nm.decision = version(x.decision);
         if (typeof x.decision.sig === 'string' && /^[0-9a-z]{1,8}:\d{1,7}$/.test(x.decision.sig)) nm.decision.sig = x.decision.sig; // the text its summary describes
         if (Array.isArray(x.decision.history)) nm.decision.history = x.decision.history.filter(isObj).slice(0, 10).map(version);
@@ -5278,7 +5349,7 @@ function finishImport(added, failed, sources, facts = 0, left = 0, again = 0, un
 }
 $('#importBtn').onclick = () => $('#importFile').click();
 // What a conversation says, apart from its ids: two with the same digest are the same conversation
-const convoDigest = c => sigOf(JSON.stringify(dfs(c).map(b => [b.name || '', b.status || '', b.msgIds.map(id => c.messages[id]).filter(Boolean).map(m => [m.role, m.text, m.error || '', !!m.flagged, (m.decision && m.decision.summary) || '', (m.versions || []).length])])));
+const convoDigest = c => sigOf(JSON.stringify(dfs(c).map(b => [b.name || '', b.status || '', b.msgIds.map(id => c.messages[id]).filter(Boolean).map(m => [m.role, m.text, m.error || '', !!m.flagged, (m.decision && m.decision.summary ? m.decision.summary + detailsOf(m.decision).map(x => '\n' + x).join('') : ''), (m.versions || []).length])])));
 // Opens the Thinking States of a zip (one, or an Export all): their conversations, and the facts that come with them (F-13, F-26);
 // `memory: false` leaves memory as it is (the sample doesn't add facts to yours)
 async function importZip(buf, { memory = true, reuse = false } = {}) {
@@ -5320,10 +5391,10 @@ async function importZip(buf, { memory = true, reuse = false } = {}) {
   const ask = home.length ? `This file holds ${what}, as an Export all does.\n\nRestore ${them} to your memory? Memory goes into every request of every conversation, so add only facts that are yours.\n\nOK adds ${them}. Cancel imports the conversations without ${them}.`
     : `This Thinking State brings ${what}\n\nAdd ${them} to your memory? Memory is about you, and every request of every conversation carries it.\n\nOK adds ${them}. Cancel imports the conversation without ${them}.`;
   if (n && confirm(ask)) {
-    for (const { f, id } of fresh) { db.memory.push({ id: uid(), text: f.text, at: f.at, ...(f.mid ? { src: { cid: id, mid: f.mid } } : {}), from: db.convos[id].title, ...(TS_ID.test(f.itemId) && !db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}), ...(f.history ? { history: f.history } : {}) }); facts++; }
+    for (const { f, id } of fresh) { db.memory.push({ id: uid(), text: f.text, at: f.at, ...(f.mid ? { src: { cid: id, mid: f.mid } } : {}), from: db.convos[id].title, ...(TS_ID.test(f.itemId) && !db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}), ...(f.history ? { history: f.history } : {}), ...(f.by ? { by: f.by } : {}) }); facts++; }
     for (const f of home) {
       const c = f.bundle && Object.values(db.convos).find(x => x.tsId === f.bundle && Object.prototype.hasOwnProperty.call(x.messages, f.mid));
-      db.memory.push({ id: uid(), text: f.text, at: f.at, ...(!db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}), ...(c ? { src: { cid: c.id, mid: f.mid }, from: c.title } : f.from ? { from: f.from } : {}), ...(f.history ? { history: f.history } : {}) }); facts++;
+      db.memory.push({ id: uid(), text: f.text, at: f.at, ...(!db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}), ...(c ? { src: { cid: c.id, mid: f.mid }, from: c.title } : f.from ? { from: f.from } : {}), ...(f.history ? { history: f.history } : {}), ...(f.by ? { by: f.by } : {}) }); facts++;
     }
   } else left = n;
   // what the demo doesn't write the same of each Thinking State opened, with its facts now yours or not
