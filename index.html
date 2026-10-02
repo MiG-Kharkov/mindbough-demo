@@ -475,6 +475,7 @@ button.model-chip svg.i{width:11px;height:11px}
 #send{border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);padding:9px 14px;font-weight:600;display:flex;gap:6px;align-items:center}
 #send.stop{background:var(--danger);color:var(--danger-ink)}
 #send:disabled{opacity:.45;cursor:default}
+#promptPreview:disabled,.linkbtn:disabled{opacity:.45;cursor:default;text-decoration:none}
 #attach{flex:none;min-width:40px;min-height:40px;justify-content:center;color:var(--muted)}
 .composer.drop .box{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .att-tray{display:flex;gap:8px;flex-wrap:wrap;max-width:820px;margin:0 auto 8px}
@@ -634,7 +635,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.9.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 61a739f'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 63c24d7'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2924,11 +2925,17 @@ input.addEventListener('keydown', e => {
 });
 // Stop belongs to the branch an answer is coming in; in any other branch Send sends (F-03)
 function busyHere() { const c = cur(); return !!(c && streamIn(c, c.focus)); }
+// Something to send: text, or an image (F-36). Until there is, Send and the preview of the next prompt wait: a prompt without
+// your message can't be sent (F-03, F-20)
+const hasDraft = () => !!input.value.trim() || draftImgs.length > 0;
 function paintSend() {
   const on = !!busyHere();
   sendBtn.classList.toggle('stop', on);
   sendBtn.innerHTML = on ? `${ICON.stop}<span>Stop</span>` : `${ICON.send}<span>Send</span>`;
+  sendBtn.disabled = !on && !hasDraft();
+  const pv = $('#promptPreview'); pv.disabled = !hasDraft(); pv.title = hasDraft() ? 'Preview the prompt your next message would send' : 'Write a message first: the next prompt is built around it';
 }
+input.addEventListener('input', () => paintSend());
 // One answer at a time per branch
 function busyNote() { toast('Wait for the answer in this branch to finish'); }
 sendBtn.onclick = () => { const c = cur(), x = c && streamIn(c, c.focus); if (x) x.controller.abort(); else send(); };
@@ -2948,15 +2955,11 @@ async function send() {
   const text = input.value.trim();
   if (RO) return;
   { const c = cur(); if (c && streamIn(c, c.focus)) { busyNote(); return; } } // its answer is still coming
-  if (!text && !draftImgs.length) {
-    const c = cur(), b = c && c.branches[c.focus], last = b && c.messages[b.msgIds[b.msgIds.length - 1]];
-    if (last && waiting(c, last) && !needKey()) sendToBranch(c, b.id, null);
-    return;
-  }
+  if (!text && !draftImgs.length) return; // nothing to send (a question waiting for its answer has Answer under it)
   if (needKey()) return;
   let c = cur(); if (!c) { newConvo(); c = cur(); }
   const images = takeDraftImages(); // text, images, or both (F-36)
-  input.value = ''; autosize();
+  input.value = ''; autosize(); paintSend();
   sendToBranch(c, c.focus, text, null, false, images);
 }
 
@@ -3109,6 +3112,7 @@ async function attachImages(files) {
   renderTray();
 }
 function renderTray() {
+  paintSend();
   const tray = $('#attachTray');
   tray.hidden = !draftImgs.length;
   tray.innerHTML = draftImgs.map((x, i) => `<span class="att"><button type="button" class="att-img" data-tray="alt" data-i="${i}" title="${esc(x.alt || 'Describe it (optional)')}" aria-label="Image ${i + 1}${x.alt ? `: ${esc(x.alt)}` : ''}. Describe it"><img data-sha="${x.sha256}" alt=""></button>${x.alt ? '<span class="att-alt" aria-hidden="true">Aa</span>' : ''}<button type="button" class="att-x" data-tray="x" data-i="${i}" aria-label="Remove image ${i + 1}">×</button></span>`).join('');
@@ -3483,16 +3487,17 @@ function openPromptView(c, m) {
     rec.blocks = rec.blocks.filter(b => b.kind !== 'tools'); // today's web setting says nothing about then
     note = 'Reconstructed: this answer was made before prompts were recorded, so this is what the demo would send for it now.';
   }
+  note = note || 'What the model got for this answer: the turns before its question, and the question.';
   showPrompt({ c, rec, note, title: 'How the prompt was built', lookup: (id, sig) => { const x = sentVersion(c.messages[id], sig, rec.at); return x && x.hidden ? { ...x, hidden: false } : x; }, search: m.search, calls: (c.calls || []).filter(x => x.mid === m.id && (!rec.at || x.at >= rec.at)), // calls on this version
     path: historyFor(c, branchOf(c, m.id).id, m.id).slice(0, -1), mid: m.id });
 }
 function previewPrompt(backTo) {
-  const c = cur(); if (!c) return;
+  const c = cur(); if (!c || !hasDraft()) return;
   const draft = input.value.trim();
   const msgs = historyFor(c, c.focus).concat(draft || draftImgs.length ? [{ id: '__draft', role: 'user', text: draft, images: draftImgs }] : []);
   const rec = requestRecord(buildRequest(c, msgs), modelSel.value || db.model);
   showPrompt({ c, rec, title: 'Next prompt', preview: true, path: historyFor(c, c.focus), ...(typeof backTo === 'function' ? { backTo } : {}), lookup: id => id === '__draft' ? { id, role: 'user', text: draft, images: draftImgs } : c.messages[id],
-    note: 'Preview: what your next message would send right now' + (draft ? ', including what you have typed.' : '. Type a message to see it added.') });
+    note: 'What your next message would send: the whole path of this branch so far, and what you have typed.' });
 }
 function showPrompt(pv) {
   pv.level = 'overview';
@@ -3633,7 +3638,7 @@ function renderDecisionsPanel() {
   if (!list.length && !off.length) return `<p class="pv-empty">No decisions yet. Flag an answer, or your own message, to make it a decision: its one-line summary then goes into every prompt of this conversation.</p>`;
   const inPrompt = decisionsIn(c).length, n = list.length;
   return (RO ? `<p class="pv-note">${n} decision${n === 1 ? '' : 's'} flagged in this conversation, ${inPrompt} in force.</p>`
-    : `<p class="pv-note">In the prompts of this conversation: ${inPrompt} of ${n} decision${n === 1 ? '' : 's'}. <button class="linkbtn" type="button" data-dp="preview">See the next prompt</button></p>`)
+    : `<p class="pv-note">In the prompts of this conversation: ${inPrompt} of ${n} decision${n === 1 ? '' : 's'}. <button class="linkbtn" type="button" data-dp="preview"${hasDraft() ? '' : ' disabled title="Write a message first: the next prompt is built around it"'}>See the next prompt</button></p>`)
     + list.map(m => {
       const d = m.decision || {}, b = branchOf(c, m.id), hist = d.history || [];
       const out = b && droppedAt(c, b.id);
@@ -3677,7 +3682,7 @@ const factMatches = (x, q) => !q || x.text.toLowerCase().includes(q);
 function renderMemoryPanel() {
   if (db.memory.length <= MEM_SEARCH_FROM) memQuery = ''; // no search box, so no filter left over from one
   const n = db.memory.length, chars = db.memory.reduce((k, x) => k + (x.text ? x.text.length + 3 : 0), 0), q = memQuery.trim().toLowerCase();
-  const note = `<p class="pv-note">Memory is about you: your role, your preferences and the answers you want. It is shared by all conversations, so every request carries it. <button class="linkbtn" type="button" data-dp="preview">See the next prompt</button></p>`;
+  const note = `<p class="pv-note">Memory is about you: your role, your preferences and the answers you want. It is shared by all conversations, so every request carries it. <button class="linkbtn" type="button" data-dp="preview"${hasDraft() ? '' : ' disabled title="Write a message first: the next prompt is built around it"'}>See the next prompt</button></p>`;
   const tools = RO || memEdit || memDraft ? '' : `<div class="mem-tools"><button class="btn primary" data-mem="add">+ Add a fact</button>${n > MEM_SEARCH_FROM ? `<input class="mem-search" type="search" data-mem-search placeholder="Search memory" aria-label="Search memory" value="${esc(memQuery)}">` : ''}</div>`;
   const sum = n ? `<p class="mem-sum">${n} fact${n === 1 ? '' : 's'} in every request · about ${Math.max(1, Math.round(chars / 4)).toLocaleString('en-US')} tokens</p>` : '';
   const editor = (x, draft) => `<article class="dp-card mem" data-id="${x.id}"><textarea class="dp-area" rows="2" maxlength="300" aria-label="Fact" placeholder="What should every conversation know about you? Your role, or how you want answers">${esc(x.text)}</textarea>
@@ -3811,7 +3816,7 @@ const HELP = [
     <ol><li>No key? Menu → <b>Try a sample conversation</b>, and pick one of three. Have one? <b>Settings</b> (the gear) → paste it.</li>
     <li>Ask something, then tap <b>Branch out</b> under the answer and ask a follow-up: the new column sees only its own path.</li>
     <li>Tap the <b>flag</b> under an answer you agree with: it becomes a decision that every prompt of the conversation carries.</li>
-    <li>Go <b>Back</b> to the first column and tap <b>Prompt</b> above the message box (on a phone, the layers icon): your next prompt, block by block. The decision is in it, and <b>Not in this prompt</b> counts the branch you opened, which isn't.</li>
+    <li>Go <b>Back</b> to the first column, write a question, and tap <b>Prompt</b> above the message box (on a phone, the layers icon): your next prompt, block by block. The decision is in it, and <b>Not in this prompt</b> counts the branch you opened, which isn't.</li>
     <li>Tap the <b>bookmark</b> under a message, write what every conversation should know about you, and <b>Save</b>: that fact now goes into every request.</li>
     <li>Menu → <b>⋯</b> on a conversation → <b>Export as a Thinking State</b>: a .zip any app or agent can read.</li></ol>` },
   { id: 'start', title: 'Getting started', cards: ['F-02', 'F-03', 'F-15', 'F-18', 'F-36'], body: `
@@ -3843,7 +3848,7 @@ const HELP = [
     <li><b>⚑</b> in the top bar opens this conversation's decisions, with history and restore, and below them those not in force (unflagged, or replaced by a later choice); <b>🔖</b> next to it opens your memory. <b>Go to</b> jumps to a message, and <b>← Back</b> above the composer returns to where you were.</li>
     <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) opens an empty one, for you to write about yourself, saved when you tap <b>Save</b>. Tap a fact to edit or delete it; with many facts, search them.</li>
     <li>The <b>eye</b> under a message excludes it from history: the model doesn't see it, on this branch and the ones that continue from it. Tap it again to include it. A flagged message keeps its decision in the prompts: only its text leaves the history.</li>
-    <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. Prompt views show each message as the model saw it, with ✎ on what changed since. <b>Prompt</b> above the message box previews your next prompt.</li>
+    <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. Prompt views show each message as the model saw it, with ✎ on what changed since. <b>Prompt</b> above the message box previews your next prompt, once you have written it: it has the whole path so far, while an answer's prompt has the turns before its question.</li>
     <li>An answer written before later decisions, or before a message above it changed, says so: <b>Re-ask</b> writes it again with them. Re-asking in the middle of a chain opens a new branch, which says what it asks again, and the old answer says where it was asked.</li></ul>` },
   { id: 'models', title: 'Models and web search', cards: ['F-30', 'F-33'], body: `
     <p class="help-why">A cheap model for small jobs, and the tokens in view.</p>
@@ -3864,6 +3869,7 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
+  { version: 'Unreleased', items: ['<b>Send</b> and <b>Prompt</b> wait until there is something to send, and each prompt view says whether it shows what an answer got or what your next message would send.'] },
   { version: '0.9.0', items: ['Images in your messages: the paperclip attaches a photo or a screenshot, the model sees it on the branch’s path, and an export keeps it as a file.',
     'Edits keep what was answered: <b>edited</b> opens a message’s versions, and a line on the first message an edit made out of date lets you regenerate it in place, keep it as valid, or answer in a new branch.',
     'Branches are answered at the same time: send in one, move to another and send there too. <b>Stop</b> stops the branch you are in, and options are answered all at once.',
