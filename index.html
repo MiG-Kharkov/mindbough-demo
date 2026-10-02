@@ -15,9 +15,10 @@
 <meta name="apple-mobile-web-app-title" content="Mindbough">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='5.4' fill='%230F7B74'/><g transform='translate(4.56 4.56) scale(.62)' fill='none' stroke='%23fff' stroke-width='2.1' stroke-linecap='round'><path d='M6.3 18.6C7.6 13.8 10.8 10.3 16.2 7.9M9.4 12.9C8.6 10.1 9.1 7.4 11 5.2'/><g fill='%23fff' stroke='none'><circle cx='5.9' cy='19.3' r='2.2'/><circle cx='17.6' cy='7.3' r='2.6'/><circle cx='11.8' cy='4.4' r='2.6'/></g></g></svg>">
-<!-- What the page may reach (SEC-1): its own files, the pinned libraries and fonts, and the Gemini API. Images only from here or
-     data:, so neither an answer nor an imported file can call another host; no media, plugins or forms -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data:; media-src 'none'; object-src 'none'; connect-src 'self' https://generativelanguage.googleapis.com; base-uri 'none'; form-action 'none'">
+<!-- What the page may reach: its own files, the pinned libraries and fonts, and the Gemini API. Images only from here, data: or
+     the blob: URLs of your own images (F-36), so neither an answer nor an imported file can call another host; no media, plugins
+     or forms -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: blob:; media-src 'none'; object-src 'none'; connect-src 'self' https://generativelanguage.googleapis.com; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <!-- Rich markdown: GFM, syntax highlighting, math. If these can't load, a built-in renderer is used.
@@ -37,7 +38,7 @@
   --flag:#B86E00; --flag-soft:rgba(199,119,0,.10);
   --wire:#93A9B0; --dot:rgba(19,33,43,.10); --danger:#B3261E; --danger-ink:#fff;
   --shadow:0 1px 1px rgba(19,33,43,.04),0 6px 18px rgba(19,33,43,.06);
-  --k-harness:#8FA3A9; --k-memory:#8E6CCB; --k-decisions:#C77700; --k-history:#4F86B8; --k-message:#0F7B74; --k-tools:#B8527A;
+  --k-harness:#8FA3A9; --k-memory:#8E6CCB; --k-decisions:#C77700; --k-history:#4F86B8; --k-message:#0F7B74; --k-tools:#B8527A; --k-attachments:#6D8B3A;
   --colW:460px;
 }
 @media (prefers-color-scheme:dark){:root{
@@ -47,7 +48,7 @@
   --flag:#F0A640; --flag-soft:rgba(240,166,64,.12);
   --wire:#355157; --dot:rgba(220,231,232,.07); --danger:#F2847C; --danger-ink:#2B0D0A;
   --shadow:0 1px 2px rgba(0,0,0,.35);
-  --k-harness:#5F777D; --k-memory:#B39DDB; --k-decisions:#F0A640; --k-history:#7FB2E0; --k-message:#3CC3B6; --k-tools:#E08AAE;
+  --k-harness:#5F777D; --k-memory:#B39DDB; --k-decisions:#F0A640; --k-history:#7FB2E0; --k-message:#3CC3B6; --k-tools:#E08AAE; --k-attachments:#A5C46A;
 }}
 *{box-sizing:border-box}
 [hidden]{display:none!important} /* keep the hidden attribute stronger than display rules like .ib */
@@ -185,7 +186,7 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 .pbar-seg{border:0;padding:0;min-width:8px;cursor:pointer}
 .pbar-seg:hover{filter:brightness(1.1)}
 .k-harness{background:var(--k-harness)} .k-memory{background:var(--k-memory)} .k-decisions{background:var(--k-decisions)}
-.k-history{background:var(--k-history)} .k-message{background:var(--k-message)} .k-tools{background:var(--k-tools)}
+.k-history{background:var(--k-history)} .k-message{background:var(--k-message)} .k-tools{background:var(--k-tools)} .k-attachments{background:var(--k-attachments)}
 #webSearch{border:1px solid var(--line);border-radius:999px;padding:3px 9px 3px 7px;font-size:12px;flex:none}
 #webSearch[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);font-weight:600}
 .srcs{margin-top:8px;font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
@@ -474,6 +475,25 @@ button.model-chip svg.i{width:11px;height:11px}
 #send{border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);padding:9px 14px;font-weight:600;display:flex;gap:6px;align-items:center}
 #send.stop{background:var(--danger);color:var(--danger-ink)}
 #send:disabled{opacity:.45;cursor:default}
+#attach{flex:none;min-width:40px;min-height:40px;justify-content:center;color:var(--muted)}
+.composer.drop .box{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.att-tray{display:flex;gap:8px;flex-wrap:wrap;max-width:820px;margin:0 auto 8px}
+.att{position:relative}
+.att-img{display:block;width:64px;height:64px;padding:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--bg);cursor:pointer}
+.att-img img,.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.att-x{position:absolute;top:-8px;right:-8px;width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:16px;line-height:1;padding:0}
+.att-alt{position:absolute;left:4px;bottom:4px;font-size:10px;font-weight:700;padding:0 4px;border-radius:4px;background:var(--panel);color:var(--ink);opacity:.9}
+.msg-imgs{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin:4px 0 8px}
+.thumb{width:96px;height:96px;padding:0;border:0;border-radius:10px;overflow:hidden;background:var(--bg);cursor:zoom-in}
+.thumb.missing,.att-img.missing{display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);padding:4px;text-align:center;cursor:default}
+.thumb.missing img,.att-img.missing img{display:none}
+.thumb.missing::after{content:attr(title)}
+.imgview{position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;touch-action:none;overflow:hidden}
+.imgview img{max-width:100%;max-height:100%;transform-origin:center;user-select:none;-webkit-user-drag:none}
+.imgview .ib{position:absolute;top:calc(10px + env(safe-area-inset-top));right:10px;width:44px;height:44px;justify-content:center;color:#fff;background:rgba(0,0,0,.4);border-radius:50%}
+.pv-imgs{list-style:none;padding:0;margin:8px 0}
+.pv-imgs li{display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+.pv-imgs .thumb{width:56px;height:56px;flex:none}
 
 .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 32px);box-sizing:border-box;background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:90}
 .toast.show{opacity:1}
@@ -546,8 +566,11 @@ button.model-chip svg.i{width:11px;height:11px}
     <div class="composer">
       <div id="keyHint" class="keyhint" hidden>To chat, add a Gemini API key in <button type="button" data-open="settings">Settings</button>, or <button type="button" data-open="sample">try a sample conversation</button>.</div>
       <div class="to"><span id="toLabel"></span><button id="promptPreview" class="ib" type="button" title="Preview the prompt your next message would send" aria-label="Preview the next prompt"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg><span class="lbl">Prompt</span></button><button id="webSearch" class="ib" type="button" aria-pressed="false" aria-label="Web search" title="Web search: the model may search Google when it needs fresh facts. Turn it off or on here"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg><span class="lbl">Web</span></button><label class="modelpick" title="Model for the next request"><select id="model" aria-label="Model for the next request"></select></label></div>
+      <div id="attachTray" class="att-tray" hidden></div>
       <div class="box">
         <textarea id="input" rows="1" placeholder="Write a message…  (Enter to send, Shift+Enter for a new line)"></textarea>
+        <button id="attach" class="ib" type="button" title="Attach images: the model sees them on this branch's path" aria-label="Attach images"><svg class="i" viewBox="0 0 24 24"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button>
+        <input type="file" id="attachFile" accept="image/*" multiple hidden>
         <button id="send"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>Send</span></button>
       </div>
     </div>
@@ -562,6 +585,7 @@ button.model-chip svg.i{width:11px;height:11px}
   </aside>
 </div>
 <div class="toast" id="toast"></div>
+<div id="imgView" class="imgview" role="dialog" aria-modal="true" aria-label="Image, full screen" hidden><img alt=""><button class="ib" type="button" data-iv="close" aria-label="Close the image"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
 <div id="modelMenu" role="menu"></div>
 <div id="sheet" class="sheet" hidden>
   <div class="sheet-backdrop" data-sheet-close></div>
@@ -610,7 +634,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.8.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 710c000'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 1f8b284'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -695,7 +719,11 @@ async function loadStored() {
       // first run on IndexedDB: take over what the localStorage version saved; a preview copies the main demo
       text = localStorage.getItem(LS);
       if (text == null && PREVIEW) {
-        try { const main = await idbOpen('mindbough'); text = await idbDo(main, 'readonly', st => st.get('db')); ts = await idbDo(main, 'readonly', st => st.get('ts')); main.close(); } catch (e) {}
+        try {
+          const main = await idbOpen('mindbough'); text = await idbDo(main, 'readonly', st => st.get('db')); ts = await idbDo(main, 'readonly', st => st.get('ts'));
+          for (const k of (await idbDo(main, 'readonly', st => st.getAllKeys())).filter(k => typeof k === 'string' && k.startsWith('img:'))) { const v = await idbDo(main, 'readonly', st => st.get(k)); await idbDo(idbConn, 'readwrite', st => st.put(v, k)); } // its images (F-36)
+          main.close();
+        } catch (e) {}
         if (text == null) text = localStorage.getItem('gemini_tree_chat_v1');
       }
       if (text != null) await idbDo(idbConn, 'readwrite', st => st.put(text, 'db'));
@@ -811,14 +839,23 @@ function writeNative(now) {
   const text = JSON.stringify(nativeRecord());
   nativeChars = text.length;
   // the page is going: this write starts now, not behind the queue, or the page goes before it lands
-  if (now) { try { const st = idbConn.transaction(IDB.store, 'readwrite').objectStore(IDB.store); st.put(text, 'ts'); if (stored.v1Text && backedUp) { st.delete('db'); stored.v1Text = ''; } } catch (e) { console.error(e); } return; }
+  if (now) {
+    try {
+      const tx = idbConn.transaction(IDB.store, 'readwrite'), st = tx.objectStore(IDB.store), pend = namedPending();
+      putImages(st, pend); st.put(text, 'ts'); if (stored.v1Text && backedUp) { st.delete('db'); stored.v1Text = ''; }
+      tx.oncomplete = () => pend.forEach(([sha]) => imgPending.delete(sha));
+    } catch (e) { console.error(e); }
+    return;
+  }
   saving = saving.then(async () => {
     if (!backedUp) { // the first time: keep the record from before the Thinking State storage, untouched
       backedUp = true;
       const old = await idbDo(idbConn, 'readonly', st => st.get('db-v1'));
       if (old == null && stored.v1 && !stored.v2) await idbDo(idbConn, 'readwrite', st => st.put(JSON.stringify(stored.v1), 'db-v1'));
     }
-    await idbDo(idbConn, 'readwrite', st => st.put(text, 'ts'));
+    const pend = namedPending();
+    await idbDo(idbConn, 'readwrite', st => { putImages(st, pend); return st.put(text, 'ts'); });
+    pend.forEach(([sha]) => imgPending.delete(sha));
     if (stored.v1Text) { stored.v1Text = ''; await idbDo(idbConn, 'readwrite', st => st.delete('db')); } // the record of before 0.9 is in the bundles now
     if (idsGiven) { idsGiven = false; save(); } // the ids these bundles got reach the other tabs too, so they keep them
   }).catch(err => toast(err && err.name === 'QuotaExceededError' ? 'Couldn’t save: browser storage is full' : 'Couldn’t save to browser storage'));
@@ -1167,7 +1204,7 @@ function msgHTML(c, m) {
   if (m.role === 'model' && !m.streaming && (m.versions || []).length) chip += `<button class="model-chip vers" data-act="versions" title="Every version of this answer">${m.versions.length + 1} versions</button>`;
   let body;
   if (isEdit) body = `<textarea class="edit-area" aria-label="Edit message">${esc(editing.draft ?? m.text)}</textarea>`;
-  else if (m.role === 'user') body = `<div class="user-text">${esc(m.text)}</div>`;
+  else if (m.role === 'user') body = m.text ? `<div class="user-text">${esc(m.text)}</div>` : '';
   else if (m.error) body = errorHTML(m.error);
   else if (!m.text && m.streaming) body = '<span class="typing"><i></i><i></i><i></i></span>';
   else body = mdOf(m);
@@ -1225,7 +1262,7 @@ function msgHTML(c, m) {
     </div>`;
   }
   return `<div class="${cls}" data-mid="${m.id}">
-    <div class="bubble"><div class="role">${who}${chip}${tags}</div><div class="content">${body}</div>${m.cut && !m.streaming ? `<div class="cut-note">${esc(m.cut)}</div>` : ''}${sourcesHTML(m)}</div>
+    <div class="bubble"><div class="role">${who}${chip}${tags}</div>${imgsOf(m).length ? `<div class="msg-imgs">${imgsOf(m).map(x => `<button class="thumb" type="button" data-act="img" data-sha="${x.sha256}" title="${esc(x.alt || 'Open the image')}" aria-label="${esc(x.alt ? `Image: ${x.alt}` : 'Image')}"><img data-sha="${x.sha256}" alt="${esc(x.alt || '')}"></button>`).join('')}</div>` : ''}<div class="content">${body}</div>${m.cut && !m.streaming ? `<div class="cut-note">${esc(m.cut)}</div>` : ''}${sourcesHTML(m)}</div>
     ${dec}${isEdit ? '' : staleHTML(c, m) + reaskHTML(c, m) + answerHTML(c, m)}${acts}${kidsHTML}</div>`;
 }
 
@@ -1439,6 +1476,7 @@ $('#canvas').addEventListener('click', async e => {
   const bid = colEl && colEl.dataset.bid;
   const msgEl = e.target.closest('.msg');
   const m = msgEl && c.messages[msgEl.dataset.mid];
+  if (act === 'img') { const x = imgsOf(m).find(y => y.sha256 === btn.dataset.sha); openImage(btn.dataset.sha, x && x.alt); return; }
 
   if (act === 'copycode') {
     const code = btn.closest('pre').querySelector('code').textContent;
@@ -1658,7 +1696,7 @@ function turnOf(c, m) {
 function copyPath(c, m) {
   const b = branchOf(c, m.id); if (!b) return;
   const msgs = historyFor(c, b.id, m.id);
-  const txt = msgs.map(x => `${x.role === 'user' ? 'You' : 'Gemini'}${x.hidden ? ' (excluded from history)' : ''}:\n${x.text || x.error || ''}`).join('\n\n---\n\n');
+  const txt = msgs.map(x => `${x.role === 'user' ? 'You' : 'Gemini'}${x.hidden ? ' (excluded from history)' : ''}:\n${withMarks(x) || x.error || ''}`).join('\n\n---\n\n');
   copyText(txt, `Copied ${msgs.length} message${msgs.length === 1 ? '' : 's'}, from the start up to here`);
 }
 function messageMore(c, m, act) {
@@ -1736,7 +1774,7 @@ const versionOf = x => ({ text: x.text || '', ...(x.model ? { model: x.model } :
   ...(x.request ? { request: x.request } : {}), ...(x.search ? { search: x.search } : {}), ...(Number.isInteger(x.restores) ? { restores: x.restores, restoredAt: x.restoredAt } : {}), ...(x.cut ? { cut: x.cut } : {}),
   ...(x.by ? { by: x.by } : {}), ...(x.eid ? { eid: x.eid } : {}) });
 // the current text becomes the newest earlier version, with the session entry it was (eid); what follows is a new entry
-function addVersion(m, x) { if (x && x.text) { m.versions = (m.versions || []).concat(versionOf(x)); delete m.eid; } }
+function addVersion(m, x) { if (x && (x.text || imgsOf(m).length)) { m.versions = (m.versions || []).concat(versionOf(x)); delete m.eid; } } // your images alone are a version too (F-36)
 // The version of a message that a request sent (F-06, F-20, spec §14.5): the one whose signature the request kept, or, for a
 // request without one, the version current at its time. A signature that no version has left means the text it sent is gone.
 const versionsOf = m => [...(m.versions || []).filter(v => v && typeof v.text === 'string'), m];
@@ -1875,7 +1913,7 @@ function sizeEdit(ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHei
 function editValue(el) { const ta = el && el.querySelector('.edit-area'); return ta ? ta.value.trim() : ''; }
 function saveEdit(c, m, el) {
   const text = editValue(el);
-  if (!text) { toast('Message can’t be empty'); return; }
+  if (!text && !imgsOf(m).length) { toast('Message can’t be empty'); return; }
   if (text !== m.text) {
     const before = m.text;
     addVersion(m, m); m.editedAt = Date.now(); delete m.restores; delete m.restoredAt; delete m.by; delete m.cut; // a message edited in place keeps the text it had, so the prompts that sent it stay true (F-06); the new text is yours, not cut off
@@ -1888,7 +1926,7 @@ function saveEdit(c, m, el) {
 }
 function editAsBranch(c, m, el) {
   const text = editValue(el);
-  if (!text) { toast('Message can’t be empty'); return; }
+  if (!text && !imgsOf(m).length) { toast('Message can’t be empty'); return; }
   if (needKey()) return;
   const b = branchOf(c, m.id); if (!b) return;
   const i = b.msgIds.indexOf(m.id);
@@ -1901,7 +1939,7 @@ function editAsBranch(c, m, el) {
   c.branches[nb.id] = nb;
   c.focus = nb.id;
   editing = null;
-  sendToBranch(c, nb.id, text);
+  sendToBranch(c, nb.id, text, null, false, imgsOf(m).map(x => ({ ...x }))); // its images stay attached (F-36)
 }
 document.addEventListener('input', e => { if (e.target.classList && e.target.classList.contains('edit-area')) { if (editing) editing.draft = e.target.value; sizeEdit(e.target); scheduleLayout(); } });
 document.addEventListener('keydown', e => {
@@ -2019,7 +2057,7 @@ async function summarize(c, m, force) {
   const b = branchOf(c, m.id); if (!b) return;
   const q = m.role === 'model' ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
   const prompt = 'Write the decision or key point of the message below as one short sentence (at most 25 words), in the language of the message. Reply with the sentence only.\n\n'
-    + (q ? `Question it answers:\n${q.text.slice(0, 1500)}\n\n` : '') + `Message:\n${(m.text || '').slice(0, 6000)}`;
+    + (q ? `Question it answers:\n${withMarks(q).slice(0, 1500)}\n\n` : '') + `Message:\n${withMarks(m).slice(0, 6000)}`;
   const sig = sigOf(m.text || ''); // the text being summarized, even if it changes while the helper writes
   const live = () => { const lc = db.convos[c.id]; return [lc || c, (lc && lc.messages[m.id]) || m]; };
   m.decision.pending = true; inflight++; holdConvo(c.id);
@@ -2105,8 +2143,8 @@ async function findOptions() {
   const q = m.role === 'model' ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
   const ask = 'For each option give a title of at most 6 words, and "why": one short sentence on what makes it different from the others. Use the language of the conversation.';
   const prompt = m.role === 'model'
-    ? `Below are a question and an answer. List the distinct options or directions in the answer that are worth exploring separately, 2 to 6 of them. If the answer has no distinct options, propose the most useful different directions to explore next. ${ask}\n\nQuestion:\n${(q ? q.text : '').slice(0, 2000)}\n\nAnswer:\n${(m.text || '').slice(0, 8000)}`
-    : `The user wants to brainstorm the question below. Propose 2 to 6 genuinely different directions or answers worth exploring separately. ${ask}\n\nQuestion:\n${(m.text || '').slice(0, 4000)}`;
+    ? `Below are a question and an answer. List the distinct options or directions in the answer that are worth exploring separately, 2 to 6 of them. If the answer has no distinct options, propose the most useful different directions to explore next. ${ask}\n\nQuestion:\n${withMarks(q).slice(0, 2000)}\n\nAnswer:\n${(m.text || '').slice(0, 8000)}`
+    : `The user wants to brainstorm the question below. Propose 2 to 6 genuinely different directions or answers worth exploring separately. ${ask}\n\nQuestion:\n${withMarks(m).slice(0, 4000)}`;
   const schema = { type: 'OBJECT', required: ['options'], properties: { options: { type: 'ARRAY', items: { type: 'OBJECT', required: ['title', 'why'], properties: { title: { type: 'STRING' }, why: { type: 'STRING' } } } } } };
   const mine = opt;
   mine.loading = true; mine.error = ''; renderOptionsIfOpen();
@@ -2292,8 +2330,8 @@ const RELATIONS = { alternatives: 'These branches are alternatives', complementa
 function compareBlocks(c, m, kids, focus, cols, at) {
   const b = branchOf(c, m.id), kidIds = new Set(kids.map(k => k.id));
   const under = x => { let bb = c.branches[x.branchId]; while (bb) { if (kidIds.has(bb.id)) return true; bb = c.branches[bb.parentId]; } return false; };
-  const path = b ? historyFor(c, b.id, m.id).filter(x => !x.hidden && !x.error && x.text).slice(-6) : [];
-  const said = x => `${x.role === 'user' ? 'User' : 'Assistant'}: ${x.text.slice(0, x.id === m.id ? 3000 : 1500)}`;
+  const path = b ? historyFor(c, b.id, m.id).filter(x => !x.hidden && !x.error && (x.text || imgsOf(x).length)).slice(-6) : [];
+  const said = x => `${x.role === 'user' ? 'User' : 'Assistant'}: ${withMarks(x).slice(0, x.id === m.id ? 3000 : 1500)}`;
   const decisions = decisionsIn(c).filter(x => !under(x) && !(at && (x.decision.at || 0) > at && pathIds(c, x.id).includes(m.id))), memory = db.memory.filter(x => x.text);
   const blocks = [{ kind: 'fork', label: 'Conversation up to the fork', text: path.map(said).join('\n\n') }];
   if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions in force:\n' + decisions.map(x => `- ${x.decision.summary}`).join('\n') });
@@ -2493,7 +2531,7 @@ async function nameBranch(c, am) {
   if (b.msgIds.map(id => c.messages[id]).find(x => x && x.role === 'model') !== am) return;
   const q = historyFor(c, b.id, am.id).reverse().find(x => x.role === 'user');
   const prompt = 'Give this branch of a conversation a short title of 2 to 5 words, in the language of the conversation, like a heading. No quotes and no final period.'
-    + `\n\nQuestion:\n${(q ? q.text : '').slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
+    + `\n\nQuestion:\n${withMarks(q).slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
   try {
     const { data, model } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, output: d => d.title });
     const name = clean(data && data.title, 60).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim();
@@ -2511,7 +2549,7 @@ async function nameConvo(c, am) {
   if (b.msgIds.map(id => c.messages[id]).find(x => x && x.role === 'model') !== am) return;
   const q = historyFor(c, b.id, am.id).reverse().find(x => x.role === 'user');
   const prompt = 'Give this conversation a short title of 2 to 6 words, in the language of the conversation, like a heading. No quotes and no final period.'
-    + `\n\nQuestion:\n${(q ? q.text : '').slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
+    + `\n\nQuestion:\n${withMarks(q).slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
   try {
     const { data, model } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, output: d => d.title });
     const name = clean(data && data.title, 80).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim();
@@ -2910,27 +2948,28 @@ async function send() {
   const text = input.value.trim();
   if (RO) return;
   { const c = cur(); if (c && streamIn(c, c.focus)) { busyNote(); return; } } // its answer is still coming
-  if (!text) {
+  if (!text && !draftImgs.length) {
     const c = cur(), b = c && c.branches[c.focus], last = b && c.messages[b.msgIds[b.msgIds.length - 1]];
     if (last && waiting(c, last) && !needKey()) sendToBranch(c, b.id, null);
     return;
   }
   if (needKey()) return;
   let c = cur(); if (!c) { newConvo(); c = cur(); }
+  const images = takeDraftImages(); // text, images, or both (F-36)
   input.value = ''; autosize();
-  sendToBranch(c, c.focus, text);
+  sendToBranch(c, c.focus, text, null, false, images);
 }
 
-async function sendToBranch(c, bid, text, modelOverride, stay) {
+async function sendToBranch(c, bid, text, modelOverride, stay, images) {
   if (c.branches[bid]) delete c.branches[bid].fresh; // something is said in it now
   const key = keyInput.value.trim();
   const b = c.branches[bid];
   b.collapsed = false;
 
   if (text != null) {
-    const um = { id: uid(), role: 'user', text, branchId: bid, ts: Date.now() };
+    const um = { id: uid(), role: 'user', text, branchId: bid, ts: Date.now(), ...(images && images.length ? { images } : {}) };
     c.messages[um.id] = um; b.msgIds.push(um.id);
-    if (c.title === NEW_TITLE) c.title = firstWords(text, 48);
+    if (c.title === NEW_TITLE && text) c.title = firstWords(text, 48);
   }
   c.updated = Date.now();
   const picked = modelSel.value || db.model;
@@ -2945,10 +2984,241 @@ async function sendToBranch(c, bid, text, modelOverride, stay) {
   return streamInto(c, am, req, key, picked, null);
 }
 
+/* ---------------- images in messages (F-36) ---------------- */
+// #132, designed by Liubomyr Ivanitskyi. A message of yours carries up to four images. Each is drawn again on this device, which
+// shrinks a large photo and drops its metadata (such as where it was taken), and is kept once, by its SHA-256: in this browser
+// beside the bundles, and in an export as sessions/files/<sha256>.<ext> (spec §10.1, §10.3). The model sees the images on a
+// branch's path; helpers read [image: alt] instead
+const IMG_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
+const IMG_MAX = 4, IMG_SIDE = 1536, IMG_BUDGET = 14 * 1048576; // per message; the longest side kept; the bytes one request carries (about 20 MB in base64)
+const SHA_HEX = /^[0-9a-f]{64}$/;
+const imgPending = new Map(); // sha256 → { data, mime }: new to this browser, stored with the next save of the bundles
+const imgShown = new Map(); // sha256 → { data, mime }: the images of a shared page, which keeps no storage
+const imgURLs = new Map(); // sha256 → a promise of its blob: URL
+let draftImgs = []; // { sha256, mime, bytes, w, h, alt? }: attached to the message being written
+// what an image is, from its first bytes, not its name or the type it claims (spec §10.6); HEIC only to be drawn again, where the
+// browser can decode it
+function sniffImage(u) {
+  const at = (i, t) => [...t].every((ch, k) => u[i + k] === ch.charCodeAt(0));
+  if (u[0] === 0x89 && at(1, 'PNG')) return 'image/png';
+  if (u[0] === 0xFF && u[1] === 0xD8 && u[2] === 0xFF) return 'image/jpeg';
+  if (at(0, 'RIFF') && at(8, 'WEBP')) return 'image/webp';
+  if (at(0, 'GIF8')) return 'image/gif';
+  if (at(4, 'ftyp') && ['heic', 'heix', 'hevc', 'heif', 'mif1', 'msf1'].some(b => at(8, b))) return 'image/heic';
+  return '';
+}
+// SHA-256 in hex: the browser's, or this one where it has none (a page served over plain http, such as a phone testing a local copy)
+function sha256js(data) {
+  const P = [], K = [], H = [];
+  for (let n = 2; P.length < 64; n++) if (P.every(q => n % q)) { if (P.length < 8) H.push((Math.sqrt(n) % 1) * 2 ** 32 | 0); K.push((Math.cbrt(n) % 1) * 2 ** 32 | 0); P.push(n); }
+  const l = data.length, words = new Int32Array(((l + 8) >> 6 << 4) + 16), w = new Int32Array(64), r = (x, k) => x >>> k | x << (32 - k);
+  for (let i = 0; i < l; i++) words[i >> 2] |= data[i] << (24 - (i % 4) * 8);
+  words[l >> 2] |= 0x80 << (24 - (l % 4) * 8);
+  words[words.length - 1] = l * 8;
+  for (let j = 0; j < words.length; j += 16) {
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      w[i] = i < 16 ? words[j + i] : (r(w[i - 15], 7) ^ r(w[i - 15], 18) ^ w[i - 15] >>> 3) + w[i - 7] + (r(w[i - 2], 17) ^ r(w[i - 2], 19) ^ w[i - 2] >>> 10) + w[i - 16] | 0;
+      const t1 = h + (r(e, 6) ^ r(e, 11) ^ r(e, 25)) + (e & f ^ ~e & g) + K[i] + w[i] | 0, t2 = (r(a, 2) ^ r(a, 13) ^ r(a, 22)) + (a & b ^ a & c ^ b & c) | 0;
+      h = g; g = f; f = e; e = d + t1 | 0; d = c; c = b; b = a; a = t1 + t2 | 0;
+    }
+    [a, b, c, d, e, f, g, h].forEach((x, i) => { H[i] = H[i] + x | 0; });
+  }
+  return H.map(x => (x >>> 0).toString(16).padStart(8, '0')).join('');
+}
+async function sha256Hex(data) {
+  if (!(window.crypto && crypto.subtle)) return sha256js(data);
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', data))].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+// a file, drawn again: at most IMG_SIDE on its longest side, a screenshot or a drawing as PNG, a photo as JPEG at 0.85
+async function prepareImage(file) {
+  const raw = new Uint8Array(await file.arrayBuffer()), kind = sniffImage(raw);
+  if (!kind) throw new Error('unsupported');
+  const src = new Blob([raw], { type: kind });
+  let pic;
+  try { pic = await createImageBitmap(src); } catch (e) {
+    pic = await new Promise((res, rej) => { const u = URL.createObjectURL(src), im = new Image(); im.onload = () => { URL.revokeObjectURL(u); res(im); }; im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('unsupported')); }; im.src = u; });
+  }
+  const w0 = pic.naturalWidth || pic.width, h0 = pic.naturalHeight || pic.height;
+  if (!w0 || !h0) throw new Error('unsupported');
+  const k = Math.min(1, IMG_SIDE / Math.max(w0, h0)), w = Math.max(1, Math.round(w0 * k)), h = Math.max(1, Math.round(h0 * k));
+  const encode = png => {
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const g = cv.getContext('2d');
+    if (!png) { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); } // a JPEG has no transparency
+    g.drawImage(pic, 0, 0, w, h);
+    return new Promise(res => cv.toBlob(res, png ? 'image/png' : 'image/jpeg', 0.85));
+  };
+  let out = (kind === 'image/png' || kind === 'image/gif') && k === 1 ? await encode(true) : null; // a GIF: its first frame
+  if (!out || out.size > 1.5 * 1048576) out = await encode(false);
+  if (pic.close) pic.close();
+  if (!out || !IMG_TYPES[out.type]) throw new Error('unsupported');
+  const data = new Uint8Array(await out.arrayBuffer());
+  return { sha256: await sha256Hex(data), mime: out.type, bytes: data.length, w, h, data };
+}
+// an image's bytes: new here, on a shared page, or in this browser's storage
+async function imgData(sha) {
+  const hit = imgPending.get(sha) || imgShown.get(sha);
+  if (hit) return hit;
+  if (RO || storage !== 'IndexedDB' || !idbConn) return null;
+  try {
+    const rec = await idbDo(idbConn, 'readonly', st => st.get('img:' + sha));
+    if (!rec || !rec.data) return null;
+    const data = new Uint8Array(rec.data), mime = sniffImage(data);
+    return IMG_TYPES[mime] ? { data, mime } : null;
+  } catch (e) { return null; }
+}
+function imgURL(sha) {
+  if (!imgURLs.has(sha)) imgURLs.set(sha, imgData(sha).then(d => d ? URL.createObjectURL(new Blob([d.data], { type: d.mime })) : ''));
+  return imgURLs.get(sha).then(u => { if (!u) imgURLs.delete(sha); return u; }); // one that isn't here yet may come with a save
+}
+// thumbnails get their pictures once they are on the page; one another tab is still saving gets a second try
+function fillThumbs(root) {
+  root.querySelectorAll('img[data-sha]:not([data-state])').forEach(el => {
+    el.dataset.state = 'loading';
+    const show = again => imgURL(el.dataset.sha).then(u => {
+      if (u) { el.src = u; el.dataset.state = 'ok'; return; }
+      if (again) { setTimeout(() => show(false), 1000); return; }
+      el.dataset.state = 'missing';
+      const b = el.closest('.thumb, .att-img'); if (b) { b.classList.add('missing'); if (!b.title || b.title === 'Open the image') b.title = 'Image not in this browser'; }
+    });
+    show(true);
+  });
+}
+let thumbT = 0;
+new MutationObserver(() => { if (!thumbT) thumbT = requestAnimationFrame(() => { thumbT = 0; fillThumbs(document); }); }).observe(document.body, { childList: true, subtree: true });
+const imgsOf = m => (m && m.role === 'user' && Array.isArray(m.images) ? m.images : []);
+// what helpers, copies and node bodies read instead of an image
+const imageMark = x => `[image${x.alt ? ': ' + x.alt.replace(/[[\]\n]/g, ' ') : ''}]`;
+const withMarks = m => { const im = imgsOf(m).map(imageMark).join(' '), t = (m && m.text) || ''; return im && t ? `${im}\n${t}` : im || t; };
+// Gemini counts an image of at most 384 px a side as 258 tokens, and a larger one in tiles of 768 px, 258 tokens each
+const imgTokens = x => 258 * (Math.max(x.w | 0, x.h | 0) <= 384 ? 1 : Math.max(1, Math.ceil((x.w | 0) / 768) * Math.ceil((x.h | 0) / 768)));
+const fmtBytes = n => n < 1024 ? `${n} B` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+async function attachImages(files) {
+  if (RO || !files.length) return;
+  if (storage !== 'IndexedDB') toast('This browser doesn’t keep images here: they may be gone after a reload');
+  for (const f of files) {
+    if (draftImgs.length >= IMG_MAX) { toast(`Up to ${IMG_MAX} images per message`); break; }
+    try {
+      const x = await prepareImage(f);
+      if (draftImgs.some(y => y.sha256 === x.sha256)) continue; // the same picture twice
+      if (!imgPending.has(x.sha256) && !(await imgData(x.sha256))) imgPending.set(x.sha256, { data: x.data, mime: x.mime });
+      draftImgs.push({ sha256: x.sha256, mime: x.mime, bytes: x.bytes, w: x.w, h: x.h });
+    } catch (e) { toast('This file type isn’t supported'); }
+  }
+  renderTray();
+}
+function renderTray() {
+  const tray = $('#attachTray');
+  tray.hidden = !draftImgs.length;
+  tray.innerHTML = draftImgs.map((x, i) => `<span class="att"><button type="button" class="att-img" data-tray="alt" data-i="${i}" title="${esc(x.alt || 'Describe it (optional)')}" aria-label="Image ${i + 1}${x.alt ? `: ${esc(x.alt)}` : ''}. Describe it"><img data-sha="${x.sha256}" alt=""></button>${x.alt ? '<span class="att-alt" aria-hidden="true">Aa</span>' : ''}<button type="button" class="att-x" data-tray="x" data-i="${i}" aria-label="Remove image ${i + 1}">×</button></span>`).join('');
+}
+$('#attachTray').addEventListener('click', e => {
+  const b = e.target.closest('[data-tray]'), x = b && draftImgs[+b.dataset.i]; if (!x) return;
+  if (b.dataset.tray === 'x') { draftImgs.splice(+b.dataset.i, 1); renderTray(); input.focus(); return; }
+  const alt = prompt('Describe this image (optional). Helpers and other tools read this instead of the picture.', x.alt || '');
+  if (alt === null) return;
+  const v = alt.replace(/\s+/g, ' ').trim().slice(0, 200); if (v) x.alt = v; else delete x.alt;
+  renderTray();
+});
+$('#attach').onclick = () => $('#attachFile').click();
+$('#attachFile').onchange = e => { const f = [...e.target.files]; e.target.value = ''; attachImages(f); };
+input.addEventListener('paste', e => {
+  const f = [...((e.clipboardData && e.clipboardData.files) || [])]; if (!f.length) return;
+  if (!(e.clipboardData.getData('text/plain') || '').trim()) e.preventDefault(); // a screenshot, not text
+  attachImages(f);
+});
+{
+  const comp = $('.composer');
+  comp.addEventListener('dragover', e => { if (!RO && e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); comp.classList.add('drop'); } });
+  comp.addEventListener('dragleave', e => { if (!comp.contains(e.relatedTarget)) comp.classList.remove('drop'); });
+  comp.addEventListener('drop', e => { comp.classList.remove('drop'); if (RO || !e.dataTransfer || !e.dataTransfer.files.length) return; e.preventDefault(); attachImages([...e.dataTransfer.files]); });
+}
+// the images of the message being sent: what the message keeps of them
+function takeDraftImages() { const out = draftImgs.map(({ sha256, mime, bytes, w, h, alt }) => ({ sha256, mime, bytes, w, h, ...(alt ? { alt } : {}) })); draftImgs = []; renderTray(); return out; }
+// a thumbnail opens the image full screen: pinch or scroll zooms, drag moves it, a tap or Esc closes it
+let ivZoom = { s: 1, x: 0, y: 0 }, ivStart = null, ivMoved = false;
+const ivPts = new Map(), ivView = $('#imgView'), ivImg = ivView.querySelector('img');
+const paintZoom = () => { ivImg.style.transform = `translate(${ivZoom.x}px, ${ivZoom.y}px) scale(${ivZoom.s})`; };
+async function openImage(sha, alt) {
+  const u = await imgURL(sha);
+  if (!u) { toast('This image isn’t in this browser'); return; }
+  ivImg.src = u; ivImg.alt = alt || ''; ivZoom = { s: 1, x: 0, y: 0 }; paintZoom(); ivView.hidden = false;
+  ivView.querySelector('[data-iv="close"]').focus({ preventScroll: true });
+}
+function closeImage() { if (ivView.hidden) return false; ivView.hidden = true; ivPts.clear(); return true; }
+ivView.addEventListener('wheel', e => { e.preventDefault(); ivZoom.s = Math.min(8, Math.max(1, ivZoom.s * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); if (ivZoom.s === 1) ivZoom.x = ivZoom.y = 0; paintZoom(); }, { passive: false });
+ivView.addEventListener('pointerdown', e => { ivPts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ivPts.size === 1) ivMoved = false; ivStart = { pts: [...ivPts.values()], z: { ...ivZoom } }; });
+ivView.addEventListener('pointermove', e => {
+  if (!ivPts.has(e.pointerId) || !ivStart) return;
+  ivPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const now = [...ivPts.values()], was = ivStart.pts, d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  if (now.length >= 2 && was.length >= 2) { ivZoom.s = Math.min(8, Math.max(1, ivStart.z.s * d(now[0], now[1]) / Math.max(1, d(was[0], was[1])))); ivMoved = true; }
+  else if (now.length === 1 && was.length === 1) {
+    if (d(now[0], was[0]) > 6) ivMoved = true;
+    if (ivZoom.s > 1) { ivZoom.x = ivStart.z.x + now[0].x - was[0].x; ivZoom.y = ivStart.z.y + now[0].y - was[0].y; }
+  }
+  if (ivZoom.s === 1) ivZoom.x = ivZoom.y = 0;
+  paintZoom();
+});
+ivView.addEventListener('pointerup', e => { const tap = ivPts.size === 1 && !ivMoved; ivPts.delete(e.pointerId); ivStart = ivPts.size ? { pts: [...ivPts.values()], z: { ...ivZoom } } : null; if (tap) closeImage(); });
+ivView.addEventListener('pointercancel', e => { ivPts.delete(e.pointerId); ivStart = null; });
+ivView.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); closeImage(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && closeImage()) { e.preventDefault(); e.stopPropagation(); } }, true);
+// At start, the images no stored bundle names any more go: those of a message, a branch or a conversation deleted, once its Undo
+// is gone. One transaction reads the bundles and deletes, so an image saved meanwhile with the bundle that names it stays (spec S7)
+async function gcImages() {
+  if (RO || storage !== 'IndexedDB' || !idbConn) return;
+  try {
+    const keys = (await idbDo(idbConn, 'readonly', st => st.getAllKeys())).filter(k => typeof k === 'string' && k.startsWith('img:'));
+    if (!keys.length) return;
+    await new Promise((res, rej) => {
+      const tx = idbConn.transaction(IDB.store, 'readwrite'), st = tx.objectStore(IDB.store);
+      st.get('ts').onsuccess = e => { const live = new Set(String(e.target.result || '').match(/[0-9a-f]{64}/g) || []); keys.forEach(k => { if (!live.has(k.slice(4)) && !imgPending.has(k.slice(4))) st.delete(k); }); };
+      tx.oncomplete = res; tx.onerror = tx.onabort = () => rej(tx.error);
+    });
+  } catch (e) { console.error(e); }
+}
+// a message's images as session attachments (spec §10.3): each names its file in sessions/files/
+const attachmentsOf = m => imgsOf(m).map(x => ({ resource: `/sessions/files/${x.sha256}.${IMG_TYPES[x.mime]}`, mime: x.mime, bytes: x.bytes | 0, sha256: x.sha256, ...(x.w && x.h ? { width: x.w, height: x.h } : {}), ...(x.alt ? { alt: x.alt } : {}) }));
+// what the demo keeps of an image someone else wrote: its hash, a known type, sizes in range and a short description
+function cleanImages(list) {
+  const px = v => Number.isInteger(v) && v > 0 && v <= 100000 ? v : 0;
+  return (Array.isArray(list) ? list : []).filter(x => x && typeof x === 'object' && SHA_HEX.test(String(x.sha256)) && IMG_TYPES[x.mime]).slice(0, 16)
+    .map(x => ({ sha256: x.sha256, mime: x.mime, bytes: Math.max(0, Math.min(Number.isInteger(x.bytes) ? x.bytes : 0, 1e9)), w: px(x.w), h: px(x.h), ...(typeof x.alt === 'string' && x.alt.trim() ? { alt: x.alt.replace(/\s+/g, ' ').trim().slice(0, 200) } : {}) }));
+}
+// a session's attachments: only images whose file name, hash and type agree (S7)
+const imagesFrom = list => cleanImages((Array.isArray(list) ? list : []).map(x => { const f = x && typeof x === 'object' && /^\/sessions\/files\/([0-9a-f]{64})\.[a-z0-9]{1,5}$/.exec(String(x.resource || '')); return f && f[1] === x.sha256 ? { sha256: f[1], mime: x.mime, bytes: x.bytes, w: x.width, h: x.height, alt: x.alt } : null; }));
+const b64Bytes = t => { try { const bin = atob(t); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; } catch (e) { return null; } };
+const b64Of = data => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).slice(String(fr.result).indexOf(',') + 1)); fr.onerror = () => rej(fr.error); fr.readAsDataURL(new Blob([data])); });
+// the files of an import, kept only when their bytes are the image their name says (S7, spec §10.6)
+async function verifiedImages(pics) {
+  const out = new Map();
+  for (const f of pics) {
+    const m = /([0-9a-f]{64})\.[a-z0-9]{1,5}$/.exec(f.name), mime = f.bytes && sniffImage(f.bytes);
+    if (m && IMG_TYPES[mime] && !out.has(m[1]) && await sha256Hex(f.bytes) === m[1]) out.set(m[1], { data: f.bytes, mime });
+  }
+  return out;
+}
+// the images of a conversation, for an export: each once, as sessions/files/<sha256>.<ext> (spec §10.1); one this browser doesn't
+// have is left out, and its message keeps its description (S7)
+async function imageFiles(c, folder) {
+  const shas = new Map(); Object.values(c.messages).forEach(m => imgsOf(m).forEach(x => shas.set(x.sha256, x.mime)));
+  const out = [];
+  for (const [sha, mime] of shas) { const d = await imgData(sha); if (d) out.push({ name: `${folder}/sessions/files/${sha}.${IMG_TYPES[mime]}`, data: d.data }); }
+  return out;
+}
+// The images new to this browser that a message names go in with the bundles that name them, in one transaction (spec S7); one
+// only attached so far waits for its message
+function namedPending() { const named = new Set(); Object.values(db.convos).forEach(c => Object.values(c.messages).forEach(m => imgsOf(m).forEach(x => named.add(x.sha256)))); return [...imgPending].filter(([sha]) => named.has(sha)); }
+function putImages(st, pend) { for (const [sha, x] of pend) st.put({ data: x.data.slice().buffer, type: x.mime, at: Date.now() }, 'img:' + sha); }
+// the bytes the images of the conversations take, each image once
+function imageBytes() { const seen = new Map(); Object.values(db.convos).forEach(c => Object.values(c.messages).forEach(m => imgsOf(m).forEach(x => seen.set(x.sha256, x.bytes | 0)))); return [...seen.values()].reduce((n, b) => n + b, 0); }
+
 /* ---------------- building a request ---------------- */
 // A request is a list of blocks: fixed system blocks first (harness, memory, decisions), then the conversation.
 // The prompt view shows these blocks, and every answer keeps a record of the ones it was generated from.
-const BLOCK_KINDS = ['harness', 'memory', 'decisions', 'history', 'message', 'tools'];
+const BLOCK_KINDS = ['harness', 'memory', 'decisions', 'history', 'message', 'tools', 'attachments'];
 // Web search runs inside the Gemini API (its google_search tool), so the key still goes only to the model API
 const WEB_NOTE = 'The model may search the web with Google Search and ground its answer in what it finds. The searches and the sources come back with the answer.';
 // The harness explains the blocks that follow it, so it is sent only when there is at least one block
@@ -2973,11 +3243,12 @@ function systemBlocks(c, skip) {
 function mergeTurns(msgs, all) {
   const turns = [];
   for (const m of msgs) {
-    if (!m || m.hidden || m.error || !m.text || m.streaming || m.srcRole) continue; // a system or tool message of another tool's session isn't a turn
+    const im = imgsOf(m).map(x => ({ ...x, mid: m.id }));
+    if (!m || m.hidden || m.error || (!m.text && !im.length) || m.streaming || m.srcRole) continue; // a system or tool message of another tool's session isn't a turn
     const role = m.role === 'user' ? 'user' : 'model';
     const last = turns[turns.length - 1];
-    if (last && last.role === role) { last.text += '\n\n' + m.text; last.ids.push(m.id); if (m.later) last.later = true; if (m.lost) last.lost = true; if (m.unsure) last.unsure = true; }
-    else turns.push({ role, text: m.text, ids: [m.id], ...(m.later ? { later: true } : {}), ...(m.lost ? { lost: true } : {}), ...(m.unsure ? { unsure: true } : {}) });
+    if (last && last.role === role) { if (m.text) last.text = last.text ? last.text + '\n\n' + m.text : m.text; last.ids.push(m.id); if (im.length) last.imgs = (last.imgs || []).concat(im); if (m.later) last.later = true; if (m.lost) last.lost = true; if (m.unsure) last.unsure = true; }
+    else turns.push({ role, text: m.text || '', ids: [m.id], ...(im.length ? { imgs: im } : {}), ...(m.later ? { later: true } : {}), ...(m.lost ? { lost: true } : {}), ...(m.unsure ? { unsure: true } : {}) });
   }
   if (!all) while (turns.length && turns[0].role !== 'user') turns.shift();
   return turns;
@@ -2992,16 +3263,26 @@ function buildRequest(c, msgs, skip) {
   const blocks = system.map(b => ({ ...b, chars: b.text.length }));
   if (past.length) { const ids = past.flatMap(t => t.ids); blocks.push({ kind: 'history', label: `History · ${past.length} turn${past.length === 1 ? '' : 's'}`, ids, sigs: sigs(ids), chars: size(past) }); }
   if (current) blocks.push({ kind: 'message', label: 'Your message', ids: current.ids, sigs: sigs(current.ids), chars: current.text.length });
-  const body = { contents: turns.map(t => ({ role: t.role, parts: [{ text: t.text }] })) };
+  // each image goes before the text of its turn; over the budget the oldest are left out, as they matter least (F-36)
+  const all = turns.flatMap(t => t.imgs || []), on = new Set(); let room = IMG_BUDGET;
+  for (let i = all.length - 1; i >= 0; i--) if (all[i].bytes <= room) { room -= all[i].bytes; on.add(all[i]); }
+  const fill = [], sent = all.filter(x => on.has(x));
+  const body = { contents: turns.map(t => {
+    const parts = (t.imgs || []).filter(x => on.has(x)).map(x => { const part = { inline_data: { mime_type: x.mime, data: '' } }; fill.push({ sha: x.sha256, part }); return part; });
+    if (t.text) parts.push({ text: t.text });
+    if (!parts.length) parts.push({ text: (t.imgs || []).map(imageMark).join(' ') }); // only images, all left out
+    return { role: t.role, parts };
+  }) };
+  if (sent.length) blocks.push({ kind: 'attachments', label: `Images · ${sent.length}`, ids: [...new Set(sent.map(x => x.mid))], files: sent.map(x => x.sha256), tokens: sent.reduce((n, x) => n + imgTokens(x), 0), chars: 0 });
   if (db.web && turns.length) { blocks.push({ kind: 'tools', label: 'Tools · web search', chars: 0, text: WEB_NOTE }); body.tools = [{ google_search: {} }]; }
   if (system.length) body.systemInstruction = { parts: [{ text: system.map(b => b.text).join('\n\n') }] };
-  return { turns, blocks, body, chars: blocks.reduce((n, b) => n + b.chars, 0) };
+  return { turns, blocks, body, fill, chars: blocks.reduce((n, b) => n + b.chars, 0) };
 }
 // What an answer keeps: system blocks verbatim (they change over time), conversation blocks as message ids (no copies)
 function requestRecord(req, model) {
   return { model, at: Date.now(), chars: req.chars, blocks: req.blocks.map(b => b.text != null
     ? { kind: b.kind, label: b.label, chars: b.chars, text: b.text, ...(b.items ? { items: b.items } : {}), ...(b.ids ? { ids: b.ids } : {}) }
-    : { kind: b.kind, label: b.label, chars: b.chars, ids: b.ids, ...(b.sigs ? { sigs: b.sigs } : {}) }) };
+    : { kind: b.kind, label: b.label, chars: b.chars, ids: b.ids, ...(b.sigs ? { sigs: b.sigs } : {}), ...(b.files ? { files: b.files, tokens: b.tokens | 0 } : {}) }) };
 }
 
 // What the model searched and found, from Gemini's groundingMetadata: untrusted, so only http(s) links and plain text are kept
@@ -3044,6 +3325,12 @@ async function streamInto(c, am, req, key, picked, backup) {
   const controller = new AbortController(), stream = { controller, convoId: c.id, msgId: am.id, bid: am.branchId };
   startStream(stream);
   try {
+    for (const x of req.fill || []) {
+      if (x.part.inline_data.data) continue;
+      const d = await imgData(x.sha);
+      if (!d) throw new Error('An image on this branch’s path isn’t in this browser any more, so it can’t be sent. Exclude its message, or open the export that has it.');
+      x.part.inline_data.data = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).slice(String(fr.result).indexOf(',') + 1)); fr.onerror = () => rej(fr.error); fr.readAsDataURL(new Blob([d.data], { type: d.mime })); });
+    }
     let res;
     for (let attempt = 0; attempt < 2; attempt++) {
       res = await fetch(`${API}/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
@@ -3167,7 +3454,7 @@ function openSettings(hint) {
   openSheet({ title: 'Settings', settings: true });
   const mb = savedChars / 1048576;
   $('#storageInfo').textContent = storage === 'IndexedDB'
-    ? `Your data is saved only in this browser (IndexedDB), as Thinking State bundles: the same files an export holds. About ${fmtMB((nativeChars || savedChars) / 1048576)} MB.`
+    ? `Your data is saved only in this browser (IndexedDB), as Thinking State bundles: the same files an export holds. About ${fmtMB(((nativeChars || savedChars) + imageBytes()) / 1048576)} MB${imageBytes() ? ', images included' : ''}.`
     : storage === 'none' ? 'Your saved conversations couldn’t be opened, so nothing is saved now. Reload the page.'
     : `Your data is saved only in this browser (${storage}), about ${fmtMB(mb)} MB.`;
   // a browser may clear site data it isn't asked to keep (Safari after 7 days without a visit): Export all is the backup
@@ -3202,9 +3489,9 @@ function openPromptView(c, m) {
 function previewPrompt(backTo) {
   const c = cur(); if (!c) return;
   const draft = input.value.trim();
-  const msgs = historyFor(c, c.focus).concat(draft ? [{ id: '__draft', role: 'user', text: draft }] : []);
+  const msgs = historyFor(c, c.focus).concat(draft || draftImgs.length ? [{ id: '__draft', role: 'user', text: draft, images: draftImgs }] : []);
   const rec = requestRecord(buildRequest(c, msgs), modelSel.value || db.model);
-  showPrompt({ c, rec, title: 'Next prompt', preview: true, path: historyFor(c, c.focus), ...(typeof backTo === 'function' ? { backTo } : {}), lookup: id => id === '__draft' ? { id, role: 'user', text: draft } : c.messages[id],
+  showPrompt({ c, rec, title: 'Next prompt', preview: true, path: historyFor(c, c.focus), ...(typeof backTo === 'function' ? { backTo } : {}), lookup: id => id === '__draft' ? { id, role: 'user', text: draft, images: draftImgs } : c.messages[id],
     note: 'Preview: what your next message would send right now' + (draft ? ', including what you have typed.' : '. Type a message to see it added.') });
 }
 function showPrompt(pv) {
@@ -3239,7 +3526,8 @@ function pvTurns(pv, b) {
 }
 // What each block of a prompt is, in a line (F-20)
 const BLOCK_WHY = { harness: 'The demo’s fixed instructions to the model', memory: 'Your facts, shared by all conversations',
-  decisions: 'The decisions in force in this conversation', history: 'This branch’s path: the turns before the message', message: 'The message being answered' };
+  decisions: 'The decisions in force in this conversation', history: 'This branch’s path: the turns before the message', message: 'The message being answered',
+  attachments: 'The images on this branch’s path, each sent with its message' };
 // What the model didn't see: the other lines of thinking, excluded messages, and (for the next prompt) decisions of dropped branches
 function notSent(pv) {
   const c = pv.c, r = pv.rec;
@@ -3248,12 +3536,12 @@ function notSent(pv) {
   const on = new Set(pv.path.map(x => x.id)); if (pv.mid) on.add(pv.mid);
   const at = r.at || Date.now();
   const outside = Object.values(c.messages).filter(x => !on.has(x.id) && (x.text || '').trim() && (x.ts || 0) <= at).length;
-  const excluded = pv.path.filter(x => x.hidden && !sent.has(x.id)).length;
+  const excluded = pv.path.filter(x => x.hidden && !sent.has(x.id)).length, exImgs = pv.path.filter(x => x.hidden && !sent.has(x.id)).reduce((k, x) => k + imgsOf(x).length, 0);
   // a prompt starts with a message of yours, so answers before the first one it sends are left out too
   const lead = pv.path.filter(x => !x.hidden && !sent.has(x.id) && x.id !== pv.mid && x.role === 'model' && x.text && !x.error && !x.streaming).length;
   const dropped = pv.preview ? Object.values(c.messages).filter(x => x.flagged && x.decision && x.decision.summary && droppedAt(c, x.branchId)).length : 0;
   const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
-  return [outside && n(outside, 'message outside this branch’s path', 'messages outside this branch’s path'), excluded && n(excluded, 'excluded message', 'excluded messages'),
+  return [outside && n(outside, 'message outside this branch’s path', 'messages outside this branch’s path'), excluded && n(excluded, 'excluded message', 'excluded messages'), exImgs && n(exImgs, 'image of an excluded message', 'images of excluded messages'),
     lead && n(lead, 'answer before the first message sent: a prompt starts with yours', 'answers before the first message sent: a prompt starts with yours'),
     dropped && n(dropped, 'decision of a parked or rejected branch', 'decisions of parked or rejected branches')].filter(Boolean);
 }
@@ -3266,12 +3554,12 @@ function pvRender(pv) {
     const total = sized.reduce((n, [b]) => n + b.chars, 0) || 1;
     const u = r.usage;
     const tokens = u ? `<span><b>${u.prompt.toLocaleString('en-US')}</b> tokens in · <b>${u.answer.toLocaleString('en-US')}</b> out${u.thoughts ? ` (+${u.thoughts.toLocaleString('en-US')} thinking)` : ''}${u.tools ? ` · ${tok(u.tools)} from the search` : ''}</span>`
-                     : `<span>≈ ${Math.max(1, Math.round(total / 4)).toLocaleString('en-US')} tokens (estimate)</span>`;
+                     : `<span>≈ ${Math.max(1, Math.round(total / 4) + r.blocks.reduce((k, b) => k + (b.kind === 'attachments' ? b.tokens | 0 : 0), 0)).toLocaleString('en-US')} tokens (estimate)</span>`;
     const when = new Date(r.at).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
     return `${pv.note ? `<p class="pv-note">${esc(pv.note)}</p>` : ''}
       <p class="pv-meta"><span><b>${esc(r.model || 'unknown model')}</b>${pv.preview ? '' : ` · ${esc(when)}`}</span><span>${fmtChars(total)}</span>${tokens}</p>
-      <div class="pbar" role="list">${sized.map(([b, i]) => `<button class="pbar-seg k-${b.kind}" style="flex-grow:${Math.max(b.chars, 1)}" data-block="${i}" title="${esc(b.label)} · ${fmtChars(b.chars)}" aria-label="${esc(b.label)}"></button>`).join('')}</div>
-      <div>${sized.map(([b, i]) => `<button class="pb-row" data-block="${i}"><span class="pb-dot k-${b.kind}"></span><span class="pb-main"><span class="pb-name">${esc(b.label)}</span>${BLOCK_WHY[b.kind] ? `<span class="pb-why">${pv.preview && b.kind === 'message' ? 'What you have typed' : BLOCK_WHY[b.kind]}</span>` : ''}</span><span class="pb-size">${fmtChars(b.chars)} · ${Math.round(b.chars * 100 / total)}%</span>${ICON.chevRight}</button>`).join('')}</div>
+      <div class="pbar" role="list">${sized.map(([b, i]) => `<button class="pbar-seg k-${b.kind}" style="flex-grow:${Math.max(b.kind === 'attachments' ? (b.tokens | 0) * 4 : b.chars, 1)}" data-block="${i}" title="${esc(b.label)} · ${b.kind === 'attachments' ? `≈ ${tok(b.tokens)} tokens` : fmtChars(b.chars)}" aria-label="${esc(b.label)}"></button>`).join('')}</div>
+      <div>${sized.map(([b, i]) => `<button class="pb-row" data-block="${i}"><span class="pb-dot k-${b.kind}"></span><span class="pb-main"><span class="pb-name">${esc(b.label)}</span>${BLOCK_WHY[b.kind] ? `<span class="pb-why">${pv.preview && b.kind === 'message' ? 'What you have typed' : BLOCK_WHY[b.kind]}</span>` : ''}</span><span class="pb-size">${b.kind === 'attachments' ? `≈ ${tok(b.tokens)} tokens` : `${fmtChars(b.chars)} · ${Math.round(b.chars * 100 / total)}%`}</span>${ICON.chevRight}</button>`).join('')}</div>
       ${(() => { const ns = notSent(pv); return ns.length ? `<div class="pv-search pv-not"><b>Not in this prompt</b><ul>${ns.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="set-hint">Each branch sends only its own path, so the other lines of thinking don’t mix in.</p></div>` : ''; })()}
       ${web && !pv.search ? `<div class="pv-search pv-web"><b>${pv.preview ? 'Web search is on' : 'Web search was available'}</b><p class="set-hint">${pv.preview
         ? 'The model may search the web for the next answer. It decides itself whether it needs fresh facts, and what it finds is added inside the Gemini API.'
@@ -3289,6 +3577,7 @@ function pvRender(pv) {
       + (items.length ? `<p class="pv-meta"><span>It used ${items.length} memory item${items.length === 1 ? '' : 's'}${known.length < items.length ? `, ${items.length - known.length} of them not in your memory` : ''}</span></p>${known.length ? `<ul class="pv-used">${known.map(x => `<li>${esc(x.text)}</li>`).join('')}</ul>` : ''}` : '');
   }
   if (b.text != null) return `<pre class="pv-text">${esc(b.text)}</pre>`;
+  if (b.kind === 'attachments') return imagesBlockHTML(pv, b);
   const turns = pvTurns(pv, b);
   if (pv.level === 'block') {
     const gone = turns.some(t => t.deleted), now = turns.reduce((n, t) => n + (t.deleted ? 0 : t.text.length), 0), lost = turns.some(t => t.lost) || (!pv.preview && !gone && now !== b.chars && !turns.some(t => t.later));
@@ -3302,12 +3591,27 @@ function pvRender(pv) {
   return `${t.later ? `<p class="pv-note">${t.unsure ? 'Edited before the demo kept earlier texts: this may not be what the model saw.' : t.lost ? 'Changed after this answer, and the earlier text wasn’t kept: this is the current text.' : 'Changed after this answer: this is the text the model saw.'}</p>` : ''}<p class="pv-meta"><span><b>${roleName(t.role)}</b></span><span>${fmtChars(t.text.length)}</span></p><pre class="pv-text">${esc(t.text)}</pre>`
     + (now ? `<p class="pv-meta"><span><b>The text now</b></span><span>${fmtChars(now.length)}</span></p><pre class="pv-text">${esc(now)}</pre>` : '');
 }
+// The images a prompt sent, each with its size and an estimate of its tokens, and those of the path it left out (F-36)
+function imagesBlockHTML(pv, b) {
+  const files = Array.isArray(b.files) ? b.files : [], seen = new Map(), at = id => (pv.lookup ? pv.lookup(id, null) : pv.c && pv.c.messages[id]);
+  (Array.isArray(b.ids) ? b.ids : []).forEach(id => { const m = at(id); imgsOf(m).forEach(x => { if (!seen.has(x.sha256)) seen.set(x.sha256, { x, m }); }); });
+  const rows = files.map(sha => { const k = seen.get(sha), x = k && k.x;
+    return `<li><button class="thumb" type="button" data-pvimg="${sha}" title="${esc((x && x.alt) || 'Open the image')}" aria-label="${esc(x && x.alt ? `Image: ${x.alt}` : 'Image')}"><img data-sha="${sha}" alt=""></button><span>${x
+      ? `${esc((x.mime.split('/')[1] || '').toUpperCase())} · ${x.w} × ${x.h} · ${fmtBytes(x.bytes)} · ≈ ${tok(imgTokens(x))} tokens${x.alt ? `<br>${esc(x.alt)}` : ''}${k.m && k.m.text ? `<br><span class="pb-why">With “${esc(snippetOf(k.m.text, 60))}”</span>` : ''}`
+      : 'Its message isn’t here any more'}</span></li>`; });
+  const sent = new Set(files), left = (pv.path || []).filter(m => !m.hidden).flatMap(imgsOf).filter(x => !sent.has(x.sha256)).length;
+  return `<p class="pv-note">Each image goes to the model with its message, before the text. Gemini counts about 258 tokens per image, and as many per 768 px tile of a larger one${pv.rec.usage ? ': the tokens in at the top are the real count' : ''}.</p>
+    <ul class="pv-imgs">${rows.join('')}</ul>${left ? `<p class="set-hint">${left} image${left === 1 ? '' : 's'} on this path left out: one request carries at most ${IMG_BUDGET / 1048576} MB of images, the newest first.</p>` : ''}`;
+}
 function pvClick(pv, e) {
+  const pic = e.target.closest('[data-pvimg]');
+  if (pic) { openImage(pic.dataset.pvimg, pic.title); return; }
   const blk = e.target.closest('[data-block]'), part = e.target.closest('[data-part]');
   if (blk) { pv.block = +blk.dataset.block; pv.level = 'block'; pvSync(pv); return; }
   if (part) { pv.part = +part.dataset.part; pv.level = 'part'; pvSync(pv); return; }
   if (e.target.closest('[data-copy]')) {
-    const text = pv.rec.blocks.filter(b => b.kind !== 'tools').map(b => `## ${b.label}\n\n` + (b.text != null ? b.text : pvTurns(pv, b).map(t => `[${roleName(t.role)}]\n${t.text}`).join('\n\n'))).join('\n\n');
+    const marks = b => (b.ids || []).flatMap(id => imgsOf(pv.lookup ? pv.lookup(id, null) : pv.c && pv.c.messages[id])).filter(x => (b.files || []).includes(x.sha256)).map(imageMark).join('\n');
+    const text = pv.rec.blocks.filter(b => b.kind !== 'tools').map(b => `## ${b.label}\n\n` + (b.text != null ? b.text : b.kind === 'attachments' ? marks(b) : pvTurns(pv, b).map(t => `[${roleName(t.role)}]\n${t.text}`).join('\n\n'))).join('\n\n');
     copyText(text, 'Prompt copied');
   }
 }
@@ -3510,10 +3814,11 @@ const HELP = [
     <li>Go <b>Back</b> to the first column and tap <b>Prompt</b> above the message box (on a phone, the layers icon): your next prompt, block by block. The decision is in it, and <b>Not in this prompt</b> counts the branch you opened, which isn't.</li>
     <li>Tap the <b>bookmark</b> under a message, write what every conversation should know about you, and <b>Save</b>: that fact now goes into every request.</li>
     <li>Menu → <b>⋯</b> on a conversation → <b>Export as a Thinking State</b>: a .zip any app or agent can read.</li></ol>` },
-  { id: 'start', title: 'Getting started', cards: ['F-02', 'F-03', 'F-15', 'F-18'], body: `
+  { id: 'start', title: 'Getting started', cards: ['F-02', 'F-03', 'F-15', 'F-18', 'F-36'], body: `
     <ul><li><b>Settings</b> (the gear, top right): paste a Gemini API key. It stays in this browser and goes only to Google's Gemini API. With a free key, Google may use what you send to improve its products, and people may read it: keep private matters out, or use a paid key.</li>
     <li>No key yet? Menu → <b>Try a sample conversation</b>: three recorded ones, a decision, a troubleshooting session and a pricing plan, with options, comparisons and choices, branch statuses, decisions, web searches, formulas, and every prompt with its tokens.</li>
     <li>On a desktop, Enter sends and Shift+Enter adds a line. On a phone, Enter adds a line: tap <b>Send</b>. <b>Stop</b> ends an answer and keeps what arrived, tagged <b>stopped</b>; it shows in the branch the answer is coming in. Branches are answered at the same time: send in one, move to another and send there too. An answer cut off by a lost connection, a reload or Gemini itself (its output limit or its safety filter) is tagged <b>cut off</b>, with the reason under it. An error says what went wrong and what to do, with <b>Try again</b> (and <b>Open Settings</b> for a key Gemini refused). What you type stays in its conversation. Answers show Markdown, code and formulas, and an image from another site shows as a link to it, so nothing loads from there.</li>
+    <li>The paperclip next to <b>Send</b> attaches images, up to four a message: a photo, a screenshot, a chart. You can also paste or drop them. The model sees them on this branch's path, and a branch that forked before them doesn't. Tap one in the box to describe it, which is what helpers and other tools read; tap one in a message to see it full screen. Each is shrunk and drawn again on your device, so a photo's location never leaves it.</li>
     <li>Menu → <b>New conversation</b> starts one. Its first answer gives it a short title. <b>⋯</b> on a conversation in the menu renames, exports, shares or deletes it.</li>
     <li>On a phone, add it to the home screen: iPhone Safari → Share → <b>Add to Home Screen</b>; Android Chrome → ⋮ → <b>Add to Home screen</b>.</li></ul>` },
   { id: 'branches', title: 'Branches', cards: ['F-04', 'F-05', 'F-06', 'F-07', 'F-35', 'F-10', 'F-11', 'F-12', 'F-19', 'F-24', 'F-29', 'F-32'], body: `
@@ -3551,6 +3856,7 @@ const HELP = [
     <li>Menu → <b>⋯</b> on a conversation → <b>Export as a Thinking State</b>: a .zip with its thoughts, decisions and the facts remembered from it, and the session with the model, prompt and tokens of every answer.</li>
     <li>What you do is data too: options answer a question, a comparison is a finding, a choice sets statuses, an answer keeps its versions, helper calls keep their tokens, a prompt names the facts it used, every node says who worded it, and <code>log.md</code> lists the decisions and branch statuses as they stand, each dated when it was made. Exports and shared pages leave the memory text out of the prompts; a conversation's export includes only the facts remembered from it.</li>
     <li><b>Export all</b> saves one .zip: a Thinking State per conversation, and your memory as documents in <code>home/memory/</code>, each fact once.</li>
+    <li>Images are files too: <code>sessions/files/</code>, each once, named by its hash, and the message names them. They are private with the session, and a shared page carries them inside it.</li>
     <li><b>⋯</b> → <b>Share as a read-only page</b> saves a read-only page of the conversation, with its decisions under ⚑ and a link to the demo. On that page, <b>Download Thinking State</b> gets the Thinking State it holds, the conversation as <b>Export all</b> writes it, without your facts, to import and continue.</li>
     <li><b>Import</b> opens a Thinking State or an Export all (.zip), a shared page, or a .json from an earlier version. The demo's own Thinking States come back whole; one made by another tool opens as a tree of cards, each labelled with its node's type and author, to keep writing in, and its export keeps everything you didn't change there, byte for byte: authors, sources, tags, memory, log and session entries, in their order. Files the demo can't read are named, and kept as they are. A Thinking State that brings memory facts you don't have asks before adding them, an Export all too, as a restore: memory goes into every request, and anyone can make such a zip.</li></ul>` },
   { id: 'help', title: 'About this help', cards: ['F-34'], body: `
@@ -3558,7 +3864,8 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Edits keep what was answered: <b>edited</b> opens a message’s versions, and a line on the first message an edit made out of date lets you regenerate it in place, keep it as valid, or answer in a new branch.',
+  { version: 'Unreleased', items: ['Images in your messages: the paperclip attaches a photo or a screenshot, the model sees it on the branch’s path, and an export keeps it as a file.',
+    'Edits keep what was answered: <b>edited</b> opens a message’s versions, and a line on the first message an edit made out of date lets you regenerate it in place, keep it as valid, or answer in a new branch.',
     'Branches are answered at the same time: send in one, move to another and send there too. <b>Stop</b> stops the branch you are in, and options are answered all at once.',
     'Saving writes only the conversations that changed, and an answer still streaming is kept in its own Thinking State.',
     'One way into Help, at the bottom of the menu, and each text in one place. The first column is the conversation, a Branch out you leave unused goes, and the Branches panel has one fold and no second list of decisions.',
@@ -3678,7 +3985,7 @@ const stamp = () => new Date().toISOString().slice(0, 10);
 const omitMemory = r => { if (r && Array.isArray(r.blocks)) r.blocks.forEach(b => { if (b.kind === 'memory') { b.text = ''; b.omitted = true; } }); };
 // Export all: one .zip with every conversation as its Thinking State bundle, and global memory as a Mindbough home
 // (home/memory/, spec §9), each fact citing where it was remembered, across bundles (§8.3)
-function exportAllStates() {
+async function exportAllStates() {
   const ids = db.order.filter(id => db.convos[id] && Object.keys(db.convos[id].messages).length); // an empty conversation holds nothing
   if (!ids.length && !db.memory.length) { toast('Nothing to export'); return; }
   const files = [], used = new Set(['home']);
@@ -3690,6 +3997,7 @@ function exportAllStates() {
     used.add(folder);
     const out = thinkingStateFiles(c, true, false, true);
     out.files.forEach(f => files.push({ name: folder + f.name.slice(f.name.indexOf('/')), text: f.text }));
+    files.push(...await imageFiles(c, folder));
     latest = Math.max(latest, Date.parse(out.at) || 0);
   }
   const taken = new Set(), items = [];
@@ -3736,7 +4044,7 @@ function zipFiles(files, when = Date.now()) {
   const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
   let offset = 0;
   for (const f of files) {
-    const name = enc.encode(f.name), data = enc.encode(f.text), crc = crc32(data);
+    const name = enc.encode(f.name), data = f.data instanceof Uint8Array ? f.data : enc.encode(f.text), crc = crc32(data); // an image as its bytes
     const head = (sig, size) => { const v = new DataView(new ArrayBuffer(size)); v.setUint32(0, sig, true); return v; };
     const loc = head(0x04034b50, 30);
     [[4, 20], [6, 0x0800], [8, 0], [10, time], [12, date], [26, name.length], [28, 0]].forEach(([o, x]) => loc.setUint16(o, x, true)); // 0x0800: UTF-8 names
@@ -3915,7 +4223,7 @@ function thinkingStateFiles(c, quiet, mine, all) {
   taken.add(c.sessionId);
   const folder = slug(c.title), session = `sessions/${c.sessionId}.jsonl`, at = isoOf(c.updated || c.created);
   const who = m => m.role === 'user' ? '**You:**' : `**Gemini**${m.model ? ` (\`${m.model}\`)` : ''}:`;
-  const transcript = ids => ids.map(id => c.messages[id]).filter(Boolean).map(m => (!mine && m.streaming && m.prev ? { ...m, ...m.prev } : m)).map(m => `${who(m)}${m.hidden ? ' _(excluded from history)_' : ''}\n\n${(m.text || m.error || '').trim()}`).join('\n\n');
+  const transcript = ids => ids.map(id => c.messages[id]).filter(Boolean).map(m => (!mine && m.streaming && m.prev ? { ...m, ...m.prev } : m)).map(m => `${who(m)}${m.hidden ? ' _(excluded from history)_' : ''}\n\n${(withMarks(m) || m.error || '').trim()}`).join('\n\n');
   for (const b of dfs(c)) {
     const msgs = b.msgIds.map(id => c.messages[id]).filter(Boolean);
     const first = msgs.find(m => m.role === 'user');
@@ -4136,7 +4444,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       return { ...out, ...(ids.length ? { nodes: [...new Set(ids)] } : {}), ...(b.text ? { text: b.text } : {}) };
     }
     // a message deleted since keeps its id: a request records what was sent (spec S6)
-    if (Array.isArray(b.ids) && typeof b.text !== 'string') return { ...out, entries: b.ids.map((id, j) => c.messages[id] ? entryAt(id, Array.isArray(b.sigs) ? b.sigs[j] : null, at) : id) };
+    if (Array.isArray(b.ids) && typeof b.text !== 'string') return { ...out, entries: b.ids.map((id, j) => c.messages[id] ? entryAt(id, Array.isArray(b.sigs) ? b.sigs[j] : null, at) : id), ...(Array.isArray(b.files) ? { files: b.files, ...(b.tokens ? { tokens: b.tokens | 0 } : {}) } : {}) };
     return { ...out, ...(b.text ? { text: b.text } : {}), ...(Array.isArray(b.refs) && b.refs.length ? { entries: b.refs } : {}) };
   };
   const person = x => typeof x === 'string' && x.startsWith('human:') ? x : 'human:me'; // another person who wrote it, else you
@@ -4162,7 +4470,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       if (!mine && m.streaming && m.prev) m = { ...m, ...m.prev, streaming: false, prev: undefined }; // an export holds the answer being replaced
       // a message's earlier versions come first: the first as it was written, each later one replacing the one before;
       // a version edited in place is by you, without a request (spec §14.5, S4)
-      const vs = (m.versions || []).filter(v => v && typeof v.text === 'string'), ids = [];
+      const vs = (m.versions || []).filter(v => v && typeof v.text === 'string'), ids = [], att = attachmentsOf(m); // every version keeps its images (spec §10.3)
       const variant = i === 0 && b.editOf && c.messages[b.editOf] ? { variant_of: entryAt(b.editOf, null, b.created) }
         : i === 0 && m.role === 'model' && b.regenOf && c.messages[b.regenOf] ? { variant_of: entryAt(b.regenOf, null, b.created) } : {}; // spec §14.5
       let prev = null;
@@ -4176,7 +4484,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
         const vt = v.request && v.request.usage && v.request.usage.tools && !back ? v.request.usage.tools : 0;
         // in the key order the line had while it was the newest, so a message that becomes a version keeps its line (spec S6)
         lines.push({ id, kind: 'message', node, after, role: m.role === 'user' ? 'user' : 'assistant', by, at: iso(back ? v.restoredAt : v.editedAt || v.ts),
-          ...(prev ? { replaces: prev } : {}), ...(back ? { restores: back } : {}), text: v.text, ...(v.cut ? { error: v.cut } : {}), ...(prev ? {} : variant),
+          ...(prev ? { replaces: prev } : {}), ...(back ? { restores: back } : {}), text: v.text, ...(v.cut ? { error: v.cut } : {}), ...(att.length ? { attachments: att } : {}), ...(prev ? {} : variant),
           ...(rq ? { request: rq, ...useOf(v.request) } : {}), ...(vt ? { ext: { 'mindbough-demo': { toolTokens: vt } } } : {}), ...(src.length && !back ? { sources: src } : {}) });
         // an earlier version's web search stays in the session: entries never go away (spec S6, W13)
         if (v.search && !back && !v.search.noTool) lines.push({ id: reuse(v.search.eid) || derive(id + 'ws'), kind: 'tool', node, after, tool: 'web_search', input: { queries: v.search.queries || [] }, ...toolOut(v.search), ...(src.length ? { sources: src } : {}), by, at: toolAt(v.search, v.ts) });
@@ -4193,6 +4501,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       if (m.error) e.error = m.error;
       if (m.cut && m.text) e.error = m.cut; // cut off: the text arrived, the reason is the app's
       if (!m.text && !m.error) e.text = '';
+      if (att.length) e.attachments = att;
       if (m.hidden) e.excluded = true;
       if (!vs.length) Object.assign(e, variant);
       if (m.request && !human) { e.request = reqOf(m.request); Object.assign(e, useOf(m.request)); }
@@ -4250,7 +4559,7 @@ const wroteOf = n => { const g = n.meta.generated, by = g && typeof g === 'objec
 const jsonOf = (v, max) => { try { const t = JSON.stringify(v); return t && t.length <= max ? JSON.parse(t) : null; } catch (e) { return null; } };
 // Reads the text files of a .zip (stored or deflated entries) with the browser's own inflater
 async function unzipText(buf) {
-  const u8 = new Uint8Array(buf), dv = new DataView(buf), dec = new TextDecoder(), out = [];
+  const u8 = new Uint8Array(buf), dv = new DataView(buf), dec = new TextDecoder(), out = [], images = [];
   let eocd = -1;
   for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
   if (eocd < 0) throw new Error('This is not a readable .zip file');
@@ -4261,14 +4570,17 @@ async function unzipText(buf) {
     const method = dv.getUint16(p + 10, true), size = dv.getUint32(p + 20, true), full = dv.getUint32(p + 24, true), off = dv.getUint32(p + 42, true);
     const nlen = dv.getUint16(p + 28, true), name = dec.decode(u8.subarray(p + 46, p + 46 + nlen));
     p += 46 + nlen + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
-    // only Markdown and sessions matter; skip folders, macOS resource forks and anything suspiciously large
-    if (!/\.md$|(^|\/)sessions\/[^/]+\.jsonl$|(^|\/)\.gitignore$/i.test(name) || /(^|\/)(__MACOSX\/|\._)/.test(name) || full > 5e6) continue;
+    // only Markdown, sessions and the images attached to messages matter; skip folders, macOS resource forks and anything suspiciously large
+    const pic = /(^|\/)sessions\/files\/[0-9a-f]{64}\.[a-z0-9]{1,5}$/.test(name);
+    if ((!pic && !/\.md$|(^|\/)sessions\/[^/]+\.jsonl$|(^|\/)\.gitignore$/i.test(name)) || /(^|\/)(__MACOSX\/|\._)/.test(name) || full > (pic ? 2e7 : 5e6) || (pic && images.length >= 500)) continue;
     const start = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true), data = u8.subarray(start, start + size);
     let bytes = null;
     if (method === 0) bytes = data;
     else if (method === 8) bytes = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
-    if (bytes) out.push({ name, text: dec.decode(bytes) });
+    if (bytes && pic) images.push({ name, bytes: bytes.slice() });
+    else if (bytes) out.push({ name, text: dec.decode(bytes) });
   }
+  out.images = images; // the bytes, beside the text files
   return out;
 }
 // YAML is needed only for Thinking States, so the reader is loaded (pinned by its hash) on the first zip import
@@ -4425,6 +4737,8 @@ async function openThinkingStates(buf) { // a .zip, or the files a shared page h
     .filter(r => r.fm && r.fm.meta.type === 'Thinking State' && r.fm.meta.thinking && r.fm.meta.thinking.root)
     .map(r => { const c = bundleToConvo(r, files); if (c) c.from = { r, files }; return c; }).filter(Boolean);
   convos.home = homeFacts(files);
+  // the images: a zip's files, or a shared page's, in base64
+  convos.images = await verifiedImages(Array.isArray(buf) ? buf.filter(f => f && typeof f.name === 'string' && typeof f.b64 === 'string').slice(0, 500).map(f => ({ name: f.name, bytes: b64Bytes(f.b64) })).filter(f => f.bytes) : files.images || []);
   convos.unread = files.filter(f => /\.md$/.test(f.name) && FM_RE.test(f.text) && !frontmatter(f.text)).map(f => f.name); // named in the toast
   if (!convos.length && !convos.home.length && noYaml) throw noYaml;
   return convos;
@@ -4470,12 +4784,16 @@ function sessionToConvo(r, files, nodes, rootId, own) {
   const order = [rootId, ...[...branchEntry.keys()].filter(n => n !== rootId && nodes.has(n)), ...[...withEntries].filter(n => n !== rootId && !branchEntry.has(n) && nodes.has(n))];
   const WEB = new Map(), WEBID = new Map(); entries.filter(e => e.kind === 'tool' && e.tool === 'web_search').forEach(e => { WEB.set(String(e.after), e); WEBID.set(e.id, e); });
   const blockBack = b => {
-    const names = { harness: 'Harness', memory: 'Memory', decisions: 'Decisions', history: 'History', message: 'Your message' };
+    const names = { harness: 'Harness', memory: 'Memory', decisions: 'Decisions', history: 'History', message: 'Your message', attachments: 'Images' };
     const known = BLOCK_KINDS.includes(b.kind), was = !known && typeof b.kind === 'string' && /^[a-z][a-z0-9_.:-]{0,40}$/i.test(b.kind) ? { was: b.kind } : {};
     const out = { kind: known ? b.kind : 'harness', ...was, ...(b.label ? {} : { auto: true }), label: String(b.label || (Object.prototype.hasOwnProperty.call(names, b.kind) ? names[b.kind] : typeof b.kind === 'string' && b.kind ? b.kind : 'Block')).slice(0, 80), chars: Math.max(0, b.chars | 0) };
     if (b.kind === 'memory') {
       const items = (Array.isArray(b.memory) ? b.memory : []).map(String).filter(x => /^home:[0-9]{8}-[0-9a-z]{6}$/.test(x)).map(x => x.slice(5)).slice(0, 200), it = items.length ? { items } : {};
       return own && !b.omitted && typeof b.text === 'string' ? { ...out, text: b.text, ...it } : { ...out, text: '', omitted: true, ...it };
+    }
+    if (b.kind === 'attachments' && Array.isArray(b.entries)) { // the images a prompt sent, by their messages (spec §10.4)
+      const sent = b.entries.map(String).filter(x => ENTRY_ID.test(x)).slice(0, 200);
+      return { ...out, ids: sent.map(x => toMsg.get(x) || x), files: (Array.isArray(b.files) ? b.files : []).map(String).filter(x => SHA_HEX.test(x)).slice(0, 64), tokens: Math.max(0, b.tokens | 0) };
     }
     if (Array.isArray(b.entries) && (b.kind === 'history' || b.kind === 'message')) {
       // an entry that replaces another names the exact version sent; an id no entry has was deleted since, and stays (spec S6)
@@ -4515,6 +4833,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
       const model = role === 'model' ? modelOf(gen.by) : ''; if (model) m.model = model;
       if (v.error) { if (m.text) m.cut = String(v.error).slice(0, 300); else m.error = String(v.error); } // text and an error: cut off
       if (slot.excluded || v.excluded) m.hidden = true;
+      if (role === 'user') { const im = imagesFrom(v.attachments); if (im.length) m.images = im; } // images attached to it (F-36)
       const ext = isObj(v.ext) && isObj(v.ext['mindbough-demo']) ? v.ext['mindbough-demo'] : {};
       if (ext.edited) m.edited = true;
       if (typeof ext.kept === 'string' && Number.isFinite(Date.parse(ext.kept))) m.keptAt = Date.parse(ext.kept); // kept as valid after an edit above (F-35)
@@ -4707,16 +5026,19 @@ function bundleToConvo(r, files, own) {
   visit(nodes.get(rootId), null, null);
   return convo;
 }
-function exportThinkingState(id) {
+async function exportThinkingState(id) {
   const c = db.convos[id]; if (!c) return;
   const { folder, at, files } = thinkingStateFiles(c);
+  files.push(...await imageFiles(c, folder));
   download(`${folder}-thinking-state.zip`, zipFiles(files, Date.parse(at)), 'application/zip');
   toast('Thinking State downloaded (.zip)');
 }
-function exportReadOnly(id) {
+async function exportReadOnly(id) {
   const c = db.convos[id]; if (!c) return;
-  // its Thinking State as Export all writes it: none of your facts, no memory text, another tool's files as they were (F-14, F-23)
+  // its Thinking State as Export all writes it: none of your facts, no memory text, another tool's files as they were (F-14, F-23),
+  // and its images in base64 (F-36)
   const { folder, at: made, files } = thinkingStateFiles(c, false, false, true);
+  for (const f of await imageFiles(c, folder)) files.push({ name: f.name, b64: await b64Of(f.data) });
   const json = JSON.stringify({ title: c.title, folder, at: made, files }).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   const S = 'scr' + 'ipt';
   const marker = '<' + S + ' id="app">';
@@ -4725,6 +5047,7 @@ function exportReadOnly(id) {
   const at = page.indexOf(marker);
   if (at < 0) { toast('Could not build the shared page'); return; }
   const inject = `<${S}>window.__GTC_READONLY__=${json};</${S}>\n`, name = `${slug(c.title)}-shared.html`, html = page.slice(0, at) + inject + page.slice(at);
+  if (html.length > 5 * 1048576 && !confirm(`With its images, this page is ${fmtMB(html.length / 1048576)} MB. Save it?`)) return;
   const file = typeof File === 'function' ? new File([html], name, { type: 'text/html' }) : null;
   if (touchScreen() && file && navigator.canShare && navigator.canShare({ files: [file] })) { // a phone: its share sheet
     navigator.share({ files: [file], title: c.title }).then(() => toast('Read-only page shared')).catch(err => { if (err && err.name !== 'AbortError') { download(name, html, 'text/html'); toast('Read-only page downloaded — send this file to anyone'); } });
@@ -4824,6 +5147,7 @@ function adoptConvo(src) {
         if (Array.isArray(x.decision.history)) nm.decision.history = x.decision.history.filter(isObj).slice(0, 10).map(version);
       }
       if (x.hidden) nm.hidden = true;
+      if (nm.role === 'user') { const im = cleanImages(x.images); if (im.length) nm.images = im; }
       if (x.edited) nm.edited = true;
       if (tsIdOk(x.choiceId)) nm.choiceId = x.choiceId;
       if (Number.isFinite(x.editedAt)) nm.editedAt = x.editedAt;
@@ -4890,6 +5214,7 @@ function adoptConvo(src) {
       }
       if (Array.isArray(b.nodes)) out.nodes = b.nodes.filter(x => typeof x === 'string' && TS_ID.test(x)).slice(0, 200); // the Decisions it named
       if (b.kind === 'memory' && Array.isArray(b.items)) out.items = b.items.filter(x => typeof x === 'string' && TS_ID.test(x)).slice(0, 200);
+      if (b.kind === 'attachments') { out.files = (Array.isArray(b.files) ? b.files : []).filter(x => typeof x === 'string' && SHA_HEX.test(x)).slice(0, 64); out.tokens = count(b.tokens); }
       return out;
     });
     const rec = { model: str(r.model, 100), at: time(r.at), chars: count(r.chars), blocks };
@@ -4973,6 +5298,8 @@ async function importZip(buf, { memory = true, reuse = false } = {}) {
       if (!fresh.some(x => x.f.text === f.text)) fresh.push({ f, id: at });
     }
   });
+  // the images of the conversations opened: stored with them at the next save, or shown from the shared page (F-36)
+  for (const id of new Set(added)) Object.values((db.convos[id] || {}).messages || {}).forEach(m => imgsOf(m).forEach(x => { const d = convos.images && convos.images.get(x.sha256); if (d) (RO ? imgShown : imgPending).set(x.sha256, d); }));
   // Memory goes into every request, and a zip may be someone else's, even one laid out as an Export all: its facts come only if you
   // say so, an Export all's with the words of a backup (F-23, F-26). A fact you have already is only linked to its message again
   const home = (memory ? convos.home || [] : []).filter(f => {
@@ -5048,7 +5375,7 @@ async function openSample(x) {
 $('#sampleBtn').onclick = openSamples;
 $('#exportAllBtn').onclick = exportAllStates;
 // a shared page gives back the Thinking State it holds, as it holds it; one from before 0.9, its conversation's
-const roDownload = () => { if (!Array.isArray(RO && RO.files)) { exportThinkingState(db.current); return; } download(`${String(RO.folder || 'thinking-state').replace(/[\\/:*?"<>|\s]+/g, '-')}-thinking-state.zip`, zipFiles(RO.files, Date.parse(RO.at) || Date.now()), 'application/zip'); toast('Thinking State downloaded (.zip)'); };
+const roDownload = () => { if (!Array.isArray(RO && RO.files)) { exportThinkingState(db.current); return; } download(`${String(RO.folder || 'thinking-state').replace(/[\\/:*?"<>|\s]+/g, '-')}-thinking-state.zip`, zipFiles(RO.files.map(f => typeof f.b64 === 'string' ? { name: f.name, data: b64Bytes(f.b64) || new Uint8Array() } : f), Date.parse(RO.at) || Date.now()), 'application/zip'); toast('Thinking State downloaded (.zip)'); };
 $('#roBarDl').onclick = roDownload;
 
 /* ---------------- panels & outline ---------------- */
@@ -5084,14 +5411,15 @@ $('#toggleSide').onclick = () => {
 // Back on a phone (Android's button, iOS's edge swipe) goes back in the browser's history. An open sheet, or a side panel on a phone,
 // holds one step of it, so Back closes it, or goes a level up in it, instead of leaving the app
 let held = false, dropping = false;
-const overlayOpen = () => !$('#sheet').hidden || $('#sidebar').classList.contains('open') || (isMobile() && !!ui.outline);
+const overlayOpen = () => !$('#imgView').hidden || !$('#sheet').hidden || $('#sidebar').classList.contains('open') || (isMobile() && !!ui.outline);
 function hold() { if (held) return; try { history.pushState({ mbOverlay: true }, ''); held = true; } catch (e) {} }
 function release() { if (!held || overlayOpen()) return; held = false; if (history.state && history.state.mbOverlay) { dropping = true; history.back(); } }
 window.addEventListener('popstate', () => {
   if (dropping) { dropping = false; return; }
   if (!held) return;
   held = false;
-  if (!$('#sheet').hidden) { if (sheetView && sheetView.back) sheetView.back(); else closeSheet(); }
+  if (!$('#imgView').hidden) closeImage(); // an image open full screen, over the canvas or a sheet (F-36)
+  else if (!$('#sheet').hidden) { if (sheetView && sheetView.back) sheetView.back(); else closeSheet(); }
   else if ($('#sidebar').classList.contains('open')) $('#sidebar').classList.remove('open');
   else if (isMobile() && ui.outline) toggleOutline(false);
   if (overlayOpen()) hold(); // still something open (a level up, or a second panel): the next Back is for it
@@ -5099,6 +5427,7 @@ window.addEventListener('popstate', () => {
 { const watch = () => (overlayOpen() ? hold() : release());
   const mo = new MutationObserver(watch);
   mo.observe($('#sheet'), { attributes: true, attributeFilter: ['hidden'] });
+  mo.observe($('#imgView'), { attributes: true, attributeFilter: ['hidden'] });
   mo.observe($('#sidebar'), { attributes: true, attributeFilter: ['class'] });
   mo.observe($('.app'), { attributes: true, attributeFilter: ['class'] }); }
 // tap outside closes drawers on small screens; that tap must not also press what is under it (e.g. Delete)
@@ -5214,6 +5543,7 @@ if (isMobile()) ui.outline = false; // drawers start closed on small screens
 applyUI(false);
 if (RO && Array.isArray(RO.files)) { try { db.current = (await importZip(RO.files, { memory: false })).added[0] || null; } catch (err) { console.error(err); } }
 restoreNative();
+if (!RO) setTimeout(gcImages, 3000); // once the bundles are open, the images no bundle names go (F-36)
 if (storage === 'none') setTimeout(() => toast('Couldn’t open your saved conversations: the browser’s storage didn’t answer. Nothing is saved until you reload.', { label: 'Reload', fn: () => location.reload() }), 300);
 if (repaired) save();
 if (!db.current || !db.convos[db.current]) { db.current = db.order[0] || null; }
