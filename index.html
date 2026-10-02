@@ -636,9 +636,9 @@ const NEW_TITLE = 'New conversation';
 const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return (cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.7.0';
+const APP_VERSION = '0.8.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 3bdfe86'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 3b4a1d4'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -3505,14 +3505,15 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Fixed: two tabs on the same conversation keep each other’s changes, and when the browser’s storage doesn’t answer, the demo says so instead of opening an old copy.',
+  { version: '0.8.0', items: ['Fixed: two tabs on the same conversation keep each other’s changes, and when the browser’s storage doesn’t answer, the demo says so instead of opening an old copy.',
     'A Thinking State made by another tool keeps, byte for byte, what you didn’t change when you export it: authors, sources, tags, memory, log and session entries. <b>Export all</b> writes each fact once.',
     'An answer Gemini cut short is tagged <b>cut off</b>, with the reason. An error has <b>Try again</b>, and can’t become a decision.',
     'Fixed: <b>Choose</b> on the branch already chosen does nothing, and <b>Undo</b> still works after you move to another branch.',
     'Fixed: versions keep their tags and web searches through a Restore, a reload and an export.',
     'Images in answers never load from another site: each shows as a link to its host. Import asks before it restores memory facts, an Export all too.',
     'Grounded answers show Google’s Search Suggestions under their sources. Settings says what a free key means for your data, and when the browser may clear it.',
-    'Fixed: on a phone, the row above the message box shows the whole name of the branch you write in. Errors say what to do, a draft stays in its conversation, and long conversations render faster.'] },
+    'Fixed: on a phone, the row above the message box shows the whole name of the branch you write in. Errors say what to do, a draft stays in its conversation, and long conversations render faster.',
+    'The samples are recorded again, with real model names.'] },
   { version: '0.7.0', items: ['Fixed: on a phone, the branch you write in and the model are no longer cut mid-letter, the buttons under a message are bigger, and toasts no longer cover the message box.',
     'Fixed: the app opens again on iPhones with iOS older than 16.4, where it showed nothing at all.',
     'Fixed: a shared read-only page no longer holds your memory facts in the earlier versions of a regenerated answer.',
