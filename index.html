@@ -436,6 +436,10 @@ button.decision:not(:disabled):hover{box-shadow:0 0 0 3px var(--flag-soft)}
 .btn:disabled,.btn:disabled:hover{opacity:.5;cursor:not-allowed;filter:none;border-color:var(--line)} /* a button that can't act looks it */
 .robar a{color:var(--accent);font-weight:600}
 .tag.e{opacity:.75;font-weight:500;font-style:italic}
+button.tag.e{border:0;background:none;color:inherit;font-family:inherit;cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+.stale-line{display:flex;align-items:center;gap:6px;justify-content:space-between;margin:6px 0 0;padding:6px 8px;border-radius:8px;background:var(--accent-soft);font-size:12.5px;color:var(--muted)}
+.stale-line span{display:flex;gap:6px;align-items:flex-start;min-width:0}
+.stale-line .i{flex:none;margin-top:2px}
 .tag.c{border:1px solid var(--flag);color:var(--flag)}
 .cut-note{margin-top:8px;font-size:12.5px;color:var(--muted)}
 .kid.edit{border-style:dashed}
@@ -606,7 +610,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.8.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main e45a04b'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 710c000'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -629,6 +633,7 @@ const ICON = {
   bough: '<svg class="i" viewBox="0 0 24 24"><path d="M6.3 18.6C7.6 13.8 10.8 10.3 16.2 7.9M9.4 12.9C8.6 10.1 9.1 7.4 11 5.2"/><g fill="currentColor" stroke="none"><circle cx="5.9" cy="19.3" r="2.2"/><circle cx="17.6" cy="7.3" r="2.6"/><circle cx="11.8" cy="4.4" r="2.6"/></g></svg>',
   bookmark: '<svg class="i" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
   bookmarkOn: '<svg class="i" viewBox="0 0 24 24" style="fill:currentColor"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
+  check: '<svg class="i" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   more: '<svg class="i" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="19" cy="12" r="1.7" fill="currentColor"/></svg>',
   layers: '<svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
   chevRight: '<svg class="i" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
@@ -1152,7 +1157,7 @@ function msgHTML(c, m) {
   const ob = m.role === 'user' && !m.edited && c.branches[m.branchId], tpl = ob && ob.option && ob.msgIds[0] === m.id; // an option's opener, from a template (F-27)
   const card = m.node && !m.edited ? `${m.node.type || 'Thought'}${m.node.by ? ` · ${m.node.by}` : ''}` : ''; // a node of an opened Thinking State
   const who = m.srcRole ? (m.srcRole === 'system' ? 'System' : 'Tool') : card || (m.role === 'user' ? (tpl ? 'You · written by Mindbough' : 'You') : 'Gemini');
-  const tags = (m.hidden ? '<span class="tag h">excluded from history</span>' : '') + (m.edited ? '<span class="tag e">edited</span>' : '') + (m.cut && !m.streaming ? `<span class="tag c" title="${esc(m.cut)}">${/^Stopped/.test(m.cut) ? 'stopped' : 'cut off'}</span>` : '');
+  const tags = (m.hidden ? '<span class="tag h">excluded from history</span>' : '') + (m.edited || Number.isInteger(m.restores) ? `<button class="tag e" data-act="versions" title="Every version of this message">${Number.isInteger(m.restores) ? 'restored' : 'edited'}</button>` : '') + (m.cut && !m.streaming ? `<span class="tag c" title="${esc(m.cut)}">${/^Stopped/.test(m.cut) ? 'stopped' : 'cut off'}</span>` : '');
   let chip = '';
   if (m.role === 'model' && !m.streaming) {
     const label = esc(m.model || 'unknown model');
@@ -1221,7 +1226,7 @@ function msgHTML(c, m) {
   }
   return `<div class="${cls}" data-mid="${m.id}">
     <div class="bubble"><div class="role">${who}${chip}${tags}</div><div class="content">${body}</div>${m.cut && !m.streaming ? `<div class="cut-note">${esc(m.cut)}</div>` : ''}${sourcesHTML(m)}</div>
-    ${dec}${isEdit ? '' : reaskHTML(c, m) + answerHTML(c, m)}${acts}${kidsHTML}</div>`;
+    ${dec}${isEdit ? '' : staleHTML(c, m) + reaskHTML(c, m) + answerHTML(c, m)}${acts}${kidsHTML}</div>`;
 }
 
 function renderCanvas() {
@@ -1441,6 +1446,7 @@ $('#canvas').addEventListener('click', async e => {
   }
   if (act === 'colmore') { openColMenu(btn, c, bid); return; }
   if (act === 'more' && m) { openMoreMenu(btn, c, m); return; }
+  if (act === 'stale' && m) { openStaleMenu(btn, c, m); return; }
   if (act === 'answer' && m) { answerWaiting(c, m); return; }
   if (act === 'versions' && m) { openVersions(c, m); return; }
   if (act === 'status') { if (!RO) openStatus(c, bid); return; }
@@ -1591,6 +1597,56 @@ function openMoreMenu(anchor, c, m) {
       + '<hr>' + copies + '<hr>' + item('delmsg', ICON.trash, m.role !== 'user' ? 'Delete this answer' : turnOf(c, m).length > 1 ? 'Delete this question and its answer' : 'Delete this question', ' danger');
   placeMenu(menu, anchor);
 }
+/* ---------------- edits keep what was answered (F-35) ---------------- */
+// #131, designed by Liubomyr Ivanitskyi. An edit, a Restore or a regeneration changes a message from then on: an answer keeps the
+// text it was sent (sentVersion). What an edit made out of date is resolved one message at a time, top down: the first such message
+// of a branch has a line that says why, and resolving it moves the line on, to the next
+const changedAt = x => x.restoredAt || x.editedAt || x.ts || 0; // when a message became the text it has
+// the messages an answer was sent that changed after it was written, or after you kept it
+function changedSince(c, m) {
+  const rec = m.request; if (m.role !== 'model' || m.streaming || !rec || !Array.isArray(rec.blocks)) return [];
+  const since = Math.max(rec.at || m.ts || 0, m.keptAt || 0), out = [];
+  for (const b of rec.blocks) if ((b.kind === 'history' || b.kind === 'message') && Array.isArray(b.ids))
+    b.ids.forEach((id, j) => {
+      const x = c.messages[id], sig = Array.isArray(b.sigs) ? b.sigs[j] : null;
+      if (!sig) return; // a request from before signatures can't tell
+      if (!x) { if (!m.keptAt) out.push({ id, gone: true }); return; }
+      if (sigOf(x.text || '') !== sig && changedAt(x) > since) out.push(x);
+    });
+  return out;
+}
+// why a message is out of date, or null: an answer written before an edit above it, or your reply to an earlier version of the
+// answer above it
+function staleWhy(c, m) {
+  if (!m || m.streaming || m.srcRole || m.node || m.error) return null;
+  if (m.role === 'model') { const x = changedSince(c, m)[0]; return x ? { kind: 'answer', x } : null; }
+  const ids = pathIds(c, m.id), prev = c.messages[ids[ids.length - 2]];
+  if (!prev || prev.role !== 'model' || prev.streaming || !(prev.versions || []).length) return null;
+  return changedAt(prev) > Math.max(versionsOf(m)[0].ts || m.ts || 0, m.keptAt || 0) ? { kind: 'reply', x: prev } : null;
+}
+// the line sits on the first out-of-date message of a branch, never on more; what follows an answer being written waits for it
+function staleLine(c, b) {
+  for (const id of b ? b.msgIds : []) { const m = c.messages[id]; if (m && m.streaming) return null; const why = staleWhy(c, m); if (why) return { mid: id, ...why }; }
+  return null;
+}
+function staleHTML(c, m) {
+  if (RO) return '';
+  const line = staleLine(c, c.branches[m.branchId]);
+  if (!line || line.mid !== m.id) return '';
+  const what = line.kind === 'reply' ? 'Written in reply to an earlier version of the answer above'
+    : line.x.gone ? 'Written before a message above was deleted' : `Written before an edit above: “${esc(snippetOf(line.x.text || '', 60))}”`;
+  return `<div class="stale-line" data-sig="${line.kind}:${line.x.id}"><span>${ICON.pencil}${what}</span><button class="ib" data-act="stale" title="What to do with it" aria-label="What to do with it" aria-haspopup="menu">${ICON.more}</button></div>`;
+}
+function openStaleMenu(anchor, c, m) {
+  const menu = $('#modelMenu');
+  if (menuFor && menuFor.mid === m.id && menuFor.mode === 'stale' && menu.classList.contains('show')) { closeModelMenu(); return; }
+  menuFor = { cid: c.id, mid: m.id, mode: 'stale' };
+  const item = (act, icon, label, cls = '') => `<button role="menuitem" class="plain${cls}" data-more="${act}">${icon}${label}</button>`;
+  menu.innerHTML = m.role === 'model'
+    ? item('regenhere', ICON.regen, 'Regenerate') + item('keep', ICON.check, 'Keep it as valid') + item('newbranch', ICON.branch, 'Answer in a new branch')
+    : item('keep', ICON.check, 'Keep it as it is') + item('edit', ICON.pencil, 'Edit') + '<hr>' + item('delfrom', ICON.trash, 'Delete from here on', ' danger');
+  placeMenu(menu, anchor);
+}
 // Your question goes with the answer after it; an answer goes alone, and its question then waits for an answer (F-10)
 function turnOf(c, m) {
   const b = branchOf(c, m.id); if (!b || m.role !== 'user') return [m.id];
@@ -1611,6 +1667,10 @@ function messageMore(c, m, act) {
   if (act === 'prompt') { openPromptView(c, m); return; }
   if (RO) return;
   if (act === 'options') openOptions(c, m);
+  else if (act === 'regenhere') regenerateInPlace(c, m, m.model || modelSel.value || db.model); // in its place, also in the middle of a chain (F-35)
+  else if (act === 'keep') { m.keptAt = Date.now(); c.updated = Date.now(); save(); refreshReask(); toast(m.role === 'model' ? 'Kept as valid' : 'Kept as it is'); }
+  else if (act === 'newbranch') { const ids = pathIds(c, m.id), q = c.messages[ids[ids.length - 2]]; if (q && q.role === 'user') answerInNewBranch(c, q, m.model || modelSel.value || db.model, m.id); }
+  else if (act === 'delfrom') { const b = branchOf(c, m.id); if (b) removeMessages(c, new Set(b.msgIds.slice(b.msgIds.indexOf(m.id))), 'Deleted from here on'); }
   else if (act === 'regen') { const at = document.querySelector(`.msg[data-mid="${m.id}"] [data-act="more"]`); if (at) openModelMenu(at, c, m, 'regen'); }
   else if (act === 'edit') startEdit(c, m);
   else if (act === 'delmsg') {
@@ -1630,7 +1690,7 @@ $('#modelMenu').addEventListener('click', e => {
   const ca = e.target.closest('[data-colact]');
   if (ca && menuFor && menuFor.mode === 'col') { const { cid, bid } = menuFor, c = db.convos[cid]; closeModelMenu(); if (!c) return; if (ca.dataset.colact === 'rename') startRename(bid); else deleteBranch(c, bid); return; }
   const more = e.target.closest('[data-more]');
-  if (more && menuFor && menuFor.mode === 'more') {
+  if (more && menuFor && (menuFor.mode === 'more' || menuFor.mode === 'stale')) {
     const c = db.convos[menuFor.cid], m = c && c.messages[menuFor.mid];
     closeModelMenu();
     if (c && m) messageMore(c, m, more.dataset.more);
@@ -1649,7 +1709,7 @@ $('#modelMenu').addEventListener('click', e => {
   }
 });
 document.addEventListener('pointerdown', e => {
-  if (menuFor && !e.target.closest('#modelMenu') && !e.target.closest('[data-act="regen-menu"],[data-act="branch"],[data-act="more"],[data-act="colmore"],[data-conv-more]')) closeModelMenu();
+  if (menuFor && !e.target.closest('#modelMenu') && !e.target.closest('[data-act="regen-menu"],[data-act="branch"],[data-act="more"],[data-act="stale"],[data-act="colmore"],[data-conv-more]')) closeModelMenu();
 }, true);
 $('#viewport').addEventListener('scroll', () => { if (menuFor) closeModelMenu(); });
 window.addEventListener('resize', () => { if (menuFor) closeModelMenu(); });
@@ -1689,7 +1749,7 @@ function sentIndex(m, sig, at) {
 function sentVersion(m, sig, at) {
   if (!m || !at) return m;
   const vs = versionsOf(m), k = sentIndex(m, sig, at);
-  return k < 0 ? { ...m, later: true, lost: true } : k === vs.length - 1 ? m : { ...m, text: vs[k].text, later: true };
+  return k < 0 ? { ...m, later: true, lost: true, ...(m.edited && !(m.versions || []).length ? { unsure: true } : {}) } : k === vs.length - 1 ? m : { ...m, text: vs[k].text, later: true }; // unsure: edited before edits kept the text
 }
 // Replace an answer with a fresh one, in the same place
 function regenerateInPlace(c, m, model) {
@@ -1738,23 +1798,26 @@ function reaskHTML(c, m) {
   const again = Object.values(c.branches).filter(k => k.regenOf === m.id).sort((x, y) => y.created - x.created)[0];
   if (again) return `<div class="reask" data-sig="again:${again.id}"><span>${ICON.regen}Asked again in “${esc(branchName(again, c))}”</span><button class="btn" data-act="goto" data-bid="${again.id}">Go to</button></div>`;
   const later = laterDecisions(c, m);
-  // messages it was sent that changed since: edited, restored or deleted
-  const rec = m.request && Array.isArray(m.request.blocks) ? m.request.blocks : [];
-  const moved = rec.filter(k => (k.kind === 'history' || k.kind === 'message') && Array.isArray(k.ids) && Array.isArray(k.sigs))
-    .flatMap(k => k.ids.map((id, j) => [id, k.sigs[j]])).filter(([id, sig]) => sig && (!c.messages[id] || sigOf(c.messages[id].text || '') !== sig)).length;
-  if (!later.length && !moved) return '';
+  if (!later.length) return ''; // an edit above has the line of F-35
   const changed = later.filter(d => d.changed).length, fresh = later.length - changed, last = later[later.length - 1];
   const pl = (k, one) => `${k} ${one}${k === 1 ? '' : 's'}`, quote = last ? `: “${esc(snippetOf(last.decision.summary, 80))}”` : '';
-  const what = fresh && !changed && !moved ? `${pl(fresh, 'decision')} came after this answer${fresh > 1 ? ', the latest' : ''}`
-    : changed && !fresh && !moved ? `${pl(changed, 'decision')} changed after this answer`
-    : moved && !later.length ? `${pl(moved, 'message')} above changed after this answer`
-    : `Since this answer: ${[fresh && pl(fresh, 'new decision'), changed && pl(changed, 'changed decision'), moved && `${pl(moved, 'message')} above changed`].filter(Boolean).join(', ')}`;
-  return `<div class="reask" data-sig="${esc(later.map(d => d.id + d.decision.summary.length).join() + '|' + moved)}"><span>${ICON.flagOn}${what}${quote}</span><button class="btn" data-act="reask" title="Ask again: the new answer gets the current decisions and messages">Re-ask</button></div>`;
+  const what = fresh && !changed ? `${pl(fresh, 'decision')} came after this answer${fresh > 1 ? ', the latest' : ''}`
+    : changed && !fresh ? `${pl(changed, 'decision')} changed after this answer`
+    : `Since this answer: ${[fresh && pl(fresh, 'new decision'), changed && pl(changed, 'changed decision')].filter(Boolean).join(', ')}`;
+  return `<div class="reask" data-sig="${esc(later.map(d => d.id + d.decision.summary.length).join())}"><span>${ICON.flagOn}${what}${quote}</span><button class="btn" data-act="reask" title="Ask again: the new answer gets the current decisions and messages">Re-ask</button></div>`;
 }
 // Decisions changed: update those lines, leaving alone a message you are working in
 function refreshReask() {
   const c = cur(); if (!c || RO) return;
   let changed = false;
+  Object.values(c.branches).forEach(b => {
+    const line = staleLine(c, b);
+    for (const id of b.msgIds) {
+      const el = document.querySelector(`.msg[data-mid="${id}"]`); if (!el || el.contains(document.activeElement) || (editing && editing.mid === id)) continue;
+      const has = el.querySelector(':scope > .stale-line'), want = line && line.mid === id ? `${line.kind}:${line.x.id}` : '';
+      if (want !== (has ? has.dataset.sig : '')) { rerenderMsg(c.id, id); changed = true; }
+    }
+  });
   Object.values(c.branches).forEach(b => {
     const m = c.messages[b.msgIds[b.msgIds.length - 1]], el = m && document.querySelector(`.msg[data-mid="${m.id}"]`);
     if (!el || el.contains(document.activeElement) || (editing && editing.mid === m.id)) return;
@@ -2350,13 +2413,13 @@ function chooseBranch(c, m, bid) {
 let versFor = null;
 function openVersions(c, m) {
   versFor = { cid: c.id, mid: m.id };
-  openSheet({ title: 'Versions of this answer', render: renderVersions, onClick: versionsClick });
+  openSheet({ title: m.role === 'user' ? 'Versions of your message' : 'Versions of this answer', render: renderVersions, onClick: versionsClick });
 }
 function renderVersions() {
   const c = db.convos[versFor.cid], m = c && c.messages[versFor.mid];
   if (!m) return '';
   const all = [...(m.versions || []).map((v, i) => ({ v, i })), { v: m, i: -1 }].reverse();
-  const who = v => Number.isInteger(v.restores) ? `version ${v.restores + 1} restored by you` : v.edited ? 'edited by you' : v.model || 'unknown model';
+  const who = v => Number.isInteger(v.restores) ? `version ${v.restores + 1} restored by you` : v.edited ? 'edited by you' : m.role === 'user' ? 'written by you' : v.model || 'unknown model';
   return `<p class="pv-note">Every version is kept, and a Thinking State export has them all. <b>Restore</b> puts an earlier one back as a new version, so the one it replaces stays too.</p>`
     + all.map(({ v, i }, k) => `<article class="dp-card"><div class="dp-meta">${i < 0 ? '<b>Current</b> · ' : ''}Version ${all.length - k} · ${esc(who(v))} · ${esc(shortDate(v.restoredAt || v.editedAt || v.ts))}</div>
       <div class="dp-text vers-text content">${md(v.text)}</div>${i >= 0 && !RO ? `<div class="dp-actions"><button class="btn" data-vers="${i}">Restore</button></div>` : ''}</article>`).join('');
@@ -2913,8 +2976,8 @@ function mergeTurns(msgs, all) {
     if (!m || m.hidden || m.error || !m.text || m.streaming || m.srcRole) continue; // a system or tool message of another tool's session isn't a turn
     const role = m.role === 'user' ? 'user' : 'model';
     const last = turns[turns.length - 1];
-    if (last && last.role === role) { last.text += '\n\n' + m.text; last.ids.push(m.id); if (m.later) last.later = true; if (m.lost) last.lost = true; }
-    else turns.push({ role, text: m.text, ids: [m.id], ...(m.later ? { later: true } : {}), ...(m.lost ? { lost: true } : {}) });
+    if (last && last.role === role) { last.text += '\n\n' + m.text; last.ids.push(m.id); if (m.later) last.later = true; if (m.lost) last.lost = true; if (m.unsure) last.unsure = true; }
+    else turns.push({ role, text: m.text, ids: [m.id], ...(m.later ? { later: true } : {}), ...(m.lost ? { lost: true } : {}), ...(m.unsure ? { unsure: true } : {}) });
   }
   if (!all) while (turns.length && turns[0].role !== 'user') turns.shift();
   return turns;
@@ -3068,7 +3131,7 @@ async function streamInto(c, am, req, key, picked, backup) {
     c.updated = Date.now();
     endStream(stream);
     save();
-    try { updateMsgEl(c, am, true); renderSidebar(); renderOutline(); } catch (err) { console.error(err); } // never keep the answer from being named
+    try { updateMsgEl(c, am, true); renderSidebar(); renderOutline(); refreshReask(); } catch (err) { console.error(err); } // never keep the answer from being named
   }
   if (changed !== null) textChanged(c, am, changed);
   if (done) { nameBranch(c, am); nameConvo(c, am); }
@@ -3231,11 +3294,13 @@ function pvRender(pv) {
     const gone = turns.some(t => t.deleted), now = turns.reduce((n, t) => n + (t.deleted ? 0 : t.text.length), 0), lost = turns.some(t => t.lost) || (!pv.preview && !gone && now !== b.chars && !turns.some(t => t.later));
     const note = [gone && 'A message sent here was deleted after this answer: its text is gone.', turns.some(t => t.ids && t.ids.length > 1) && 'Messages of one role next to each other go to the model as one turn.', lost ? 'Changed after this answer, and the earlier text wasn’t kept: this shows the current text.' : turns.some(t => t.later) ? 'Changed after this answer: this shows the text the model saw.' : ''].filter(Boolean).join(' ');
     return `${note ? `<p class="pv-note">${note}</p>` : ''}
-      <div>${turns.map((t, j) => `<button class="pb-row" data-part="${j}"><span class="pb-role">${roleName(t.role)}${t.later ? '<span class="pb-later">changed later</span>' : ''}${!t.deleted && t.ids && t.ids.length > 1 ? `<span class="pb-later">${t.ids.length} messages</span>` : ''}</span><span class="pb-snip">${esc(plain(t.text).slice(0, 140))}</span><span class="pb-size">${t.deleted ? '' : fmtChars(t.text.length)}</span>${ICON.chevRight}</button>`).join('')}</div>`;
+      <div>${turns.map((t, j) => `<button class="pb-row" data-part="${j}"><span class="pb-role">${roleName(t.role)}${t.unsure ? '<span class="pb-later">? may differ</span>' : t.later ? '<span class="pb-later">✎ changed later</span>' : ''}${!t.deleted && t.ids && t.ids.length > 1 ? `<span class="pb-later">${t.ids.length} messages</span>` : ''}</span><span class="pb-snip">${esc(plain(t.text).slice(0, 140))}</span><span class="pb-size">${t.deleted ? '' : fmtChars(t.text.length)}</span>${ICON.chevRight}</button>`).join('')}</div>`;
   }
   const t = turns[pv.part];
   if (t.deleted) return `<p class="pv-note">Deleted after this answer, so its text is gone. The request still names it: it was sent.</p>`;
-  return `${t.later ? `<p class="pv-note">${t.lost ? 'Changed after this answer, and the earlier text wasn’t kept: this is the current text.' : 'Changed after this answer: this is the text the model saw.'}</p>` : ''}<p class="pv-meta"><span><b>${roleName(t.role)}</b></span><span>${fmtChars(t.text.length)}</span></p><pre class="pv-text">${esc(t.text)}</pre>`;
+  const now = t.later && !t.lost ? (t.ids || []).map(id => pv.c && pv.c.messages[id]).filter(Boolean).map(x => x.text || '').join('\n\n') : '';
+  return `${t.later ? `<p class="pv-note">${t.unsure ? 'Edited before the demo kept earlier texts: this may not be what the model saw.' : t.lost ? 'Changed after this answer, and the earlier text wasn’t kept: this is the current text.' : 'Changed after this answer: this is the text the model saw.'}</p>` : ''}<p class="pv-meta"><span><b>${roleName(t.role)}</b></span><span>${fmtChars(t.text.length)}</span></p><pre class="pv-text">${esc(t.text)}</pre>`
+    + (now ? `<p class="pv-meta"><span><b>The text now</b></span><span>${fmtChars(now.length)}</span></p><pre class="pv-text">${esc(now)}</pre>` : '');
 }
 function pvClick(pv, e) {
   const blk = e.target.closest('[data-block]'), part = e.target.closest('[data-part]');
@@ -3451,12 +3516,12 @@ const HELP = [
     <li>On a desktop, Enter sends and Shift+Enter adds a line. On a phone, Enter adds a line: tap <b>Send</b>. <b>Stop</b> ends an answer and keeps what arrived, tagged <b>stopped</b>; it shows in the branch the answer is coming in. Branches are answered at the same time: send in one, move to another and send there too. An answer cut off by a lost connection, a reload or Gemini itself (its output limit or its safety filter) is tagged <b>cut off</b>, with the reason under it. An error says what went wrong and what to do, with <b>Try again</b> (and <b>Open Settings</b> for a key Gemini refused). What you type stays in its conversation. Answers show Markdown, code and formulas, and an image from another site shows as a link to it, so nothing loads from there.</li>
     <li>Menu → <b>New conversation</b> starts one. Its first answer gives it a short title. <b>⋯</b> on a conversation in the menu renames, exports, shares or deletes it.</li>
     <li>On a phone, add it to the home screen: iPhone Safari → Share → <b>Add to Home Screen</b>; Android Chrome → ⋮ → <b>Add to Home screen</b>.</li></ul>` },
-  { id: 'branches', title: 'Branches', cards: ['F-04', 'F-05', 'F-06', 'F-07', 'F-10', 'F-11', 'F-12', 'F-19', 'F-24', 'F-29', 'F-32'], body: `
+  { id: 'branches', title: 'Branches', cards: ['F-04', 'F-05', 'F-06', 'F-07', 'F-35', 'F-10', 'F-11', 'F-12', 'F-19', 'F-24', 'F-29', 'F-32'], body: `
     <p class="help-why">Try alternatives without mixing them.</p>
     <ul><li><b>Branch out</b> under an answer: a new column that continues from there. The model sees only that branch's path, so dead ends don't pollute the context. A branch you leave without writing in it goes away. Under your own message, <b>Branch out</b> offers <b>Edit in a new branch</b>, or another answer from any model in a new branch.</li>
     <li>Under a message: <b>Branch out</b>, the flag (a decision), the bookmark (<b>Remember</b>) and the eye (<b>Exclude from history</b>): what the next prompts carry. <b>⋯</b> holds the rest: how the prompt of an answer was built, regenerate it with any model, branch into options, edit, copy the message or the conversation up to here, and delete. An error has <b>Try again</b> instead.</li>
     <li><b>Delete</b>: your question goes with its answer; an answer goes alone, and its question waits with <b>Answer</b>. <b>Undo</b> in the toast brings it back, unless the conversation changed since (moving between branches or folding them changes nothing). Deleting a branch, a memory fact, or unflagging in the decisions panel works the same way; only deleting a whole conversation asks first.</li>
-    <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place too. Either way the earlier text is kept, so an answer's prompt still shows what the model saw, marked <b>changed later</b>.</li>
+    <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place too. Either way the earlier text is kept: the message is tagged <b>edited</b>, and the tag opens its versions, with <b>Restore</b>. What the edit made out of date gets a line, on the first such message of the branch: <b>⋯</b> on it regenerates it in place, keeps it as valid or answers in a new branch, and the line moves on to the next.</li>
     <li>Tap an answer's model chip to regenerate it with any model. The old answer stays as a version (<b>N versions</b> next to the model); in the middle of a chain the new one opens in a new branch. Every version is kept, and <b>Restore</b> puts an earlier one back as a new version.</li>
     <li>The <b>status</b> chip on a branch: Open, Accepted, Parked or Rejected. The decisions of a parked or rejected branch, and of the branches under it, leave the prompts.</li>
     <li>Branches name themselves; <b>⋯</b> on a column renames it (on a desktop, a double-click too; clear your name and the model's comes back) or deletes it, with the branches under it; <b>Undo</b> in the toast brings them back. The first column is the conversation itself: renaming it renames the conversation.</li>
@@ -3473,7 +3538,7 @@ const HELP = [
     <li><b>⚑</b> in the top bar opens this conversation's decisions, with history and restore, and below them those not in force (unflagged, or replaced by a later choice); <b>🔖</b> next to it opens your memory. <b>Go to</b> jumps to a message, and <b>← Back</b> above the composer returns to where you were.</li>
     <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) opens an empty one, for you to write about yourself, saved when you tap <b>Save</b>. Tap a fact to edit or delete it; with many facts, search them.</li>
     <li>The <b>eye</b> under a message excludes it from history: the model doesn't see it, on this branch and the ones that continue from it. Tap it again to include it. A flagged message keeps its decision in the prompts: only its text leaves the history.</li>
-    <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. <b>Prompt</b> above the message box previews your next prompt.</li>
+    <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. Prompt views show each message as the model saw it, with ✎ on what changed since. <b>Prompt</b> above the message box previews your next prompt.</li>
     <li>An answer written before later decisions, or before a message above it changed, says so: <b>Re-ask</b> writes it again with them. Re-asking in the middle of a chain opens a new branch, which says what it asks again, and the old answer says where it was asked.</li></ul>` },
   { id: 'models', title: 'Models and web search', cards: ['F-30', 'F-33'], body: `
     <p class="help-why">A cheap model for small jobs, and the tokens in view.</p>
@@ -3493,7 +3558,8 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Branches are answered at the same time: send in one, move to another and send there too. <b>Stop</b> stops the branch you are in, and options are answered all at once.',
+  { version: 'Unreleased', items: ['Edits keep what was answered: <b>edited</b> opens a message’s versions, and a line on the first message an edit made out of date lets you regenerate it in place, keep it as valid, or answer in a new branch.',
+    'Branches are answered at the same time: send in one, move to another and send there too. <b>Stop</b> stops the branch you are in, and options are answered all at once.',
     'Saving writes only the conversations that changed, and an answer still streaming is kept in its own Thinking State.',
     'One way into Help, at the bottom of the menu, and each text in one place. The first column is the conversation, a Branch out you leave unused goes, and the Branches panel has one fold and no second list of decisions.',
     '<b>Choose</b> sits in each branch’s column head of a comparison, which a phone keeps in view. A comparison says when it was made, with <b>Refresh</b>, and a rejected option says why it lost. The decisions panel also lists the decisions not in force, with <b>Flag again</b>.',
@@ -4134,7 +4200,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       // and a card of a node that came from an opened Thinking State
       // a saved comparison, in a fixed key order so the same comparison always writes the same line
       const cmp = m.compare && JSON.parse(JSON.stringify(Object.fromEntries(CMP_KEYS.filter(k => m.compare[k] !== undefined).map(k => [k, m.compare[k]])))); if (cmp && !mine) omitMemory(cmp.request);
-      const own = { ...(m.request && m.request.usage && m.request.usage.tools ? { toolTokens: m.request.usage.tools } : {}), ...(m.edited ? { edited: true } : {}), ...(m.streaming && m.prev ? { prev: m.prev } : {}), ...(cmp ? { compare: cmp } : {}),
+      const own = { ...(m.request && m.request.usage && m.request.usage.tools ? { toolTokens: m.request.usage.tools } : {}), ...(m.edited ? { edited: true } : {}), ...(m.keptAt ? { kept: iso(m.keptAt) } : {}), ...(m.streaming && m.prev ? { prev: m.prev } : {}), ...(cmp ? { compare: cmp } : {}),
         ...(m.node ? { card: { node: m.node, ...(m.flagged ? { flagged: true } : {}), ...(m.decision ? { decision: m.decision } : {}) } } : {}) };
       if (Object.keys(own).length) e.ext = { 'mindbough-demo': own };
       if (m.search && !back) {
@@ -4451,6 +4517,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
       if (slot.excluded || v.excluded) m.hidden = true;
       const ext = isObj(v.ext) && isObj(v.ext['mindbough-demo']) ? v.ext['mindbough-demo'] : {};
       if (ext.edited) m.edited = true;
+      if (typeof ext.kept === 'string' && Number.isFinite(Date.parse(ext.kept))) m.keptAt = Date.parse(ext.kept); // kept as valid after an edit above (F-35)
       if (isObj(ext.compare)) m.compare = ext.compare; // a saved comparison; an import rebuilds it from known fields (adoptConvo)
       // a card of a node that came from an opened Thinking State (an import rebuilds it from known fields: adoptConvo)
       if (isObj(ext.card) && isObj(ext.card.node)) { m.node = ext.card.node; if (ext.card.flagged) m.flagged = true; if (isObj(ext.card.decision)) m.decision = ext.card.decision; }
@@ -4479,9 +4546,10 @@ function sessionToConvo(r, files, nodes, rootId, own) {
         : x && !WEBID.has(x.id + 'ws') ? { ...found, noTool: true } : found; // known only from the answer's sources: no tool entry to write for it
       // every version, in the order it was made; a Restore is one too, with what the version it puts back had
       if (role === 'model' && chain.length > 1) m.versions = chain.slice(0, -1).map(x => ({ ...(backAt(x) >= 0 ? { ...asVersion(origin(x)), text: typeof x.text === 'string' ? x.text : '', restores: backAt(x), restoredAt: time(x.at, now) } : asVersion(x)), ...eidOf(x) }));
-      else if (role === 'user' && chain.length > 1) { // your message edited in place: the earlier texts, each by you from the second on
-        m.edited = true;
-        m.versions = chain.slice(0, -1).map((x, k) => ({ text: typeof x.text === 'string' ? x.text : '', ts: m.ts, ...(k ? { edited: true, editedAt: time(x.at, now) } : {}), ...eidOf(x) }));
+      else if (role === 'user' && chain.length > 1) { // your message edited in place, or an earlier text of it restored (F-35): each by you
+        if (!restored || o !== chain[0]) m.edited = true; // a Restore of the first text gives back your words as first written
+        m.versions = chain.slice(0, -1).map((x, k) => ({ text: typeof x.text === 'string' ? x.text : '', ts: m.ts,
+          ...(backAt(x) >= 0 ? { restores: backAt(x), restoredAt: time(x.at, now), ...(origin(x) !== chain[0] ? { edited: true } : {}) } : k ? { edited: true, editedAt: time(x.at, now) } : {}), ...eidOf(x) }));
       }
       if (chain.length > 1) m.eid = v.id;
       const owned = new Set(chain.slice(0, -1).map(ownWs).filter(Boolean)), legacy = WEB.get(String(slot.after));
@@ -4759,6 +4827,7 @@ function adoptConvo(src) {
       if (x.edited) nm.edited = true;
       if (tsIdOk(x.choiceId)) nm.choiceId = x.choiceId;
       if (Number.isFinite(x.editedAt)) nm.editedAt = x.editedAt;
+      if (okTime(x.keptAt)) nm.keptAt = x.keptAt; // kept as valid, or as it is, after an edit above (F-35)
       if (isObj(x.search)) { const ws = webSearchOf({ webSearchQueries: x.search.queries, groundingChunks: (Array.isArray(x.search.sources) ? x.search.sources : []).map(y => ({ web: isObj(y) ? { uri: y.uri, title: y.title } : null })) }); if (ws) nm.search = ws; if (ws) asSearched(ws, x.search); }
       mid.set(m, nm.id); c.messages[nm.id] = nm; msgIds.push(nm.id);
     }
