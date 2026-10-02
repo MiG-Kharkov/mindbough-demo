@@ -638,7 +638,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.8.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 3b4a1d4'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 28a6a11'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -743,8 +743,9 @@ async function loadStored() {
   }
 }
 let db = null, stored = { v1: null, v2: null };
-if (RO) {
-  db = { convos: { [RO.id]: RO }, order: [RO.id], current: RO.id, key: '', model: '' };
+if (RO) { // a shared page (F-14): its Thinking State opens at start; a page from before 0.9 holds the conversation itself
+  const old = !Array.isArray(RO.files);
+  db = { convos: old ? { [RO.id]: RO } : {}, order: old ? [RO.id] : [], current: old ? RO.id : null, key: '', model: '' };
   document.body.classList.add('readonly');
   document.title = `${RO.title} — shared conversation`;
 } else {
@@ -1174,7 +1175,8 @@ function msgHTML(c, m) {
   const isEdit = editing && editing.cid === c.id && editing.mid === m.id;
   const cls = ['msg', m.role, m.hidden && 'hidden', m.flagged && 'flagged', m.error && 'error', isEdit && 'editing'].filter(Boolean).join(' ');
   const ob = m.role === 'user' && !m.edited && c.branches[m.branchId], tpl = ob && ob.option && ob.msgIds[0] === m.id; // an option's opener, from a template (F-27)
-  const who = m.srcRole ? (m.srcRole === 'system' ? 'System' : 'Tool') : m.role === 'user' ? (tpl ? 'You · written by Mindbough' : 'You') : 'Gemini';
+  const card = m.node && !m.edited ? `${m.node.type || 'Thought'}${m.node.by ? ` · ${m.node.by}` : ''}` : ''; // a node of an opened Thinking State
+  const who = m.srcRole ? (m.srcRole === 'system' ? 'System' : 'Tool') : card || (m.role === 'user' ? (tpl ? 'You · written by Mindbough' : 'You') : 'Gemini');
   const tags = (m.hidden ? '<span class="tag h">excluded from history</span>' : '') + (m.edited ? '<span class="tag e">edited</span>' : '') + (m.cut && !m.streaming ? `<span class="tag c" title="${esc(m.cut)}">${/^Stopped/.test(m.cut) ? 'stopped' : 'cut off'}</span>` : '');
   let chip = '';
   if (m.role === 'model' && !m.streaming) {
@@ -1646,7 +1648,10 @@ $('#modelMenu').addEventListener('click', e => {
   if (btn.dataset.editbranch) { startEdit(c, m); return; } // Send as new branch keeps the original (F-06)
   if (btn.dataset.empty) answerInNewBranch(c, m, null);
   else if (mode === 'regen') reask(c, m, btn.dataset.model);
-  else answerInNewBranch(c, m, btn.dataset.model);
+  else { // your message answered already: the new answer is another version of that one, as Answer again makes it (spec §14.5)
+    const b = branchOf(c, m.id), next = b && c.messages[b.msgIds[b.msgIds.indexOf(m.id) + 1]];
+    answerInNewBranch(c, m, btn.dataset.model, m.role === 'user' && next && next.role === 'model' ? next.id : undefined);
+  }
 });
 document.addEventListener('pointerdown', e => {
   if (menuFor && !e.target.closest('#modelMenu') && !e.target.closest('[data-act="regen-menu"],[data-act="branch"],[data-act="more"],[data-act="colmore"],[data-conv-more]')) closeModelMenu();
@@ -1722,7 +1727,7 @@ function laterDecisions(c, m) {
 // Your question at the end of a branch, with no answer after it: an option branch made unanswered, or its answer deleted (F-10)
 function waiting(c, m) { const b = c.branches[m.branchId]; return !!b && m.role === 'user' && b.msgIds[b.msgIds.length - 1] === m.id; }
 function answerHTML(c, m) {
-  if (RO || !waiting(c, m) || c.branches[m.branchId].collapsed) return '';
+  if (RO || !waiting(c, m) || c.branches[m.branchId].collapsed || m.node) return ''; // a card is context for what you write next
   if (m.hidden) return `<div class="reask answer-now"><span>No answer yet. The question is excluded from history: include it again to get an answer.</span></div>`;
   return `<div class="reask answer-now"><span>No answer yet. A new message goes to the model together with this one.</span><button class="btn primary" data-act="answer" title="Ask the model now, with the model picked above the message box">Answer</button></div>`;
 }
@@ -1929,7 +1934,7 @@ function recordCall(c, { task, model, prompt, mid, usage, output, error }) {
   if (!c || db.convos[c.id] !== c) return null;
   const id = 'c' + uid();
   c.calls = (c.calls || []).concat({ id, task, at: Date.now(), model, chars: prompt.length, ...(mid ? { mid } : {}), ...(usage ? { usage } : {}),
-    ...(output ? { output: clean(output, 300) } : {}), ...(error ? { error: clean(error, 200) } : {}) }).slice(-300);
+    ...(output ? { output: clean(output, 300) } : {}), ...(error ? { error: clean(error, 200) } : {}) }); // every one: a call entry stays in its session (S6)
   return id;
 }
 const tok = n => (n | 0).toLocaleString('en-US');
@@ -2205,7 +2210,7 @@ function renderCompare() {
   const done = !!cmp.at && cols.length > 1, alt = !cmp.relation || cmp.relation === 'alternatives';
   const table = done && alt && cmp.criteria && cmp.criteria.length > 0;
   const stale = done && compareStale(c, m, kids, cmp);
-  const tags = bid => `${table && cmp.pick && cmp.pick.bid === bid ? '<span class="cmp-tag">Suggested</span>' : ''}${cmp.chosen === bid ? '<span class="cmp-tag on">Chosen</span>' : ''}`;
+  const tags = bid => `${table && cmp.pick && cmp.pick.bid === bid ? '<span class="cmp-tag">Suggested</span>' : ''}${choiceStands(c, m, bid) ? '<span class="cmp-tag on">Chosen</span>' : ''}`;
   const choose = bid => RO ? '' : choiceStands(c, m, bid) ? '<button class="btn" disabled>Chosen ✓</button>' : `<button class="btn" data-cmp="choose" data-bid="${bid}">Choose</button>`;
   const colOf = bid => cols.find(x => x.bid === bid);
   let html = `<p class="pv-note">Branches that continue from “${esc(snippetOf(m.text, 90))}”</p>`;
@@ -2222,7 +2227,7 @@ function renderCompare() {
   } else {
     html += kids.map(b => {
       const n = b.msgIds.length, d = branchMsgs(c, b).filter(x => x.flagged).length, col = done && colOf(b.id), gist = col && col.summary ? col.summary : branchGist(c, b);
-      return `<div class="dp-card cmp-card${cmp.chosen === b.id ? ' chosen' : ''}"><div class="cmp-name">${esc(branchName(b, c))}${tags(b.id)}</div>
+      return `<div class="dp-card cmp-card${choiceStands(c, m, b.id) ? ' chosen' : ''}"><div class="cmp-name">${esc(branchName(b, c))}${tags(b.id)}</div>
         <div class="dp-meta">${n} message${n === 1 ? '' : 's'}${d ? ` · ${d} decision${d === 1 ? '' : 's'}` : ''}</div>
         <div class="dp-text">${gist ? esc(gist) : '<i>Not answered yet</i>'}</div>
         <div class="dp-actions"><button class="btn" data-cmp="goto" data-bid="${b.id}">Go to</button>${choose(b.id)}</div></div>`;
@@ -2321,14 +2326,15 @@ async function compareWithAI(c, m) {
   if (cmpView === v) renderCompareIfOpen();
 }
 // Choosing turns the branch's last answer into a decision ("Chose X over Y: why") and folds the other branches
-// The branch chosen at this fork whose choice still stands: its decision is flagged (UX-04)
-const choiceStands = (c, m, bid) => !!m.compare && m.compare.chosen === bid
+// The branch chosen at this fork whose choice still stands: its decision is flagged, and the branch isn't parked or rejected since
+const choiceStands = (c, m, bid) => !!m.compare && m.compare.chosen === bid && !droppedAt(c, bid)
   && Object.values(c.messages).some(x => x.branchId === bid && x.flagged && x.decision && x.decision.choice === m.id);
 function chooseBranch(c, m, bid) {
   const win = c.branches[bid]; if (!win) return;
   if (choiceStands(c, m, bid)) { toast(`“${branchName(win, c)}” is already chosen`); return; } // choosing it again would only make the same decision twice
   const others = compareKids(c, m).filter(b => b.id !== bid);
-  const msgs = branchMsgs(c, win), target = [...msgs].reverse().find(x => x.role === 'model') || msgs[msgs.length - 1];
+  // the choice goes on the branch's last answer, also one excluded from history, not on the message that opened the branch
+  const msgs = win.msgIds.map(id => c.messages[id]).filter(x => x && !x.error && x.text), target = [...msgs].reverse().find(x => x.role === 'model') || msgs[msgs.length - 1];
   if (!target) { toast('This branch has nothing to choose yet'); return; }
   const cmp = m.compare || {}, col = (cmp.cols || []).find(x => x.bid === bid);
   if (cmp.relation && cmp.relation !== 'alternatives' && !confirm(`${RELATIONS[cmp.relation]}, so choosing one may lose the others. Choose “${branchName(win, c)}” anyway?`)) return;
@@ -2340,7 +2346,7 @@ function chooseBranch(c, m, bid) {
   const over = names.length > 3 ? ` over ${names.length} other options` : names.length ? ` over ${names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0]}` : ''; // "over SQLite and MongoDB" (UX-17)
   const earlier = Object.values(c.messages).filter(x => x !== target && x.flagged && x.decision && x.decision.choice === m.id); // a choice made before at this fork
   const undo = { flagged: !!target.flagged, decision: target.decision ? JSON.parse(JSON.stringify(target.decision)) : null, folds: others.concat(win).map(b => [b, !!b.collapsed]), chosen: cmp.chosen,
-    status: others.concat(win).map(b => [b, b.status]), earlier: earlier.map(x => [x, !!x.flagged]) };
+    status: others.concat(win).map(b => [b, b.status]), earlier: earlier.map(x => [x, !!x.flagged]), focus: c.focus };
   earlier.forEach(x => { x.flagged = false; x.decision.replacedBy = target.id; }); // choosing again supersedes the earlier choice (spec W2)
   target.flagged = true;
   setDecision(target, clean(`Chose ${branchName(win, c)}${over}${why ? `: ${/[.!?…]$/.test(why.trim()) ? why.trim() : why.trim() + '.'}` : '.'}`, 300));
@@ -2359,8 +2365,9 @@ function chooseBranch(c, m, bid) {
     undo.status.forEach(([b, was]) => { if (was) b.status = was; else delete b.status; });
     undo.earlier.forEach(([x, was]) => { x.flagged = was; x.decision.choice = m.id; delete x.decision.replacedBy; });
     if (undo.chosen) m.compare.chosen = undo.chosen; else delete m.compare.chosen;
+    if (c.branches[undo.focus]) c.focus = undo.focus; // back where you were, not in a branch folded and rejected again
     c.updated = Date.now(); save();
-    renderCanvas(); renderSidebar(); renderDecCount(); toast('Choice undone');
+    renderCanvas(); renderSidebar(); renderDecCount(); if (cur() === c) focusBranch(c.focus, true, 'none'); toast('Choice undone');
   } });
 }
 
@@ -3111,7 +3118,8 @@ function openSheet(view) {
   $('.sheet-panel').classList.toggle('tall', !!view.tall); // tabs and levels: one height on a phone (UI-2)
   $('#sheet').hidden = false;
 }
-function closeSheet() { $('#sheet').hidden = true; sheetView = null; $('#sheetDyn').innerHTML = ''; memDraft = null; } // a fact not saved is not kept
+// a fact not saved is not kept, and an edit open in the sheet ends with it: other tabs' saves apply again (B11)
+function closeSheet() { $('#sheet').hidden = true; sheetView = null; $('#sheetDyn').innerHTML = ''; memDraft = null; memEdit = panelEdit = panelHist = null; setTimeout(settled); }
 $('#sheet').addEventListener('click', e => {
   if (e.target.closest('[data-sheet-close]')) { closeSheet(); return; }
   if (e.target.closest('[data-key-send]')) { closeSheet(); send(); return; } // the key works now (SET-1)
@@ -3407,6 +3415,7 @@ function contextPanelClick(e) {
   renderDecCount();
   $('#sheetDyn').innerHTML = renderContextPanel();
   const ta = $('#sheetDyn .dp-area'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  setTimeout(settled); // once no fact is being written or edited
 }
 function decisionsPanelClick(e) {
   const btn = e.target.closest('[data-dp]'); if (!btn) return;
@@ -3430,6 +3439,7 @@ function decisionsPanelClick(e) {
   }
   refreshDecisions();
   if (panelEdit) { const ta = $('.dp-area'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
+  setTimeout(settled); // once no decision is being edited
 }
 document.addEventListener('keydown', e => {
   if (!e.target.classList || !e.target.classList.contains('dp-area')) return;
@@ -3465,7 +3475,7 @@ const HELP = [
     <li>On a phone, add it to the home screen: iPhone Safari → Share → <b>Add to Home Screen</b>; Android Chrome → ⋮ → <b>Add to Home screen</b>.</li></ul>` },
   { id: 'branches', title: 'Branches', cards: ['F-04', 'F-05', 'F-06', 'F-07', 'F-10', 'F-11', 'F-12', 'F-19', 'F-24', 'F-29', 'F-32'], body: `
     <p class="help-why">Try alternatives without mixing them.</p>
-    <ul><li><b>Branch out</b> under an answer: a new column that continues from there. The model sees only that branch's path, so dead ends don't pollute the context. Under your own message, <b>Branch out</b> offers <b>Edit in a new branch</b> or an answer from any model.</li>
+    <ul><li><b>Branch out</b> under an answer: a new column that continues from there. The model sees only that branch's path, so dead ends don't pollute the context. Under your own message, <b>Branch out</b> offers <b>Edit in a new branch</b>, or another answer from any model in a new branch.</li>
     <li>Under a message: <b>Branch out</b>, the flag (a decision), the bookmark (<b>Remember</b>) and the eye (<b>Exclude from history</b>): what the next prompts carry. <b>⋯</b> holds the rest: how the prompt of an answer was built, regenerate it with any model, branch into options, edit, copy the message or the conversation up to here, and delete. An error has <b>Try again</b> instead.</li>
     <li><b>Delete</b>: your question goes with its answer; an answer goes alone, and its question waits with <b>Answer</b>. <b>Undo</b> in the toast brings it back, unless the conversation changed since (moving between branches or folding them changes nothing). Deleting a branch, a memory fact, or unflagging in the decisions panel works the same way; only deleting a whole conversation asks first.</li>
     <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place too. Either way the earlier text is kept, so an answer's prompt still shows what the model saw, marked <b>changed later</b>.</li>
@@ -3478,7 +3488,7 @@ const HELP = [
     <p class="help-why">When there is more than one way, explore them side by side, then decide.</p>
     <ul><li><b>⋯ → Branch into options</b>: the model proposes options, you tick the ones to explore, and each becomes a branch, answered now or later.</li>
     <li><b>Compare N</b> next to the branch badges: the branches side by side. With AI, alternatives get a table of criteria that matter here and a suggestion; branches that aren't alternatives get what each contributes and a next step. <b>Compare by…</b> sets your own question.</li>
-    <li><b>Choose</b> turns the chosen branch's last answer into a decision, "Chose X over Y", folds the others and sets the statuses, also without <b>Compare with AI</b>. If that answer holds your own decision, it asks first. <b>Undo</b> in the toast puts it all back. Choose another branch later, and the new choice replaces the earlier one in prompts and in the export; the branch chosen reads <b>Chosen ✓</b>.</li></ul>` },
+    <li><b>Choose</b> turns the chosen branch's last answer into a decision, "Chose X over Y", folds the others and sets the statuses, also without <b>Compare with AI</b>. If that answer holds your own decision, it asks first. <b>Undo</b> in the toast puts it all back, and takes you back to where you were. Choose another branch later, and the new choice replaces the earlier one in prompts and in the export; the branch chosen reads <b>Chosen ✓</b>. Park or reject the chosen branch, and the choice no longer holds until you open it again.</li></ul>` },
   { id: 'context', title: 'Decisions, memory and the prompt', cards: ['F-08', 'F-09', 'F-20', 'F-21', 'F-22', 'F-23', 'F-31'], body: `
     <p class="help-why">Say it once: every request carries it.</p>
     <ul><li>The <b>flag</b> under a message makes it a decision: a one-line summary that every prompt of the conversation carries. Tap the Decision box to edit it, or <b>Write for me</b>. When the message changes (a regeneration, an edit, a Restore), a summary the helper wrote is written again; yours says it was written for an earlier version, with <b>Update</b> and <b>Keep</b>.</li>
@@ -3498,13 +3508,17 @@ const HELP = [
     <li>Menu → <b>⋯</b> on a conversation → <b>Export as a Thinking State</b>: a .zip with its thoughts, decisions and the facts remembered from it, and the session with the model, prompt and tokens of every answer.</li>
     <li>What you do is data too: options answer a question, a comparison is a finding, a choice sets statuses, an answer keeps its versions, helper calls keep their tokens, a prompt names the facts it used, every node says who worded it, and <code>log.md</code> lists the decisions and branch statuses as they stand, each dated when it was made. Exports and shared pages leave the memory text out of the prompts; a conversation's export includes only the facts remembered from it.</li>
     <li><b>Export all</b> saves one .zip: a Thinking State per conversation, and your memory as documents in <code>home/memory/</code>, each fact once.</li>
-    <li><b>⋯</b> → <b>Share as a read-only page</b> saves a read-only page of the conversation, with its decisions under ⚑ and a link to the demo. On that page, <b>Download Thinking State</b> gets its .zip, to import and continue.</li>
-    <li><b>Import</b> opens a Thinking State or an Export all (.zip), a shared page, or a .json from an earlier version. The demo's own Thinking States come back whole; one made by another tool opens as a tree of cards to keep writing in, and its export keeps everything you didn't change there, byte for byte: authors, sources, tags, memory, log and session entries. Files the demo can't read are named, and kept as they are. A Thinking State that brings memory facts you don't have asks before adding them, an Export all too, as a restore: memory goes into every request, and anyone can make such a zip.</li></ul>` },
+    <li><b>⋯</b> → <b>Share as a read-only page</b> saves a read-only page of the conversation, with its decisions under ⚑ and a link to the demo. On that page, <b>Download Thinking State</b> gets the Thinking State it holds, the conversation as <b>Export all</b> writes it, without your facts, to import and continue.</li>
+    <li><b>Import</b> opens a Thinking State or an Export all (.zip), a shared page, or a .json from an earlier version. The demo's own Thinking States come back whole; one made by another tool opens as a tree of cards, each labelled with its node's type and author, to keep writing in, and its export keeps everything you didn't change there, byte for byte: authors, sources, tags, memory, log and session entries, in their order. Files the demo can't read are named, and kept as they are. A Thinking State that brings memory facts you don't have asks before adding them, an Export all too, as a restore: memory goes into every request, and anyone can make such a zip.</li></ul>` },
   { id: 'help', title: 'About this help', cards: ['F-34'], body: `
     <p>This help changes with the app: every new feature adds itself here, and <b>What's new</b> lists what changed in this version, with earlier versions below it. Press <b>?</b> on a keyboard to open it.</p>` },
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
+  { version: 'Unreleased', items: ['Fixed: a choice whose branch you park or reject no longer stands, in the comparison, the prompts and the export, and <b>Undo</b> of a choice takes you back where you were.',
+    'A session another tool wrote comes back from an export as it was read, line by line, with what you said here after it; a Thinking State you only opened comes back with no session added.',
+    'Cards of another tool’s Thinking State say what node they show and who wrote it, nest as their nodes do, and have no <b>Answer</b>. A shared page holds the Thinking State itself, and gives it back as it holds it.',
+    'Fixed: every helper call stays in the export, a restored answer keeps its web searches, and an answer from <b>Branch out</b> under your message is another version of its answer.'] },
   { version: '0.8.0', items: ['Fixed: two tabs on the same conversation keep each other’s changes, and when the browser’s storage doesn’t answer, the demo says so instead of opening an old copy.',
     'A Thinking State made by another tool keeps, byte for byte, what you didn’t change when you export it: authors, sources, tags, memory, log and session entries. <b>Export all</b> writes each fact once.',
     'An answer Gemini cut short is tagged <b>cut off</b>, with the reason. An error has <b>Try again</b>, and can’t become a decision.',
@@ -3614,18 +3628,6 @@ const stamp = () => new Date().toISOString().slice(0, 10);
 // Memory is personal and shared by all conversations: an exported or shared conversation leaves its text out,
 // from the prompts of answers and from what a comparison was built from
 const omitMemory = r => { if (r && Array.isArray(r.blocks)) r.blocks.forEach(b => { if (b.kind === 'memory') { b.text = ''; b.omitted = true; } }); };
-function cleanConvo(c) {
-  const x = JSON.parse(JSON.stringify(c));
-  delete x.keep; // the files another tool wrote stay in exports, not in a page to share
-  // every request the copy keeps loses its memory text: an answer's, its earlier versions', a comparison's
-  const walk = o => { if (!o || typeof o !== 'object') return; if (Array.isArray(o.blocks)) omitMemory(o); Object.values(o).forEach(walk); };
-  Object.values(x.messages).forEach(m => {
-    if (m.streaming && m.prev) Object.assign(m, m.prev); // a shared page holds the answer being replaced, as an export does
-    delete m.streaming; delete m.prev;
-    walk(m);
-  });
-  return x;
-}
 // Export all: one .zip with every conversation as its Thinking State bundle, and global memory as a Mindbough home
 // (home/memory/, spec §9), each fact citing where it was remembered, across bundles (§8.3)
 function exportAllStates() {
@@ -3819,9 +3821,12 @@ function keepOf(r, files, c) {
     if (!f.name.startsWith(r.dir)) continue;
     const p = f.name.slice(r.dir.length), was = now.get(p);
     if (was === f.text || p === 'index.md' || p === 'nodes/index.md' || (p === 'README.md' && demoMade)) continue; // written the same, or the demo's own
-    if (p === session) { // entries the demo doesn't read: written back after its own
-      const lines = f.text.split('\n').filter(l => { try { const e = JSON.parse(l); return !!e && typeof e.kind === 'string' && !['message', 'branch', 'call'].includes(e.kind) && !(e.kind === 'tool' && e.tool === 'web_search'); } catch (x) { return false; } });
+    if (p === session) { // the lines the demo doesn't write are written back after its own; the others as read while unchanged (S6)
+      // (a copy has a session of its own: there, the lines of kinds the demo doesn't read)
+      const ids = new Set(was === undefined ? [] : was.split('\n').map(lineId)), other = e => !['message', 'branch', 'call'].includes(e.kind) && !(e.kind === 'tool' && e.tool === 'web_search');
+      const lines = f.text.split('\n').filter(l => { const id = lineId(l); if (typeof id !== 'string' || !id) return false; if (was !== undefined) return !ids.has(id); try { return other(JSON.parse(l)); } catch (x) { return false; } });
       if (lines.length && fits(...lines)) keep.lines = lines;
+      if (was !== undefined && fits(f.text, was)) keep.session = { text: f.text, was };
       continue;
     }
     const pair = was !== undefined && fits(f.text, was) ? { text: f.text, was } : null;
@@ -3829,9 +3834,23 @@ function keepOf(r, files, c) {
     else if (p === 'README.md' || p === 'log.md' || p === 'memory/index.md') { if (pair) keep[p] = pair; }
     else if (fits(f.text)) other[p] = f.text; // memory items, nodes it can't show, notes, other sessions
   }
+  if (!read && now.has(session) && fits(now.get(session))) keep.session = { text: '', was: now.get(session) }; // it came with none: none while nothing is said here
   if (Object.keys(nodes).length) keep.nodes = nodes;
   if (Object.keys(other).length) keep.files = other;
   return Object.keys(keep).length ? keep : null;
+}
+// A session line's entry id, '' for the header, null for a line that isn't an entry
+const lineId = l => { try { const e = JSON.parse(l); return !objOf(e) ? null : e.type === 'Session' ? '' : typeof e.kind === 'string' && typeof e.id === 'string' ? e.id : null; } catch (x) { return null; } };
+// The session of another tool's Thinking State as the demo writes it now (spec S6): the file as it was read, in its order. A line the
+// demo still writes as it wrote it then stays byte for byte, one changed here (excluded, say) is the demo's, one deleted here goes,
+// one the demo never wrote stays, and what was said here comes after (the header's tool version aside: a newer demo writes its own)
+function sessionAsRead(now, k) {
+  const same = (a, b) => { if (a === b) return true; try { const x = JSON.parse(a), y = JSON.parse(b); if (x.type !== 'Session' || y.type !== 'Session') return false; delete x.by; delete y.by; return JSON.stringify(x) === JSON.stringify(y); } catch (e) { return false; } };
+  const cut = t => t.split('\n').filter(l => l.trim()), mine = cut(now), was = cut(k.was);
+  if (mine.length === was.length && mine.every((l, i) => same(l, was[i]))) return k.text || null; // nothing changed: none if it came with none
+  const byId = t => new Map(t.map(l => [lineId(l), l])), read = cut(k.text), then = byId(was), here = byId(mine), had = byId(read);
+  const out = read.map(l => { const id = lineId(l); return id === null || !here.has(id) ? (then.has(id) ? null : l) : !then.has(id) || same(then.get(id), here.get(id)) ? l : here.get(id); });
+  return out.filter(l => l !== null).concat(mine.filter(l => !had.has(lineId(l)))).join('\n') + '\n';
 }
 // One conversation → a Thinking State bundle: a Thought (or the root Question) per branch, a Decision per flagged message,
 // the decisions as project memory, and the raw conversation in sessions/ (spec Appendix B)
@@ -3906,7 +3925,7 @@ function thinkingStateFiles(c, quiet, mine, all) {
     if (!opts.length) continue;
     const qid = keep(m.choiceId, m.ts); if (m.choiceId !== qid) { m.choiceId = qid; given = true; }
     const q = m.role === 'model' ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : m;
-    const dm = chosen && opts.some(k => k.id === chosen) ? Object.values(c.messages).find(x => x.flagged && x.decision && x.decision.choice === m.id && byBranch[x.branchId] && (x.branchId === chosen || isUnder(c, x.branchId, chosen))) : null;
+    const dm = chosen && opts.some(k => k.id === chosen) && !droppedAt(c, chosen) ? Object.values(c.messages).find(x => x.flagged && x.decision && x.decision.choice === m.id && byBranch[x.branchId] && (x.branchId === chosen || isUnder(c, x.branchId, chosen))) : null;
     const alt = !m.compare || !m.compare.relation || m.compare.relation === 'alternatives';
     const name = bid => c.branches[bid] ? branchName(c.branches[bid], c) : 'a branch';
     nodes.push({ id: qid, type: 'Question', title: ((cmp && cmp.question) || sentenceOf(q ? q.text : m.text, 120) || 'A choice').slice(0, 120),
@@ -4005,8 +4024,9 @@ function keepIn(k, files, all) {
     const node = /^nodes\/[0-9]{8}-[0-9a-z]{6}\.md$/.test(f.name), pair = node ? k.nodes && k.nodes[f.name.slice(6, -3)] : ['README.md', 'log.md', 'memory/index.md'].includes(f.name) ? k[f.name] : null;
     if (objOf(pair) && typeof pair.text === 'string' && typeof pair.was === 'string') f.text = node || f.name === 'README.md' ? mergeDoc(pair, f.text, !node) : mergeLines(pair, f.text);
   }
-  const sf = files.find(f => /^sessions\/[^/]+\.jsonl$/.test(f.name));
-  if (sf && Array.isArray(k.lines)) sf.text += k.lines.filter(l => typeof l === 'string').map(l => l + '\n').join('');
+  const sf = files.find(f => /^sessions\/[^/]+\.jsonl$/.test(f.name)), ks = objOf(k.session) && typeof k.session.was === 'string' && typeof k.session.text === 'string' ? k.session : null;
+  if (sf && ks) { const text = sessionAsRead(sf.text, ks); if (text === null) files.splice(files.indexOf(sf), 1); else sf.text = text; } // none: it came with none, and nothing was said here
+  else if (sf && Array.isArray(k.lines)) sf.text += k.lines.filter(l => typeof l === 'string').map(l => l + '\n').join(''); // kept before 0.9: the lines the demo doesn't write, after its own
   for (const [name, text] of Object.entries(k.files || {})) {
     const item = name.match(/^memory\/([0-9]{8}-[0-9a-z]{6})\.md$/);
     if (item && home.has(item[1])) continue; // the fact is in home/memory: one copy (D-04)
@@ -4086,7 +4106,8 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
     if (b.parentId) {
       const fork = b.forkMsgId && c.messages[b.forkMsgId] ? b.forkMsgId : null;
       const brId = reuse(b.eid) || derive('br' + b.id);
-      lines.push({ id: brId, kind: 'branch', node, after: fork, by: b.by || 'human:me', at: iso(b.created), ext: { 'mindbough-demo': { n: b.n, ...(b.option ? { option: b.option } : {}), ...(b.status && b.statusAt ? { statusAt: iso(b.statusAt) } : {}) } } });
+      const card = c.messages[b.msgIds[0]] && c.messages[b.msgIds[0]].node; // a node of an opened Thinking State, shown as a card: the demo's
+      lines.push({ id: brId, kind: 'branch', node, after: fork, by: b.by || (card ? 'process:mindbough-demo' : 'human:me'), at: iso(b.created), ext: { 'mindbough-demo': { n: b.n, ...(b.option ? { option: b.option } : {}), ...(b.status && b.statusAt ? { statusAt: iso(b.statusAt) } : {}) } } });
       after = brId;
     }
     const reqOf = r => ({ at: iso(r.at), chars: r.chars | 0, blocks: (r.blocks || []).map(x => block(x, r.at)) });
@@ -4113,13 +4134,13 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
           ...(prev ? { replaces: prev } : {}), ...(back ? { restores: back } : {}), text: v.text, ...(v.cut ? { error: v.cut } : {}), ...(prev ? {} : variant),
           ...(rq ? { request: rq, ...useOf(v.request) } : {}), ...(vt ? { ext: { 'mindbough-demo': { toolTokens: vt } } } : {}), ...(src.length && !back ? { sources: src } : {}) });
         // an earlier version's web search stays in the session: entries never go away (spec S6, W13)
-        if (v.search && !back) lines.push({ id: reuse(v.search.eid) || derive(id + 'ws'), kind: 'tool', node, after, tool: 'web_search', input: { queries: v.search.queries || [] }, ...toolOut(v.search), ...(src.length ? { sources: src } : {}), by, at: toolAt(v.search, v.ts) });
+        if (v.search && !back && !v.search.noTool) lines.push({ id: reuse(v.search.eid) || derive(id + 'ws'), kind: 'tool', node, after, tool: 'web_search', input: { queries: v.search.queries || [] }, ...toolOut(v.search), ...(src.length ? { sources: src } : {}), by, at: toolAt(v.search, v.ts) });
         prev = id; ids.push(id);
       });
       const back = Number.isInteger(m.restores) && ids[m.restores] ? ids[m.restores] : null, human = (vs.length && m.edited) || !!back;
       // an option's first message is written by the demo from a template (spec §14.2, P3)
       const e = { id: vs.length ? reuse(m.eid) || derive(`${m.id}r${vs.length}`) : m.id, kind: 'message', node, after, role: m.srcRole || (m.role === 'user' ? 'user' : 'assistant'),
-        by: m.by && !human ? m.by : human ? person(m.by) : b.option && i === 0 && m.role === 'user' && !m.edited ? 'process:mindbough-demo' : who(m), at: iso(back ? m.restoredAt : human && m.editedAt ? m.editedAt : m.ts),
+        by: m.by && !human ? m.by : human ? person(m.by) : ((b.option && i === 0) || m.node) && m.role === 'user' && !m.edited ? 'process:mindbough-demo' : who(m), at: iso(back ? m.restoredAt : human && m.editedAt ? m.editedAt : m.ts),
         ...(prev ? { replaces: prev } : {}), ...(back ? { restores: back } : {}) };
       verIds.set(m.id, ids.concat(e.id));
       if (m.streaming) e.pending = true; // still being written: readers skip it, and the demo resumes it after a crash (spec §10.3)
@@ -4139,7 +4160,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       if (Object.keys(own).length) e.ext = { 'mindbough-demo': own };
       if (m.search && !back) {
         const src = (m.search.sources || []).map(x => ({ resource: x.uri, title: x.title }));
-        lines.push({ id: reuse(m.search.eid) || derive(e.id + 'ws'), kind: 'tool', node, after, tool: 'web_search', input: { queries: m.search.queries || [] }, ...toolOut(m.search), ...(src.length ? { sources: src } : {}), by: who(m), at: toolAt(m.search, m.ts) });
+        if (!m.search.noTool) lines.push({ id: reuse(m.search.eid) || derive(e.id + 'ws'), kind: 'tool', node, after, tool: 'web_search', input: { queries: m.search.queries || [] }, ...toolOut(m.search), ...(src.length ? { sources: src } : {}), by: m.by || who(m), at: toolAt(m.search, m.ts) });
         if (src.length) e.sources = src;
       }
       if (e.request && m.request.blocks.some(b => b.kind === 'tools')) {
@@ -4230,7 +4251,7 @@ function ymlRead(src) {
   const skip = () => { while (i < lines.length && blank(lines[i])) i++; };
   const isItem = t => t === '-' || t.startsWith('- ');
   const unescape = body => body.replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)/g, (_, e) => {
-    const simple = { '0': '\0', a: '\x07', b: '\b', t: '\t', n: '\n', v: '\v', f: '\f', r: '\r', e: '\x1b', ' ': ' ', '"': '"', '/': '/', '\\': '\\', N: '\x85', _: '\xa0', L: ' ', P: ' ', '\t': '\t' };
+    const simple = { '0': '\0', a: '\x07', b: '\b', t: '\t', n: '\n', v: '\v', f: '\f', r: '\r', e: '\x1b', ' ': ' ', '"': '"', '/': '/', '\\': '\\', N: '\x85', _: '\xa0', L: '\u2028', P: '\u2029', '\t': '\t' };
     if (e.length === 1) { if (e in simple) return simple[e]; fail(`unknown escape \\${e}`); }
     return String.fromCodePoint(parseInt(e.slice(1), 16));
   });
@@ -4350,8 +4371,8 @@ function frontmatter(text) {
 // true when the built-in reader can't read a file's frontmatter, so js-yaml is worth loading
 const needsYaml = text => { const m = text.match(FM_RE); if (!m) return false; try { ymlRead(m[1]); return false; } catch (e) { return true; } };
 if (BUILD.startsWith('__')) window.__mbTest = { ymlRead, yq, nodeDoc, nativeRecord: () => nativeRecord() }; // local builds only: the e2e tests reach the pure functions
-async function openThinkingStates(buf) {
-  const files = await unzipText(buf);
+async function openThinkingStates(buf) { // a .zip, or the files a shared page holds
+  const files = Array.isArray(buf) ? buf.filter(f => f && typeof f.name === 'string' && typeof f.text === 'string').slice(0, 5000) : await unzipText(buf);
   let noYaml = null; // offline, the YAML reader can't load: say so rather than "no Thinking State" (L-03)
   if (!window.jsyaml && files.some(f => /\.md$/.test(f.name) && needsYaml(f.text))) await loadYaml().catch(err => { noYaml = err; });
   const convos = files.filter(f => /(^|\/)README\.md$/.test(f.name)).map(f => ({ dir: f.name.slice(0, -'README.md'.length), fm: frontmatter(f.text) }))
@@ -4474,10 +4495,11 @@ function sessionToConvo(r, files, nodes, rootId, own) {
         // a version edited in place keeps the model and prompt of the version it was edited from, as in the app (D11)
         const from = human ? chain.slice(0, chain.indexOf(x)).reverse().find(e => modelOf(e.by)) : x;
         return { text: typeof x.text === 'string' ? x.text : '', ...(from && modelOf(from.by) ? { model: modelOf(from.by) } : {}), ts, ...(human ? { edited: true, editedAt: ts } : {}),
-          ...(from && isObj(from.request) ? { request: recBack(from, modelOf(from.by), time(from.at, now)) } : {}), ...(found ? { search: asRead(found, wsx) } : {}), ...(x.error && x.text ? { cut: String(x.error).slice(0, 300) } : {}), ...(foreignBy(x.by) ? { by: x.by } : {}) };
+          ...(from && isObj(from.request) ? { request: recBack(from, modelOf(from.by), time(from.at, now)) } : {}), ...(found ? { search: asRead(found, wsx, x) } : {}), ...(x.error && x.text ? { cut: String(x.error).slice(0, 300) } : {}), ...(foreignBy(x.by) ? { by: x.by } : {}) };
       };
       const eidOf = x => x.id !== slot.id ? { eid: x.id } : {}; // the entry a version was, so writing it again keeps its id (D-02)
-      const asRead = (found, w) => w ? { ...found, eid: w.id, ...(Number.isFinite(Date.parse(w.at)) ? { wsAt: Date.parse(w.at) } : {}), ...(typeof w.output === 'string' && w.output ? { wsOut: w.output.slice(0, 2000) } : {}) } : found;
+      const asRead = (found, w, x) => w ? { ...found, eid: w.id, ...(Number.isFinite(Date.parse(w.at)) ? { wsAt: Date.parse(w.at) } : {}), ...(typeof w.output === 'string' && w.output ? { wsOut: w.output.slice(0, 2000) } : {}) }
+        : x && !WEBID.has(x.id + 'ws') ? { ...found, noTool: true } : found; // known only from the answer's sources: no tool entry to write for it
       // every version, in the order it was made; a Restore is one too, with what the version it puts back had
       if (role === 'model' && chain.length > 1) m.versions = chain.slice(0, -1).map(x => ({ ...(backAt(x) >= 0 ? { ...asVersion(origin(x)), text: typeof x.text === 'string' ? x.text : '', restores: backAt(x), restoredAt: time(x.at, now) } : asVersion(x)), ...eidOf(x) }));
       else if (role === 'user' && chain.length > 1) { // your message edited in place: the earlier texts, each by you from the second on
@@ -4486,10 +4508,10 @@ function sessionToConvo(r, files, nodes, rootId, own) {
       }
       if (chain.length > 1) m.eid = v.id;
       const owned = new Set(chain.slice(0, -1).map(ownWs).filter(Boolean)), legacy = WEB.get(String(slot.after));
-      const ws = restored ? null : ownWs(v) || (legacy && !owned.has(legacy) ? legacy : null), sv = restored ? o : v; // a restored answer has the sources of the version it puts back
+      const ws = restored ? ownWs(o) : ownWs(v) || (legacy && !owned.has(legacy) ? legacy : null), sv = restored ? o : v; // a restored answer has the search and sources of the version it puts back
       if (role === 'model' && (ws || Array.isArray(sv.sources))) {
         const found = webSearchOf({ webSearchQueries: ws && isObj(ws.input) ? ws.input.queries : [], groundingChunks: (Array.isArray(sv.sources) ? sv.sources : ws && Array.isArray(ws.sources) ? ws.sources : []).filter(isObj).map(x => ({ web: { uri: x.resource, title: x.title } })) });
-        if (found) m.search = asRead(found, ws);
+        if (found) m.search = asRead(found, ws, sv);
       }
       if (b.msgIds.length === 0 && slot.variant_of && toMsg.has(slot.variant_of)) { if (role === 'model') b.regenOf = toMsg.get(slot.variant_of); else b.editOf = toMsg.get(slot.variant_of); }
       convo.messages[m.id] = m; b.msgIds.push(m.id);
@@ -4570,14 +4592,17 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     const history = memHistoryOf(fm);
     convo.facts.push({ text: String(fm.meta.description).slice(0, 300), at: time(isObj(fm.meta.generated) ? fm.meta.generated.at : null, now), itemId: rel.slice(7, -3), ...(mid ? { mid } : {}), ...(history.length ? { history } : {}) });
   }
-  // nodes the session doesn't cover stay cards, under the nearest branch above them
-  for (const [nid, node] of nodes) {
-    if (used.has(nid)) continue;
-    const t = th(node), type = String(node.meta.type || 'Thought'), status = TS_STATUSES.includes(t.status) ? t.status : 'open';
-    const parent = convo.branches[bidOf(up(nid))] ? bidOf(up(nid)) : convo.root, bid = freshBid('b' + nid), mid = 'm' + nid;
+  // nodes the session doesn't cover stay cards, parents first, each under the nearest node above it that has a branch, a card's
+  // too, and continuing from it, so writing there sends the path from the root (spec §13)
+  const cardAt = new Map(), above = nid => { const out = []; let p = th(nodes.get(nid)).parent; const seen = new Set([nid]); while (p && nodes.has(String(p)) && !seen.has(String(p))) { p = String(p); seen.add(p); out.push(p); p = th(nodes.get(p)).parent; } return out; };
+  for (const nid of [...nodes.keys()].filter(x => !used.has(x)).sort((a, b) => above(a).length - above(b).length)) {
+    const node = nodes.get(nid), t = th(node), type = String(node.meta.type || 'Thought'), status = TS_STATUSES.includes(t.status) ? t.status : 'open';
+    const host = above(nid).find(x => cardAt.has(x) || (withEntries.has(x) && convo.branches[bidOf(x)]));
+    const parent = host ? cardAt.get(host) || bidOf(host) : convo.root, ids = convo.branches[parent].msgIds, bid = freshBid('b' + nid), mid = 'm' + nid;
     convo.messages[mid] = { id: mid, role: 'user', text: [`**${type} · ${status}** — ${String(node.meta.title || nid)}`, node.meta.description ? `_${node.meta.description}_` : '', node.body].filter(Boolean).join('\n\n'), branchId: bid, ts: now,
       node: { id: nid, type, status, title: String(node.meta.title || nid), description: String(node.meta.description || ''), ...wroteOf(node), links: Object.fromEntries(TS_LINKS.filter(k => Array.isArray(t[k])).map(k => [k, t[k].map(String).filter(x => TS_ID.test(x))])) } };
-    convo.branches[bid] = { id: bid, parentId: parent, forkMsgId: null, msgIds: [mid], n: ++n, name: String(node.meta.title || nid).slice(0, 60), created: now, ...(['rejected', 'superseded', 'parked'].includes(status) ? { collapsed: true } : {}) };
+    convo.branches[bid] = { id: bid, parentId: parent, forkMsgId: ids.length ? ids[ids.length - 1] : null, msgIds: [mid], n: ++n, name: String(node.meta.title || nid).slice(0, 60), created: now, ...(['rejected', 'superseded', 'parked'].includes(status) ? { collapsed: true } : {}) };
+    cardAt.set(nid, bid);
   }
   convo.counter = n;
   return convo;
@@ -4647,8 +4672,10 @@ function exportThinkingState(id) {
   toast('Thinking State downloaded (.zip)');
 }
 function exportReadOnly(id) {
-  const c = cleanConvo(db.convos[id]);
-  const json = JSON.stringify(c).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+  const c = db.convos[id]; if (!c) return;
+  // its Thinking State as Export all writes it: none of your facts, no memory text, another tool's files as they were (F-14, F-23)
+  const { folder, at: made, files } = thinkingStateFiles(c, false, false, true);
+  const json = JSON.stringify({ title: c.title, folder, at: made, files }).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   const S = 'scr' + 'ipt';
   const marker = '<' + S + ' id="app">';
   // the shared file is opened from disk, so drop links to files that exist only next to the hosted app
@@ -4673,6 +4700,7 @@ function parseImport(text) {
     if (!m) throw new Error('This file doesn’t contain a conversation');
     data = JSON.parse(m[1]);
   }
+  if (Array.isArray(data.files)) { const files = []; files.files = data.files; return files; } // a shared page from 0.9 on: its Thinking State
   const list = Array.isArray(data.conversations) ? data.conversations : (data.branches && data.messages ? [data] : null);
   if (!list) throw new Error('Unrecognized file format');
   list.memory = Array.isArray(data.memory) ? data.memory : []; // an "Export all" file also carries the memory
@@ -4708,7 +4736,7 @@ function adoptConvo(src) {
   // an id that is safe (it goes into data- attributes) and unique in this conversation is kept, so a Thinking State round trip
   // keeps its entry ids; anything else gets a fresh one
   const cardIds = new Set();
-  const asSearched = (ws, x) => { if (typeof x.eid === 'string' && ENTRY_ID.test(x.eid)) ws.eid = x.eid; if (okTime(x.wsAt)) ws.wsAt = x.wsAt; if (typeof x.wsOut === 'string' && x.wsOut) ws.wsOut = str(x.wsOut, 2000); }; // its tool entry as read (D-02)
+  const asSearched = (ws, x) => { if (typeof x.eid === 'string' && ENTRY_ID.test(x.eid)) ws.eid = x.eid; if (okTime(x.wsAt)) ws.wsAt = x.wsAt; if (typeof x.wsOut === 'string' && x.wsOut) ws.wsOut = str(x.wsOut, 2000); if (x.noTool === true) ws.noTool = true; }; // its tool entry as read, or none (D-02)
   const keepId = k => { const id = typeof k === 'string' && /^[0-9a-z][0-9a-z_-]{3,31}$/.test(k) && !taken.has(k) ? k : uid(); taken.add(id); return id; };
   while (queue.length) {
     const k = queue.shift();
@@ -4845,7 +4873,7 @@ function adoptConvo(src) {
     }
   }
   // helper calls (F-30), anchored at their messages
-  const srcCalls = (Array.isArray(src.calls) ? src.calls : []).filter(x => isObj(x) && typeof x.task === 'string').slice(-300);
+  const srcCalls = (Array.isArray(src.calls) ? src.calls : []).filter(x => isObj(x) && typeof x.task === 'string').slice(-5000); // the app keeps every call; this only bounds a hostile file
   const calls = srcCalls.map(x => ({ id: keepId(x.id), task: str(x.task, 40), at: time(x.at), model: str(x.model, 100), chars: count(x.chars),
     ...(mid.has(x.mid) ? { mid: mid.get(x.mid) } : {}), ...(isObj(x.usage) ? { usage: { prompt: count(x.usage.prompt), answer: count(x.usage.answer), thoughts: count(x.usage.thoughts) } } : {}),
     ...(x.output ? { output: str(x.output, 300) } : {}), ...(x.error ? { error: str(x.error, 200) } : {}), ...((r => r ? { request: r } : {})(isObj(x.request) ? jsonOf(x.request, 50000) : null)) })); // a request as read: only ever written back (D-02)
@@ -4941,7 +4969,9 @@ $('#importFile').addEventListener('change', async e => {
         added = added.concat(r.added); failed += r.failed; facts += r.facts; left += r.left; again += r.again; unread = unread.concat(r.unread);
         continue;
       }
-      const list = parseImport(await f.text()); list.forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; }); facts += mergeMemory(list.memory);
+      const list = parseImport(await f.text());
+      if (list.files) { const r = await importZip(list.files); added = added.concat(r.added); failed += r.failed; facts += r.facts; left += r.left; again += r.again; unread = unread.concat(r.unread); continue; }
+      list.forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; }); facts += mergeMemory(list.memory);
     }
     catch (err) { failed++; toast(err.message || 'Import failed'); }
   }
@@ -4975,8 +5005,10 @@ async function openSample(x) {
 }
 $('#sampleBtn').onclick = openSamples;
 $('#exportAllBtn').onclick = exportAllStates;
-$('#roDownload').onclick = () => exportThinkingState(db.current);
-$('#roBarDl').onclick = () => exportThinkingState(db.current);
+// a shared page gives back the Thinking State it holds, as it holds it; one from before 0.9, its conversation's
+const roDownload = () => { if (!Array.isArray(RO && RO.files)) { exportThinkingState(db.current); return; } download(`${String(RO.folder || 'thinking-state').replace(/[\\/:*?"<>|\s]+/g, '-')}-thinking-state.zip`, zipFiles(RO.files, Date.parse(RO.at) || Date.now()), 'application/zip'); toast('Thinking State downloaded (.zip)'); };
+$('#roDownload').onclick = roDownload;
+$('#roBarDl').onclick = roDownload;
 
 /* ---------------- panels & outline ---------------- */
 const UIKEY = 'gemini_tree_chat_ui';
@@ -5159,6 +5191,7 @@ $('#verSettings').textContent = $('#ver').textContent;
 renderKeyState();
 if (isMobile()) ui.outline = false; // drawers start closed on small screens
 applyUI(false);
+if (RO && Array.isArray(RO.files)) { try { db.current = (await importZip(RO.files, { memory: false })).added[0] || null; } catch (err) { console.error(err); } }
 restoreNative();
 if (storage === 'none') setTimeout(() => toast('Couldn’t open your saved conversations: the browser’s storage didn’t answer. Nothing is saved until you reload.', { label: 'Reload', fn: () => location.reload() }), 300);
 if (repaired) save();
