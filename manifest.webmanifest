@@ -1,7 +1,7 @@
 {
   "name": "Mindbough",
   "short_name": "Mindbough",
-  "description": "Mindbough MVP: think with AI in branches. Every prompt is built from your Thinking State: where you are, what you decided and what you remember.",
+  "description": "Mindbough MVP: think with AI in branches, so dead ends stay out of the next answer. Every prompt is built from where you are, what you decided and what you remember.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

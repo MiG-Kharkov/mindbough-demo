@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Mindbough — demo</title>
-<meta name="description" content="Mindbough MVP: think with AI in branches. Every prompt is built from your Thinking State: where you are, what you decided and what you remember.">
+<meta name="description" content="Mindbough MVP: think with AI in branches, so dead ends stay out of the next answer. Every prompt is built from where you are, what you decided and what you remember.">
 <meta name="theme-color" content="#F8FAFA" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#142023" media="(prefers-color-scheme: dark)">
 <!-- Add to Home Screen: opens full screen with its own icon -->
@@ -218,6 +218,7 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 .ctxpill{display:inline-flex}
 .ctxpill .topicon:first-child{border-radius:10px 0 0 10px}
 .ctxpill .topicon:last-child{border-radius:0 10px 10px 0;margin-left:-1px}
+body.readonly .ctxpill .topicon{border-radius:10px} /* a shared page has ⚑ alone */
 .pb-later{display:block;font-size:10.5px;font-weight:600;color:var(--flag);text-transform:none}
 .sample-row{display:block;width:100%;text-align:left;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:10px 12px;margin:0 0 8px;font:inherit;color:inherit;cursor:pointer}
 .sample-row:hover,.sample-row:focus-visible{border-color:var(--accent);outline:none}
@@ -245,7 +246,8 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 .dp-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .dp-actions .btn{padding:5px 10px}
 .btn.danger:hover{border-color:var(--danger);color:var(--danger)}
-.dp-det-area{margin-top:6px}
+.dp-det-area{margin-top:2px}
+.det-label{display:block;margin:8px 0 2px;font-size:12px;color:var(--muted)} /* the details box keeps its name once it holds text */
 .dp-area{display:block;width:100%;border:1px solid var(--accent);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;padding:8px;resize:vertical}
 .dp-hist{margin:8px 0 0;padding-left:18px;font-size:13px}
 .dp-hist li{margin:8px 0}
@@ -337,7 +339,7 @@ body.readonly .col-head .colmore{display:none}
 @media (max-width:400px){.bstat{font-size:11px;padding:1px 6px}}
 .bstat.s-accepted,.ostat.s-accepted{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .bstat.s-rejected,.ostat.s-rejected{text-decoration:line-through}
-.col.dropped .msg{opacity:.62}
+.col.dropped .msg .bubble,.col.dropped .decision{opacity:.62} /* what was said fades; the buttons still work, so they don't */
 .ostat{font-size:11px;font-weight:600;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 6px}
 .st-row{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;padding:12px;margin-bottom:8px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink)}
 .st-row span{font-size:13px;color:var(--muted)}
@@ -365,6 +367,7 @@ button.decision:not(:disabled):hover{box-shadow:0 0 0 3px var(--flag-soft)}
 .decision .dlabel{display:inline-flex;gap:4px;align-items:center;flex:none;font-weight:700;color:var(--flag);font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;padding-top:2px}
 .decision .dlabel svg.i{width:12px;height:12px}
 .decision .dtext{flex:1;min-width:0;overflow-wrap:anywhere}
+@media (max-width:440px){.decision{flex-wrap:wrap;row-gap:2px}.decision .dtext{flex-basis:100%}} /* a phone: the sentence and its details get the whole width */
 .decision .dtext i{color:var(--muted)}
 .decision .ddet,.dp-det{display:block;margin:4px 0 0;padding:0;list-style:none;font-size:13px;line-height:1.4}
 .decision .ddet span,.dp-det li{display:block;position:relative;padding-left:12px;margin:2px 0 0}
@@ -533,12 +536,16 @@ button.model-chip svg.i{width:11px;height:11px}
 @media (pointer:coarse){input,textarea,select{font-size:16px!important}.col-resize{display:none}
   .actions{gap:4px}.actions .ib{min-width:40px;min-height:40px;justify-content:center}
   .model-chip,.bstat,.kid,.conv .rowbtn,.side-foot .linkbtn{position:relative}
-  .model-chip::after,.bstat::after,.kid::after,.side-foot .linkbtn::after{content:"";position:absolute;inset:-7px -3px}
+  .model-chip::after,.bstat::after,.kid::after,.side-foot .linkbtn::after{content:"";position:absolute;inset:-10px -4px}
+  .topicon,#toggleSide,#closeOutline,.oact{min-width:40px;min-height:40px;justify-content:center;align-items:center}
+  .backpill .bp-x{min-width:40px}.side-foot .linkbtn{min-height:40px}
+  .btn,.toast button,#modelMenu button{min-height:40px}
+  .att-x::after{content:"";position:absolute;inset:-6px}
   .conv .rowbtn{min-width:40px;min-height:40px}.sample-link{min-height:40px}
   .col-head .ib{min-width:40px;min-height:40px;justify-content:center}
   .sheet-head .ib,[data-sheet-close].ib{min-width:40px;min-height:40px;justify-content:center}
   .dp-actions .btn,.dec-stale .linkbtn,.decision .edit-actions .btn,.pv-actions .btn{min-height:40px}
-  #promptPreview,#webSearch,#model{min-height:36px}
+  #promptPreview,#webSearch,#model{min-height:40px}
   #model{font-family:inherit}}
 </style>
 </head>
@@ -553,7 +560,7 @@ button.model-chip svg.i{width:11px;height:11px}
       <input type="file" id="importFile" accept=".json,.html,.htm,.zip,application/json,text/html,application/zip" hidden>
     </div>
     <button id="sampleBtn" class="sample-link" type="button">Try a sample conversation (no API key needed)</button>
-    <div id="roBanner"><b>Shared conversation · read-only</b>You can explore every branch here, and ⚑ shows its decisions.</div>
+    <div id="roBanner"><b>Read-only page</b>You can explore every branch here, and ⚑ shows its decisions.</div>
     <div id="convList"></div>
     <div class="side-foot"><div class="ver"><button type="button" class="linkbtn" id="openHelp" title="Help: how it works, and what's new (?)">Help</button> · <span id="ver"></span></div></div>
   </aside>
@@ -567,7 +574,7 @@ button.model-chip svg.i{width:11px;height:11px}
     </header>
     <div id="backPill" class="backpill" hidden><button type="button" class="bp-go" data-back="go">← Back to <b></b></button><button type="button" class="bp-x" data-back="hide" aria-label="Hide">×</button></div>
     <div id="viewport"><div id="canvas"><svg id="wires"></svg></div></div>
-    <div id="roBar" class="robar"><span><b>Read-only copy.</b> Download it to continue in <a href="https://mig-kharkov.github.io/mindbough-demo/" target="_blank" rel="noopener noreferrer">the demo</a> or give it to an agent.</span><button type="button" id="roBarDl">Download Thinking State</button></div>
+    <div id="roBar" class="robar"><span><b>Read-only page.</b> Download it to continue in <a href="https://mig-kharkov.github.io/mindbough-demo/" target="_blank" rel="noopener noreferrer">the demo</a> or give it to an agent.</span><button type="button" id="roBarDl">Download Thinking State</button></div>
     <div class="composer">
       <div id="keyHint" class="keyhint" hidden>To chat, add a Gemini API key in <button type="button" data-open="settings">Settings</button>, or <button type="button" data-open="sample">try a sample conversation</button>.</div>
       <div class="to"><span id="toLabel"></span><button id="promptPreview" class="ib" type="button" title="Preview the prompt your next message would send" aria-label="Preview the next prompt"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg><span class="lbl">Prompt</span></button><button id="webSearch" class="ib" type="button" aria-pressed="false" aria-label="Web search" title="Web search: the model may search Google when it needs fresh facts. Turn it off or on here"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg><span class="lbl">Web</span></button><label class="modelpick" title="Model for the next request"><select id="model" aria-label="Model for the next request"></select></label></div>
@@ -639,9 +646,9 @@ const whole = t => t.replace(/[\uD800-\uDBFF]$/, '');
 const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return whole(cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.10.0';
+const APP_VERSION = '0.11.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main a332fb3'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main ff25fd9'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1091,11 +1098,11 @@ function renderSidebar() {
   if (!db.order.length) { el.innerHTML = '<div class="empty">No conversations yet</div>'; return; }
   el.innerHTML = db.order.map(id => {
     const c = db.convos[id];
-    const nb = Object.keys(c.branches).length;
+    const nb = Object.keys(c.branches).length - 1; // the first column is the conversation itself: its branches are the others
     const d = new Date(c.updated || c.created);
     const when = d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
     return `<div class="conv ${id === db.current ? 'active' : ''}" data-cid="${id}" tabindex="0" role="button" aria-label="Open “${esc(c.title)}”"${id === db.current ? ' aria-current="true"' : ''}>
-      <div class="t"><b>${esc(c.title)}</b><small>${when}, ${nb} branch${nb === 1 ? '' : 'es'}</small></div>
+      <div class="t"><b>${esc(c.title)}</b><small>${when}${nb ? `, ${nb} branch${nb === 1 ? '' : 'es'}` : ''}</small></div>
       <button class="rowbtn" data-conv-more="${id}" title="Rename, export, share or delete" aria-label="Actions for this conversation" aria-haspopup="menu">${ICON.more}</button></div>`;
   }).join('');
 }
@@ -1211,6 +1218,9 @@ function msgHTML(c, m) {
   if (m.role === 'model' && !m.streaming && (m.versions || []).length) chip += `<button class="model-chip vers" data-act="versions" title="Every version of this answer">${m.versions.length + 1} versions</button>`;
   let body;
   if (isEdit) body = `<textarea class="edit-area" aria-label="Edit message">${esc(editing.draft ?? m.text)}</textarea>`;
+  // a card of an opened Thinking State is the node's Markdown (its type and status, title, description, body), shown as Markdown,
+  // sanitized like an answer
+  else if (card && m.text) body = md(m.text);
   else if (m.role === 'user') body = m.text ? `<div class="user-text">${esc(m.text)}</div>` : '';
   else if (m.error) body = errorHTML(m.error);
   else if (!m.text && m.streaming) body = '<span class="typing"><i></i><i></i><i></i></span>';
@@ -1231,17 +1241,17 @@ function msgHTML(c, m) {
     const d = m.decision || {};
     if (decEdit && decEdit.cid === c.id && decEdit.mid === m.id) {
       dec = `<div class="decision editing"><span class="dlabel">${ICON.flagOn}Decision</span>
-        <textarea class="dec-area" rows="2" maxlength="300" aria-label="Decision summary" placeholder="One sentence: what was decided, and why">${esc(decEdit.draft ?? d.summary ?? '')}</textarea>
-        <textarea class="dec-area dec-det" rows="3" aria-label="Details, one per line" placeholder="Details, one per line (up to 10): the conditions, numbers and trade-offs it rests on">${esc(decEdit.det ?? detailsOf(d).join('\n'))}</textarea>
+        <textarea class="dec-area" rows="2" maxlength="300" aria-label="Decision" placeholder="One sentence: what was decided, and why">${esc(decEdit.draft ?? d.summary ?? '')}</textarea>
+        <span class="det-label">Details, one per line</span><textarea class="dec-area dec-det" rows="3" aria-label="Details, one per line" placeholder="Details, one per line (up to 10): the conditions, numbers and trade-offs it rests on">${esc(decEdit.det ?? detailsOf(d).join('\n'))}</textarea>
         <div class="edit-actions"><span class="hint hint-desk">Enter — save · Esc — cancel</span>
-          ${keyInput.value.trim() ? '<button class="btn" data-act="dec-auto" title="Let the model for summaries (Settings) write it">Write for me</button>' : ''}
+          ${keyInput.value.trim() ? '<button class="btn" data-act="dec-auto" title="Let the model for decisions (Settings) write it">Write for me</button>' : ''}
           <button class="btn" data-act="dec-cancel">Cancel</button><button class="btn primary" data-act="dec-save">Save</button></div></div>`;
     } else {
-      const txt = d.summary ? esc(d.summary) + (detailsOf(d).length ? `<span class="ddet">${detailsOf(d).map(x => `<span>${esc(x)}</span>`).join('')}</span>` : '') : d.pending ? '<i>Writing a summary…</i>' : `<i>${RO ? 'No summary' : 'Add a summary'}</i>`;
-      dec = `<button class="decision" data-act="dec-edit" type="button"${RO ? ' disabled' : ' title="Edit the summary that goes into prompts"'}><span class="dlabel">${ICON.flagOn}Decision</span><span class="dtext">${txt}</span></button>`;
+      const txt = d.summary ? esc(d.summary) + (detailsOf(d).length ? `<span class="ddet">${detailsOf(d).map(x => `<span>${esc(x)}</span>`).join('')}</span>` : '') : d.pending ? '<i>Writing the decision…</i>' : `<i>${RO ? 'Not written' : 'Write the decision'}</i>`;
+      dec = `<button class="decision" data-act="dec-edit" type="button"${RO ? ' disabled' : ' title="Edit the decision that goes into prompts"'}><span class="dlabel">${ICON.flagOn}Decision</span><span class="dtext">${txt}</span></button>`;
       const out = droppedAt(c, m.branchId);
       if (out && d.summary) dec += `<div class="dec-stale"><span>Not in prompts: “${esc(branchName(out, c))}” is ${esc(statusLabel(out).toLowerCase())}.</span></div>`;
-      if (!RO && decisionStale(m)) dec += `<div class="dec-stale"><span>Written for an earlier version of this message.</span>${keyInput.value.trim() ? '<button class="linkbtn" data-act="dec-auto" title="Let the model for summaries write it for this version">Update</button>' : ''}<button class="linkbtn" data-act="dec-keep" title="The summary still holds: keep it">Keep</button></div>`;
+      if (!RO && decisionStale(m)) dec += `<div class="dec-stale"><span>Written for an earlier version of this message.</span>${keyInput.value.trim() ? '<button class="linkbtn" data-act="dec-auto" title="Let the model for decisions write it for this version">Update</button>' : ''}<button class="linkbtn" data-act="dec-keep" title="The decision still holds: keep it">Keep</button></div>`;
     }
   }
   let acts = '';
@@ -1329,7 +1339,7 @@ function buildCol(c, b, W) {
       if (why) body += `<div class="fork-note why"><span>${esc(why)}</span></div>`;
     }
     body += own ? b.msgIds.filter(id => c.messages[id]).map(id => msgHTML(c, c.messages[id])).join('')
-      : `<div class="empty">${parent ? 'New branch. Write a message below: the model sees only this branch’s path of the conversation.' : '<b>Ask anything below.</b><br>Each branch sends the model only its own path, plus the decisions you flag and the facts you remember. <b>Prompt</b> above the message box (on a phone, the layers icon) shows exactly what is sent. This is the MVP of the Thinking State format: open files any app or agent can continue.'}</div>`;
+      : `<div class="empty">${parent ? 'New branch. Write a message below: the model sees only this branch’s path of the conversation.' : '<b>Mindbough</b> keeps a long AI chat from polluting its own context: think in branches, and each one sends the model only its own path, plus the decisions you flag and the facts you remember.<br><b>Ask anything below</b>: once you type, <b>Prompt</b> above the message box (on a phone, the layers icon) shows exactly what your message would send. This is the MVP of the Thinking State format: open files any app or agent can continue.'}</div>`;
     col.innerHTML = `<div class="col-head">${head}</div><div class="col-body">${body}</div><div class="col-resize" title="Drag to resize · double-click to reset"></div>`;
     return col;
   }
@@ -1687,7 +1697,9 @@ function staleHTML(c, m) {
   if (!line || line.mid !== m.id) return '';
   const what = line.kind === 'reply' ? 'Written in reply to an earlier version of the answer above'
     : line.x.gone ? 'Written before a message above was deleted' : `Written before an edit above: “${esc(snippetOf(line.x.text || '', 60))}”`;
-  return `<div class="stale-line" data-sig="${line.kind}:${line.x.id}"><span>${ICON.pencil}${what}</span><button class="ib" data-act="stale" title="What to do with it" aria-label="What to do with it" aria-haspopup="menu">${ICON.more}</button></div>`;
+  // decisions made since are said here too, rather than on a Re-ask line of their own: regenerating brings both in (F-31)
+  const n = laterDecisions(c, m).length, since = n ? ` · and ${n} decision${n === 1 ? '' : 's'} since` : '';
+  return `<div class="stale-line" data-sig="${line.kind}:${line.x.id}:${n}"><span>${ICON.pencil}${what}${since}</span><button class="ib" data-act="stale" title="What to do with it" aria-label="What to do with it" aria-haspopup="menu">${ICON.more}</button></div>`;
 }
 function openStaleMenu(anchor, c, m) {
   const menu = $('#modelMenu');
@@ -1695,7 +1707,7 @@ function openStaleMenu(anchor, c, m) {
   menuFor = { cid: c.id, mid: m.id, mode: 'stale' };
   const item = (act, icon, label, cls = '') => `<button role="menuitem" class="plain${cls}" data-more="${act}">${icon}${label}</button>`;
   menu.innerHTML = m.role === 'model'
-    ? item('regenhere', ICON.regen, 'Regenerate') + item('keep', ICON.check, 'Keep it as valid') + item('newbranch', ICON.branch, 'Answer in a new branch')
+    ? item('regenhere', ICON.regen, 'Regenerate') + item('keep', ICON.check, 'Keep it as valid') + item('newbranch', ICON.branch, 'Answer again in a new branch')
     : item('keep', ICON.check, 'Keep it as it is') + item('edit', ICON.pencil, 'Edit') + '<hr>' + item('delfrom', ICON.trash, 'Delete from here on', ' danger');
   placeMenu(menu, anchor);
 }
@@ -1849,6 +1861,7 @@ function answerWaiting(c, m) {
 function reaskHTML(c, m) {
   const b = c.branches[m.branchId];
   if (RO || m.role !== 'model' || m.streaming || m.error || !b || b.collapsed || b.msgIds[b.msgIds.length - 1] !== m.id) return '';
+  const st = staleLine(c, b); if (st && st.mid === m.id) return ''; // its ✎ line says it, decisions included
   // asked again already: say where, rather than offer it once more
   const again = Object.values(c.branches).filter(k => k.regenOf === m.id).sort((x, y) => y.created - x.created)[0];
   if (again) return `<div class="reask" data-sig="again:${again.id}"><span>${ICON.regen}Asked again in “${esc(branchName(again, c))}”</span><button class="btn" data-act="goto" data-bid="${again.id}">Go to</button></div>`;
@@ -1869,7 +1882,7 @@ function refreshReask() {
     const line = staleLine(c, b);
     for (const id of b.msgIds) {
       const el = document.querySelector(`.msg[data-mid="${id}"]`); if (!el || el.contains(document.activeElement) || (editing && editing.mid === id)) continue;
-      const has = el.querySelector(':scope > .stale-line'), want = line && line.mid === id ? `${line.kind}:${line.x.id}` : '';
+      const has = el.querySelector(':scope > .stale-line'), want = line && line.mid === id ? `${line.kind}:${line.x.id}:${laterDecisions(c, c.messages[id]).length}` : '';
       if (want !== (has ? has.dataset.sig : '')) { rerenderMsg(c.id, id); changed = true; }
     }
   });
@@ -1985,8 +1998,10 @@ function startDecisionEdit(c, m) {
 // A decision's details: the specifics its sentence rests on, one point each, from a list or from lines typed (F-21)
 const detailsOf = d => (d && Array.isArray(d.details) ? d.details : []);
 const DETAILS_MAX = 10;
+// a decision's sentence or detail as text: a helper's Markdown marks (bold, code, a heading or list mark) dropped, cut at a word
+const asText = (t, max) => cutText(String(t == null ? '' : t).replace(/\*\*|`/g, '').replace(/^\s*#{1,6}\s+/, '').replace(/\s+/g, ' ').trim(), max);
 const cleanDetails = v => (Array.isArray(v) ? v : String(v || '').split('\n')).filter(x => typeof x === 'string')
-  .map(x => clean(x.replace(/^\s*[-*•]\s+/, ''), 300)).filter(Boolean).slice(0, DETAILS_MAX);
+  .map(x => asText(x.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, ''), 300)).filter(Boolean).slice(0, DETAILS_MAX);
 // details belong to a sentence, and a decision keeps up to DETAILS_MAX of them: say so rather than drop what you typed
 function detailsOk(sentence, typed) {
   const n = String(typed || '').split('\n').filter(x => x.trim()).length;
@@ -2053,7 +2068,7 @@ function cheapModel() {
 }
 // Helper tasks run on the model picked in Settings (F-30), else on the cheapest one; null = turned off
 const HELPER_TASKS = [
-  { id: 'summary', label: 'Decision summaries', off: 'Off: write them yourself' },
+  { id: 'summary', label: 'Decisions', off: 'Off: write them yourself' },
   { id: 'name', label: 'Names of branches and conversations', off: 'Off: name after the first message' },
   { id: 'options', label: 'Finding options' },
   { id: 'compare', label: 'Comparing branches' },
@@ -2133,7 +2148,7 @@ async function summarize(c, m, force) {
     const raw = parts.filter(p => p.text && !p.thought).map(p => p.text).join(' '), found = raw.match(/\{[\s\S]*\}/);
     let data = null; try { data = found && JSON.parse(found[0]); } catch (e) {}
     // a reply that isn't the JSON asked for is read as the sentence alone, as replies were before
-    const text = data && typeof data === 'object' ? clean(data.decision, 300) : raw.replace(/\s+/g, ' ').trim().replace(/^["“'«]+|["”'»]+$/g, '');
+    const text = data && typeof data === 'object' ? asText(data.decision, 300) : raw.replace(/\s+/g, ' ').trim().replace(/^["“'«]+|["”'»]+$/g, '');
     const details = data && typeof data === 'object' ? cleanDetails(data.details) : [];
     // the conversation may have been replaced meanwhile (an Undo, another tab): write into the one shown now
     const [lc, lm] = live();
@@ -2143,7 +2158,7 @@ async function summarize(c, m, force) {
     if (lm.decision && (force || !lm.decision.summary)) setDecision(lm, text.slice(0, 300), model, sig, details);
   } catch (err) {
     if (!/^empty$/.test(err.message)) recordCall(live()[0], { task: 'summary', model, prompt, mid: m.id, error: err.message });
-    toast('Couldn’t write the summary. Write it yourself in the Decision box.');
+    toast('Couldn’t write the decision. Write it yourself in the Decision box.');
   }
   finally {
     inflight--; setTimeout(settled);
@@ -2239,8 +2254,9 @@ function renderOptions() {
       <small id="opCost">${hasKey ? costLine(n) : 'Needs an API key: the branches are created unanswered.'}</small></label>
     <div class="pv-actions"><button class="btn primary" data-op="create"${n ? '' : ' disabled'}>${createLabel(n)}</button></div>`;
 }
-const createLabel = n => `Create ${n} branch${n === 1 ? '' : 'es'}`;
-const costLine = n => opt.answer ? `${n} request${n === 1 ? '' : 's'} with ${modelSel.value || db.model}, all at the same time.` : 'The branches are created with their first message; you answer them later.';
+const createLabel = n => n ? `Create ${n} branch${n === 1 ? '' : 'es'}` : 'Create branches';
+const costLine = n => !opt.answer ? 'The branches are created with their first message; you answer them later.'
+  : n ? `${n} request${n === 1 ? '' : 's'} with ${modelSel.value || db.model}, all at the same time.` : 'Tick an option: each is answered with ' + (modelSel.value || db.model) + ', all at the same time.';
 function renderOptionsIfOpen() { if (sheetView && sheetView.options) $('#sheetDyn').innerHTML = renderOptions(); }
 function updateOptionsCount() {
   const n = optionsReady().length, btn = $('#sheetDyn [data-op="create"]'), cost = $('#opCost');
@@ -2356,7 +2372,8 @@ function renderCompare() {
   const cols = (cmp.cols || []).filter(x => byId[x.bid]);
   const done = !!cmp.at && cols.length > 1, alt = !cmp.relation || cmp.relation === 'alternatives';
   const table = done && alt && cmp.criteria && cmp.criteria.length > 0;
-  const tags = bid => `${table && cmp.pick && cmp.pick.bid === bid ? '<span class="cmp-tag">Suggested</span>' : ''}${choiceStands(c, m, bid) ? '<span class="cmp-tag on">Chosen</span>' : ''}`;
+  // in the table head, Chosen ✓ on the button says it: the tag only where there is no button
+  const tags = (bid, head) => `${table && cmp.pick && cmp.pick.bid === bid ? '<span class="cmp-tag">Suggested</span>' : ''}${choiceStands(c, m, bid) && (RO || !head) ? '<span class="cmp-tag on">Chosen</span>' : ''}`;
   const choose = bid => RO ? '' : choiceStands(c, m, bid) ? '<button class="btn" disabled>Chosen ✓</button>' : `<button class="btn" data-cmp="choose" data-bid="${bid}">Choose</button>`;
   const colOf = bid => cols.find(x => x.bid === bid);
   let html = `<p class="pv-note">Branches that continue from “${esc(snippetOf(m.text, 90))}”</p>`;
@@ -2365,7 +2382,7 @@ function renderCompare() {
   if (done && !alt) html += `<p class="set-hint warn">${esc(RELATIONS[cmp.relation] || 'These branches aren’t alternatives')}.${why ? ` ${esc(why)}${stop}` : ''} So there is no table and no pick.</p>`;
   if (table) {
     const pk = x => cmp.pick && cmp.pick.bid === x.bid ? ' class="pick"' : '';
-    html += `<div class="cmp-wrap"><table class="cmp"><thead><tr><th></th>${cols.map(x => `<th${pk(x)}><button class="cmp-go" data-cmp="goto" data-bid="${x.bid}">${esc(branchName(byId[x.bid], c))}</button>${tags(x.bid)}${RO ? '' : `<span class="cmp-choose">${choose(x.bid)}</span>`}</th>`).join('')}</tr></thead><tbody>
+    html += `<div class="cmp-wrap"><table class="cmp"><thead><tr><th></th>${cols.map(x => `<th${pk(x)}><button class="cmp-go" data-cmp="goto" data-bid="${x.bid}">${esc(branchName(byId[x.bid], c))}</button>${tags(x.bid, true)}${RO ? '' : `<span class="cmp-choose">${choose(x.bid)}</span>`}</th>`).join('')}</tr></thead><tbody>
       ${cmp.criteria.map((cr, i) => `<tr><th>${esc(typeof cr === 'string' ? cr : cr.name)}${cr.why ? `<span class="cmp-why">${esc(cr.why)}</span>` : ''}</th>${cols.map(x => `<td${pk(x)}>${esc(x.cells[i] || '')}</td>`).join('')}</tr>`).join('')}
       <tr class="cmp-sum"><th>In short</th>${cols.map(x => `<td${pk(x)}>${esc(x.summary || '')}</td>`).join('')}</tr></tbody></table></div>
       ${cmp.pick && byId[cmp.pick.bid] ? `<p class="cmp-pick"><b>${esc(cmp.model)} suggests ${esc(branchName(byId[cmp.pick.bid], c))}</b>${cmp.pick.why ? `: ${esc(cmp.pick.why)}` : ''}${/[.!?…]$/.test(cmp.pick.why || '') ? '' : '.'} It is only a suggestion: you choose.</p>` : ''}`;
@@ -2470,7 +2487,11 @@ async function compareWithAI(c, m) {
     save();
   } catch (err) { v.error = `Couldn’t compare (${err.message}). Try again, or choose from the list.`; }
   v.loading = false;
-  if (cmpView === v) renderCompareIfOpen();
+  if (cmpView === v) {
+    renderCompareIfOpen();
+    // the new table from its head: the branch names and Choose, not cells somewhere in the middle (F-28)
+    const head = !v.error && document.querySelector('#sheetDyn .cmp-wrap'); if (head) head.scrollIntoView({ block: 'start' });
+  }
 }
 // Why an option lost (spec §14.4): the comparison's "In short" for it, else the option that won
 function notChosenText(c, cmp, bid) {
@@ -2862,7 +2883,10 @@ async function loadModels() {
     for (let page = 0, token = ''; page < 5; page++) { // every page of the list, not only the first
       const r = await fetch(`${API}/models?pageSize=200${token ? `&pageToken=${encodeURIComponent(token)}` : ''}`, { headers: { 'x-goog-api-key': key } });
       if (!r.ok) { // only a rejected key is a bad one: a limit or an outage says nothing about it
-        if (r.status === 400 || r.status === 401 || r.status === 403) { setKeyState('bad'); toast('Key rejected. Check it in Google AI Studio'); }
+        if (r.status === 400 || r.status === 401 || r.status === 403) { // said where you are looking, and stays said
+          setKeyState('bad'); const sh = $('#settingsHint'), say = 'Gemini didn’t accept this key: check it in Google AI Studio.';
+          if (sheetView && sheetView.settings) { sh.className = 'set-hint warn'; sh.textContent = say; sh.hidden = false; } else toast(say);
+        }
         else { setKeyState(''); toast(`Couldn’t list your models: Gemini answered ${r.status}. Try again in a moment.`); }
         return;
       }
@@ -3482,7 +3506,7 @@ async function streamInto(c, am, req, key, picked, backup) {
     const search = grounding && webSearchOf(grounding);
     if (search) am.search = search; else delete am.search;
     if (!am.text) {
-      if (finish.startsWith('BLOCKED')) am.error = `Gemini blocked the request (${finish.split(':')[1]}).`;
+      if (finish.startsWith('BLOCKED')) am.error = `Gemini’s safety filter blocked this request (${finish.split(':')[1]}).`;
       else if (finish && finish !== 'STOP') am.error = `Empty response (reason: ${finish}).`;
       else am.error = 'Gemini returned an empty response.';
     } else if (cutWhy(finish)) am.cut = `Cut off: ${cutWhy(finish)}.`; // the text is the model's, the reason is Gemini's
@@ -3502,7 +3526,9 @@ async function streamInto(c, am, req, key, picked, backup) {
       const why = am.error;
       delete am.error;
       Object.assign(am, backup);
-      toast(why ? `Regeneration failed — kept the previous answer. ${why}` : 'Regeneration stopped — kept the previous answer');
+      // the reason's first line, long enough to read, and the way to fix a key
+      toast(why ? `Regeneration failed, so the previous answer stays. ${String(why).split('\n')[0]}` : 'Regeneration stopped, so the previous answer stays',
+        keyTrouble(why) ? { label: 'Open Settings', fn: () => $('#openSettings').click() } : null);
     } else if (backup) { addVersion(am, backup); changed = backup.text; } // the answer it replaced stays as an earlier version
     delete am.prev;
     am.streaming = false;
@@ -3545,7 +3571,7 @@ function openSettings(hint) {
   openSheet({ title: 'Settings', settings: true });
   const mb = savedChars / 1048576;
   $('#storageInfo').textContent = storage === 'IndexedDB'
-    ? `Your data is saved only in this browser (IndexedDB), as Thinking State bundles: the same files an export holds. About ${fmtMB(((nativeChars || savedChars) + imageBytes()) / 1048576)} MB${imageBytes() ? ', images included' : ''}.`
+    ? `Your data is saved only in this browser (IndexedDB), as Thinking State bundles: the same files an export holds. ${(nativeChars || savedChars) + imageBytes() ? `About ${fmtMB(((nativeChars || savedChars) + imageBytes()) / 1048576)} MB${imageBytes() ? ', images included' : ''}.` : 'Nothing saved yet.'}`
     : storage === 'none' ? 'Your saved conversations couldn’t be opened, so nothing is saved now. Reload the page.'
     : `Your data is saved only in this browser (${storage}), about ${fmtMB(mb)} MB.`;
   // a browser may clear site data it isn't asked to keep (Safari after 7 days without a visit): Export all is the backup
@@ -3583,7 +3609,7 @@ function previewPrompt(backTo) {
   const draft = input.value.trim();
   const msgs = historyFor(c, c.focus).concat(draft || draftImgs.length ? [{ id: '__draft', role: 'user', text: draft, images: draftImgs }] : []);
   const rec = requestRecord(buildRequest(c, msgs), modelSel.value || db.model);
-  showPrompt({ c, rec, title: 'Next prompt', preview: true, path: historyFor(c, c.focus), ...(typeof backTo === 'function' ? { backTo } : {}), lookup: id => id === '__draft' ? { id, role: 'user', text: draft, images: draftImgs } : c.messages[id],
+  showPrompt({ c, rec, title: 'How the next prompt is built', preview: true, path: historyFor(c, c.focus), ...(typeof backTo === 'function' ? { backTo } : {}), lookup: id => id === '__draft' ? { id, role: 'user', text: draft, images: draftImgs } : c.messages[id],
     note: 'What your next message would send: the whole path of this branch so far, and what you have typed.' });
 }
 function showPrompt(pv) {
@@ -3665,8 +3691,12 @@ function pvRender(pv) {
   const b = r.blocks[pv.block];
   if (b.text != null && b.omitted) {
     const items = Array.isArray(b.items) ? b.items : [], known = items.map(i => db.memory.find(x => x.itemId === i)).filter(Boolean);
+    // an item not in your memory may be in the conversation's own Thinking State, as a sample's is: shown from there, marked so
+    const kept = id => { const t = pv.c && pv.c.keep && pv.c.keep.files && pv.c.keep.files[`memory/${id}.md`], fm = typeof t === 'string' && frontmatter(t); return fm && fm.meta.description ? String(fm.meta.description) : ''; };
+    const theirs = items.filter(i => !db.memory.some(x => x.itemId === i)).map(kept).filter(Boolean);
     return `<p class="pv-empty">Memory is personal, so its text is left out of exported and shared copies.</p>`
-      + (items.length ? `<p class="pv-meta"><span>It used ${items.length} memory item${items.length === 1 ? '' : 's'}${known.length < items.length ? `, ${items.length - known.length} of them not in your memory` : ''}</span></p>${known.length ? `<ul class="pv-used">${known.map(x => `<li>${esc(x.text)}</li>`).join('')}</ul>` : ''}` : '');
+      + (items.length ? `<p class="pv-meta"><span>It used ${items.length} memory item${items.length === 1 ? '' : 's'}${known.length < items.length ? `, ${items.length - known.length} of them not in your memory` : ''}</span></p>${known.length ? `<ul class="pv-used">${known.map(x => `<li>${esc(x.text)}</li>`).join('')}</ul>` : ''}` : '')
+      + (theirs.length ? `<p class="pv-meta"><span>From this Thinking State, not in your memory:</span></p><ul class="pv-used">${theirs.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : '');
   }
   if (b.text != null) return `<pre class="pv-text">${esc(b.text)}</pre>`;
   if (b.kind === 'attachments') return imagesBlockHTML(pv, b);
@@ -3722,30 +3752,30 @@ const shortDate = t => new Date(t).toLocaleString('en-US', { day: 'numeric', mon
 function renderDecisionsPanel() {
   const c = cur(); if (!c) return '';
   const list = flaggedIn(c), off = Object.values(c.messages).filter(m => !m.flagged && m.decision && m.decision.summary).sort((a, b) => a.ts - b.ts);
-  if (!list.length && !off.length) return `<p class="pv-empty">No decisions yet. Flag an answer, or your own message, to make it a decision: its summary, a sentence and its details, then goes into every prompt of this conversation.</p>`;
+  if (!list.length && !off.length) return `<p class="pv-empty">No decisions yet. Flag an answer, or your own message, to make it a decision: its sentence and its details then go into every prompt of this conversation.</p>`;
   const inPrompt = decisionsIn(c).length, n = list.length;
   return (RO ? `<p class="pv-note">${n} decision${n === 1 ? '' : 's'} flagged in this conversation, ${inPrompt} in force.</p>`
-    : `<p class="pv-note">In the prompts of this conversation: ${inPrompt} of ${n} decision${n === 1 ? '' : 's'}. <button class="linkbtn" type="button" data-dp="preview"${hasDraft() ? '' : ' disabled title="Write a message first: the next prompt is built around it"'}>See the next prompt</button></p>`)
+    : `<p class="pv-note">${n ? `In the prompts of this conversation: ${inPrompt} of ${n} decision${n === 1 ? '' : 's'}.` : 'No decision is in the prompts of this conversation.'} <b>Prompt</b> above the message box shows the next prompt with them.</p>`)
     + list.map(m => {
       const d = m.decision || {}, b = branchOf(c, m.id), hist = d.history || [];
       const out = b && droppedAt(c, b.id);
       const meta = [b && branchName(b), d.summary && (d.model ? `by ${d.model}` : d.choice ? 'chosen by you' : 'by you'), decisionStale(m) && 'written for an earlier version of the message', d.at && shortDate(d.at), out && `not in prompts: “${branchName(out, c)}” is ${statusLabel(out).toLowerCase()}`].filter(Boolean).join(' · ');
       const body = panelEdit === m.id
-        ? `<textarea class="dp-area" rows="3" maxlength="300" aria-label="Decision summary" placeholder="One sentence: what was decided, and why">${esc(d.summary || '')}</textarea>
-           <textarea class="dp-area dp-det-area" rows="4" aria-label="Details, one per line" placeholder="Details, one per line (up to 10): the conditions, numbers and trade-offs it rests on">${esc(detailsOf(d).join('\n'))}</textarea>
+        ? `<textarea class="dp-area" rows="3" maxlength="300" aria-label="Decision" placeholder="One sentence: what was decided, and why">${esc(d.summary || '')}</textarea>
+           <span class="det-label">Details, one per line</span><textarea class="dp-area dp-det-area" rows="4" aria-label="Details, one per line" placeholder="Details, one per line (up to 10): the conditions, numbers and trade-offs it rests on">${esc(detailsOf(d).join('\n'))}</textarea>
            <div class="dp-actions"><button class="btn" data-dp="cancel">Cancel</button><button class="btn primary" data-dp="save">Save</button></div>`
-        : `<div class="dp-text">${d.summary ? esc(d.summary) : d.pending ? '<i>Writing a summary…</i>' : '<i>No summary yet, so it is not in prompts.</i>'}</div>${d.summary && detailsOf(d).length ? `<ul class="dp-det">${detailsOf(d).map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        : `<div class="dp-text">${d.summary ? esc(d.summary) : d.pending ? '<i>Writing the decision…</i>' : '<i>Not written yet, so it is not in prompts.</i>'}</div>${d.summary && detailsOf(d).length ? `<ul class="dp-det">${detailsOf(d).map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
            <div class="dp-meta">${esc(meta)}</div>
            <div class="dp-actions"><button class="btn" data-dp="goto">Go to</button>${RO ? '' : '<button class="btn" data-dp="edit">Edit</button>'}
              ${keyInput.value.trim() && !RO ? '<button class="btn" data-dp="auto">Write for me</button>' : ''}
              ${hist.length ? `<button class="btn" data-dp="hist" aria-expanded="${panelHist === m.id}">History (${hist.length})</button>` : ''}
-             ${RO ? '' : '<button class="btn danger" data-dp="remove" title="It leaves the prompts; the summary is kept">Unflag</button>'}</div>`;
+             ${RO ? '' : '<button class="btn danger" data-dp="remove" title="It leaves the prompts; its wording is kept">Unflag</button>'}</div>`;
       const versions = panelHist === m.id && hist.length ? `<ol class="dp-hist">${hist.map((h, i) => `<li><span>${esc(h.summary)}</span>${detailsOf(h).length ? `<ul class="dp-det">${detailsOf(h).map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}<small>${esc(shortDate(h.at))}${h.model ? ' · ' + esc(h.model) : ' · by you'}</small>${RO ? '' : `<button class="btn" data-dp="restore" data-i="${i}">Restore</button>`}</li>`).join('')}</ol>` : '';
       return `<article class="dp-card" data-mid="${m.id}">${body}${versions}</article>`;
     }).join('')
     + (off.length ? `<h3 class="set-h">Not in force</h3><p class="pv-note">Decisions the Thinking State keeps, out of the prompts: unflagged (parked), or replaced by a later choice.</p>` + off.map(m => {
       const d = m.decision, b = branchOf(c, m.id), by = d.replacedBy && c.messages[d.replacedBy];
-      const why = by && by.flagged && by.decision ? `replaced by “${snippetOf(by.decision.summary || '', 80)}”` : 'parked: unflagged';
+      const why = by && by.flagged && by.decision ? `replaced by “${snippetOf(by.decision.summary || '', 80)}”` : 'unflagged';
       return `<article class="dp-card off" data-mid="${m.id}"><div class="dp-text">${esc(d.summary)}</div><div class="dp-meta">${esc([b && branchName(b), why, d.at && shortDate(d.at)].filter(Boolean).join(' · '))}</div>
         <div class="dp-actions"><button class="btn" data-dp="goto">Go to</button>${RO || (by && by.flagged) ? '' : '<button class="btn" data-dp="reflag" title="It goes into the prompts again">Flag again</button>'}</div></article>`;
     }).join('') : '');
@@ -3764,13 +3794,16 @@ function renderContextPanel() {
 }
 let memQuery = ''; // the Memory tab's search
 const MEM_SEARCH_FROM = 8; // facts before the search box shows
-const factFrom = x => { const c = x.src && db.convos[x.src.cid]; return c ? `from “${c.title}”` : x.from ? `from “${x.from}”` : 'added by you'; };
+// where a fact was remembered: the conversation (its draft names the message itself)
+const factFrom = x => { const c = x.src && db.convos[x.src.cid]; return c ? `in “${c.title}”` : x.from ? `in “${x.from}”` : 'added by you'; };
 const factSource = x => { const c = x.src && db.convos[x.src.cid]; return !!(c && Object.prototype.hasOwnProperty.call(c.messages, x.src.mid)); };
 const factMatches = (x, q) => !q || x.text.toLowerCase().includes(q);
 function renderMemoryPanel() {
   if (db.memory.length <= MEM_SEARCH_FROM) memQuery = ''; // no search box, so no filter left over from one
   const n = db.memory.length, chars = db.memory.reduce((k, x) => k + (x.text ? x.text.length + 3 : 0), 0), q = memQuery.trim().toLowerCase();
-  const note = `<p class="pv-note">Memory is about you: your role, your preferences and the answers you want. It is shared by all conversations, so every request carries it. <button class="linkbtn" type="button" data-dp="preview"${hasDraft() ? '' : ' disabled title="Write a message first: the next prompt is built around it"'}>See the next prompt</button></p>`;
+  // a shared page carries no memory: whoever shared it keeps their facts
+  if (RO) return `<p class="pv-note">Memory is about the person who writes: their role, their preferences and the answers they want. A shared page carries none of it: the facts of whoever shared it stay with them.</p>`;
+  const note = `<p class="pv-note">Memory is about you: your role, your preferences and the answers you want. It is shared by all conversations, so every request carries it.</p>`;
   const tools = RO || memEdit || memDraft ? '' : `<div class="mem-tools"><button class="btn primary" data-mem="add">+ Add a fact</button>${n > MEM_SEARCH_FROM ? `<input class="mem-search" type="search" data-mem-search placeholder="Search memory" aria-label="Search memory" value="${esc(memQuery)}">` : ''}</div>`;
   const sum = n ? `<p class="mem-sum">${n} fact${n === 1 ? '' : 's'} in every request · about ${Math.max(1, Math.round(chars / 4)).toLocaleString('en-US')} tokens</p>` : '';
   const editor = (x, draft) => `<article class="dp-card mem" data-id="${x.id}"><textarea class="dp-area" rows="2" maxlength="300" aria-label="Fact" placeholder="${x.pending ? 'Writing a draft from this message…' : 'What should every conversation know about you? Your role, or how you want answers'}">${esc(x.text)}</textarea>
@@ -3797,9 +3830,16 @@ function showBack() {
   const pill = $('#backPill'), here = cur(), c = backTo && db.convos[backTo.cid], b = c && c.branches[backTo.bid];
   if (!b || (here && here.id === backTo.cid && here.focus === backTo.bid)) { pill.hidden = true; backTo = null; return; }
   pill.querySelector('b').textContent = here && here.id !== c.id && b.parentId ? `${c.title} › ${branchName(b, c)}` : branchName(b, c); // the first column has the conversation's name
-  pill.style.bottom = ($('.composer').offsetHeight + 12) + 'px'; // above the composer, clear of the columns' heads
-  pill.hidden = false;
+  pill.hidden = false; placeAbove();
 }
+// The Back pill and a toast sit above the composer, which grows with what you type and attach: they move with it, so they never
+// cover the model picker, Prompt or an image's ×
+function placeAbove() {
+  const comp = $('.composer'), h = comp ? comp.offsetHeight : 0, pill = $('#backPill'), el = $('#toast');
+  if (!pill.hidden) pill.style.bottom = (h + 12) + 'px'; // clear of the columns' heads too
+  if (el.classList.contains('show')) el.style.bottom = (h + 12 + (!pill.hidden ? pill.offsetHeight + 8 : 0)) + 'px';
+}
+if (window.ResizeObserver && $('.composer')) new ResizeObserver(() => placeAbove()).observe($('.composer'));
 function goBack() {
   const t = backTo; backTo = null; $('#backPill').hidden = true;
   const c = t && db.convos[t.cid]; if (!c || !c.branches[t.bid]) return;
@@ -3814,8 +3854,11 @@ $('#backPill').addEventListener('click', e => {
 function openContextPanel(tab) {
   if (tab) ctxTab = tab;
   openSheet({ title: 'Decisions and memory', context: true, tall: true, render: renderContextPanel, onClick: contextPanelClick });
+  sizeAreas();
   const ta = $('#sheetDyn .dp-area'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
 }
+// the boxes of a fact or a decision being written show all of it, a draft of two sentences on a phone too
+function sizeAreas() { document.querySelectorAll('#sheetDyn .dp-area').forEach(sizeEdit); }
 const firstSentence = t => { const m = t.match(/^(.{12,240}?[.!?])(\s|$)/); return (m ? m[1] : t.slice(0, 240)).trim(); };
 // Remember: a draft fact about you, from the message, opened for editing (F-23)
 function rememberFrom(c, m) {
@@ -3850,7 +3893,7 @@ async function draftFact(c, m, draft) {
   if (ta && ta.value.trim()) return; // you started writing: your words stay
   if (text) { draft.text = text; draft.drafted = text; draft.by = `mindbough-demo/${model}`; }
   else if (model) draft.none = true;
-  if (sheetView && sheetView.context) $('#sheetDyn').innerHTML = renderContextPanel();
+  if (sheetView && sheetView.context) { $('#sheetDyn').innerHTML = renderContextPanel(); sizeAreas(); }
 }
 // The message a fact came from shows it is remembered
 function paintFactSource(x) { if (x && x.src && db.current === x.src.cid && db.convos[x.src.cid] && db.convos[x.src.cid].messages[x.src.mid]) { rerenderMsg(x.src.cid, x.src.mid); scheduleLayout(); } }
@@ -3876,15 +3919,14 @@ function contextPanelClick(e) {
     case 'goto': { jumpAway(); closeSheet(); memEdit = null; if (db.current !== x.src.cid) { db.current = x.src.cid; save(); renderAll(false); } goToMessage(x.src.mid); showBack(); return; }
   }
   renderDecCount();
-  $('#sheetDyn').innerHTML = renderContextPanel();
+  $('#sheetDyn').innerHTML = renderContextPanel(); sizeAreas();
   const ta = $('#sheetDyn .dp-area'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
   setTimeout(settled); // once no fact is being written or edited
 }
 function decisionsPanelClick(e) {
   const btn = e.target.closest('[data-dp]'); if (!btn) return;
-  if (RO && !['goto', 'hist', 'preview'].includes(btn.dataset.dp)) return; // read-only: look, don't change
+  if (RO && !['goto', 'hist'].includes(btn.dataset.dp)) return; // read-only: look, don't change
   const c = cur(); if (!c) return;
-  if (btn.dataset.dp === 'preview') { const tab = ctxTab; previewPrompt(() => openContextPanel(tab)); return; } // ← comes back here
   const card = btn.closest('.dp-card'), m = card && c.messages[card.dataset.mid];
   if (!m) return;
   switch (btn.dataset.dp) {
@@ -3904,7 +3946,7 @@ function decisionsPanelClick(e) {
       break; }
   }
   refreshDecisions();
-  if (panelEdit) { $('#sheetDyn').querySelectorAll('.dp-area').forEach(sizeEdit); const ta = $('.dp-area'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
+  if (panelEdit) { sizeAreas(); const ta = $('.dp-area'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
   setTimeout(settled); // once no decision is being edited
 }
 // a decision's sentence and details, and a fact, grow as you type
@@ -3926,19 +3968,19 @@ $('#keyHint').addEventListener('click', e => {
 // Every change to the demo updates this help: its section lists the cards it covers, and scripts/check-help.py checks
 // that every card of demo/FEATURES.md is covered and that WHATS_NEW has the current version.
 const HELP = [
-  { id: 'what', title: 'What this is', cards: ['F-01', 'F-16'], body: `
+  { id: 'what', title: 'What this is', cards: ['F-16'], body: `
     <p>Long AI chats pollute their own context: every dead end rides along into the next answer, and the threads you were following get lost. Here you think in branches instead. Each branch sends the model only its own path, what a branch settles reaches the others as a decision, and what holds for you everywhere is memory. Every answer keeps a receipt: its model, what its prompt was built from, and its tokens.</p>
     <p>Your work isn't locked in this app either: everything is kept as a <b>Thinking State</b>, open files that any app or agent can read and continue. This app is the MVP of that format.</p>` },
   { id: 'tour', title: 'The first 2 minutes', cards: [], body: `
     <ol><li>No key? Menu → <b>Try a sample conversation</b>, and pick one of three. Have one? <b>Settings</b> (the gear) → paste it.</li>
     <li>Ask something, then tap <b>Branch out</b> under the answer and ask a follow-up: the new column sees only its own path.</li>
     <li>Tap the <b>flag</b> under an answer you agree with: it becomes a decision that every prompt of the conversation carries.</li>
-    <li>Go <b>Back</b> to the first column, write a question, and tap <b>Prompt</b> above the message box (on a phone, the layers icon): your next prompt, block by block. The decision is in it, and <b>Not in this prompt</b> counts the branch you opened, which isn't.</li>
+    <li>Go back to the first column (<b>←</b>, or swipe right), write a question, and tap <b>Prompt</b> above the message box (on a phone, the layers icon): your next prompt, block by block. The decision is in it, and <b>Not in this prompt</b> counts the messages of the branch you opened, which aren't in it.</li>
     <li>Tap the <b>bookmark</b> under a message: with a key, the model drafts what in it every conversation should know about you. Edit it and <b>Save</b>: that fact now goes into every request.</li>
     <li>Menu → <b>⋯</b> on a conversation → <b>Export as a Thinking State</b>: a .zip any app or agent can read.</li></ol>` },
-  { id: 'start', title: 'Getting started', cards: ['F-02', 'F-03', 'F-15', 'F-18', 'F-36'], body: `
+  { id: 'start', title: 'Getting started', cards: ['F-01', 'F-02', 'F-03', 'F-15', 'F-18', 'F-36'], body: `
     <ul><li><b>Settings</b> (the gear, top right): paste a Gemini API key. It stays in this browser and goes only to Google's Gemini API. With a free key, Google may use what you send to improve its products, and people may read it: keep private matters out, or use a paid key.</li>
-    <li>No key yet? Menu → <b>Try a sample conversation</b>: three recorded ones, a decision, a troubleshooting session and a pricing plan, with options, comparisons and choices, branch statuses, decisions, web searches, formulas, and every prompt with its tokens.</li>
+    <li>No key yet? Menu → <b>Try a sample conversation</b>: three recorded in the demo, with answers written for the sample: a decision, a troubleshooting session and a pricing plan, with options, comparisons and choices, branch statuses, decisions, web searches, formulas, and every prompt with its tokens (estimated from length).</li>
     <li>On a desktop, Enter sends and Shift+Enter adds a line. On a phone, Enter adds a line: tap <b>Send</b>. <b>Stop</b> ends an answer and keeps what arrived, tagged <b>stopped</b>; it shows in the branch the answer is coming in. Branches are answered at the same time: send in one, move to another and send there too. An answer cut off by a lost connection, a reload or Gemini itself (its output limit or its safety filter) is tagged <b>cut off</b>, with the reason under it. An error says what went wrong and what to do, with <b>Try again</b> (and <b>Open Settings</b> for a key Gemini refused). What you type stays in its conversation. Answers show Markdown, code and formulas, and an image from another site shows as a link to it, so nothing loads from there.</li>
     <li>The paperclip next to <b>Send</b> attaches images, up to four a message: a photo, a screenshot, a chart. You can also paste or drop them. The model sees them on this branch's path, and a branch that forked before them doesn't. Tap one in the box to describe it, which is what helpers and other tools read; tap one in a message to see it full screen. Each is shrunk and drawn again on your device, so a photo's location never leaves it.</li>
     <li>Menu → <b>New conversation</b> starts one. Its first answer gives it a short title. <b>⋯</b> on a conversation in the menu renames, exports, shares or deletes it.</li>
@@ -3961,16 +4003,16 @@ const HELP = [
     <li><b>Choose</b> turns the chosen branch's last answer into a decision, "Chose X over Y", folds the others and sets the statuses, also without <b>Compare with AI</b>. If that answer holds your own decision, it asks first. <b>Undo</b> in the toast puts it all back, and takes you back to where you were. Choose another branch later, and the new choice replaces the earlier one in prompts and in the export; the branch chosen reads <b>Chosen ✓</b>. Park or reject the chosen branch, and the choice no longer holds until you open it again.</li></ul>` },
   { id: 'context', title: 'Decisions, memory and the prompt', cards: ['F-08', 'F-09', 'F-20', 'F-21', 'F-22', 'F-23', 'F-31'], body: `
     <p class="help-why">Say it once: every request carries it.</p>
-    <ul><li>The <b>flag</b> under a message makes it a decision: one sentence, what was decided and why, and under it the details it rests on (conditions, numbers, trade-offs), read from the whole message. Every prompt of the conversation carries them. Tap the Decision box to edit them, a detail per line, or <b>Write for me</b>. When the message changes (a regeneration, an edit, a Restore), a summary the helper wrote is written again; yours says it was written for an earlier version, with <b>Update</b> and <b>Keep</b>.</li>
-    <li><b>⚑</b> in the top bar opens this conversation's decisions, with history and restore, and below them those not in force (unflagged, or replaced by a later choice); <b>🔖</b> next to it opens your memory. <b>Go to</b> jumps to a message, and <b>← Back</b> above the composer returns to where you were.</li>
+    <ul><li>The <b>flag</b> under a message makes it a decision: one sentence, what was decided and why, and under it the details it rests on (conditions, numbers, trade-offs), read from the whole message. Every prompt of the conversation carries them. Tap the Decision box to edit them, a detail per line, or <b>Write for me</b>. When the message changes (a regeneration, an edit, a Restore), a decision the helper wrote is written again; yours says it was written for an earlier version, with <b>Update</b> and <b>Keep</b>.</li>
+    <li><b>⚑</b> in the top bar opens this conversation's decisions, with history and restore, and below them those not in force (unflagged, or replaced by a later choice); the bookmark next to it opens your memory. <b>Go to</b> jumps to a message, and <b>← Back</b> above the composer returns to where you were.</li>
     <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) opens one the model for memory drafts writes from that message: what in it holds for you everywhere, for you to edit, and saved only when you tap <b>Save</b>. Without a key, or with memory drafts off, it starts empty. Tap a fact to edit or delete it; with many facts, search them.</li>
     <li>The <b>eye</b> under a message excludes it from history: the model doesn't see it, on this branch and the ones that continue from it. Tap it again to include it. A flagged message keeps its decision in the prompts: only its text leaves the history.</li>
     <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. Prompt views show each message as the model saw it, with ✎ on what changed since. <b>Prompt</b> above the message box previews your next prompt, once you have written it: it has the whole path so far, while an answer's prompt has the turns before its question.</li>
-    <li>An answer written before later decisions, or before a message above it changed, says so: <b>Re-ask</b> writes it again with them. Re-asking in the middle of a chain opens a new branch, which says what it asks again, and the old answer says where it was asked.</li></ul>` },
+    <li>An answer written before later decisions says so: <b>Re-ask</b> writes it again with them. One written before an edit above says that on its ✎ line, with the decisions since, and its <b>⋯</b> regenerates it. Re-asking in the middle of a chain opens a new branch, which says what it asks again, and the old answer says where it was asked.</li></ul>` },
   { id: 'models', title: 'Models and web search', cards: ['F-30', 'F-33'], body: `
     <p class="help-why">A cheap model for small jobs, and the tokens in view.</p>
     <ul><li>Pick the model for your next request above the message box. Each answer shows the model that wrote it, and its prompt view the tokens.</li>
-    <li>Settings → <b>Models for helper tasks</b>: the model for summaries, names, options and comparisons. <b>Automatic</b> takes a light model, the newest Flash-Lite your key can reach; summaries and names can be turned off. It also sums this conversation's helper calls, and an answer's prompt view lists the ones made on it.</li>
+    <li>Settings → <b>Models for helper tasks</b>: the model for decisions, names, options, comparisons and memory drafts. <b>Automatic</b> takes a light model, the newest Flash-Lite your key can reach; decisions, names and memory drafts can be turned off. It also sums this conversation's helper calls, and an answer's prompt view lists the ones made on it.</li>
     <li><b>Web</b> (the globe next to the model picker) is on from the start: the model may search the web with Google Search, inside the Gemini API, when a message needs fresh facts. The answer lists its sources, with Google's Search Suggestions under them, as the Gemini API terms ask (shown, never exported), and the prompt view says whether it searched. Turn it off for private topics, or to avoid search costs.</li></ul>` },
   { id: 'data', title: 'Your data and the format', cards: ['F-13', 'F-14', 'F-17', 'F-25', 'F-26'], body: `
     <p class="help-why">Yours: open files that any tool can read.</p>
@@ -3986,7 +4028,9 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: ['Fixed: a choice among options no longer rejects a follow-up branch next to them, and a branch opened after a choice is never "Not chosen".',
+  { version: '0.11.0', items: ['Easier on a phone: every button you tap is at least 40 px, the Back pill and toasts move above the message box as it grows, a decision gets the whole width, and a new comparison opens at its table head.',
+    'One name for each thing: the decision (not "summary"), how the next prompt is built, a read-only page. The samples say their answers are written for them.',
+    'Fixed: a choice among options no longer rejects a follow-up branch next to them, and a branch opened after a choice is never "Not chosen".',
     'Fixed: an opened Thinking State can no longer run script through a node\'s type or author, and a decision no longer picks up details from its message after a reload.',
     'Exports say what happened: no web search made up for an answer you edited, transcripts that name who wrote each message, an earlier comparison kept whole, another tool\'s memory items kept as they were.'] },
   { version: '0.10.0', items: ['<b>Decisions</b> keep their details: one sentence, what was decided and why, and under it the conditions, numbers and trade-offs it rests on, read from the whole message. Both go into every prompt, and you can edit them.',
@@ -4085,7 +4129,7 @@ let tT;
 function toast(t, action) {
   const el = $('#toast'), pill = $('#backPill');
   el.textContent = t;
-  el.style.bottom = ($('.composer').offsetHeight + 12 + (pill && !pill.hidden ? pill.offsetHeight + 8 : 0)) + 'px'; // clear of "Writing in …" and the Back pill
+  el.style.bottom = ($('.composer').offsetHeight + 12 + (pill && !pill.hidden ? pill.offsetHeight + 8 : 0)) + 'px'; // clear of "Writing in …" and the Back pill (placeAbove keeps it so)
   el.classList.toggle('act', !!action);
   if (action) {
     const b = document.createElement('button');
@@ -5460,7 +5504,7 @@ async function importZip(buf, { memory = true, reuse = false } = {}) {
     added.push(at);
     // facts remembered from this conversation (spec §9), linked to their messages again; asked about also when the conversation was
     // here already, so a Cancel the first time can be an OK the second
-    for (const f of memory ? c.facts || [] : []) {
+    for (const f of memory && !SAMPLE_IDS.includes(c.tsId) ? c.facts || [] : []) { // a sample's fact is its persona's, never yours
       if (f.mid && !Object.prototype.hasOwnProperty.call(db.convos[at].messages, f.mid)) continue;
       const known = db.memory.find(x => (f.itemId && x.itemId === f.itemId) || x.text === f.text);
       if (known) { if (!(known.src && db.convos[known.src.cid])) known.src = { cid: at, mid: f.mid }; continue; } // a fact whose conversation is gone follows it here
@@ -5495,7 +5539,7 @@ async function importZip(buf, { memory = true, reuse = false } = {}) {
   return { added, failed, facts, left, again, unread: convos.unread || [] };
 }
 $('#importFile').addEventListener('change', async e => {
-  const files = [...e.target.files]; e.target.value = '';
+  const files = [...e.target.files]; e.target.value = ''; const was = db.convos[db.current];
   let added = [], failed = 0, facts = 0, left = 0, again = 0, unread = [];
   for (const f of files) {
     try {
@@ -5511,11 +5555,15 @@ $('#importFile').addEventListener('change', async e => {
     }
     catch (err) { failed++; toast(err.message || 'Import failed'); }
   }
+  // an empty conversation you were in (a New conversation never written in) gives way to what you imported, as it does for a sample
+  if (added.length && was && db.convos[was.id] && !added.includes(was.id) && was.title === NEW_TITLE && !Object.keys(was.messages).length && Object.keys(was.branches).length === 1) { delete db.convos[was.id]; db.order = db.order.filter(id => id !== was.id); }
   finishImport(added, failed, files.length, facts, left, again, unread);
 });
-// The samples (F-18): Thinking States the demo recorded, published next to the app and opened like any other, so everything they
-// hold (prompts, tokens, helper calls, comparisons, choices, statuses, versions, web searches) is there without a key.
-// Each shows a different way of thinking; none adds its facts to your memory
+// The samples (F-18): Thinking States recorded in the demo with answers written for them (the models' replies are scripted, and
+// token counts estimated from their length), published next to the app and opened like any other, so everything they hold
+// (prompts, tokens, helper calls, comparisons, choices, statuses, versions, web searches) is there without a key.
+// Each shows a different way of thinking; none adds its facts to your memory, also when its zip is imported
+const SAMPLE_IDS = ['20260930-owu5la', '20261001-u60yd1', '20261001-l0e3fl'];
 const SAMPLES = [
   { file: 'examples/sample-thinking-state.zip', title: 'Choose a database', what: 'A decision: three options, a comparison and a choice.', shows: ['Options', 'Compare', 'Choose', 'Versions'] },
   { file: 'examples/sample-troubleshooting.zip', title: 'Why did checkout get slow?', what: 'Troubleshooting: a branch per cause, each checked, then fixed or ruled out.', shows: ['Causes as branches', 'Ruled out', 'They add up', 'Fix plan'] },
@@ -5523,7 +5571,7 @@ const SAMPLES = [
 ];
 function openSamples() {
   openSheet({ title: 'Try a sample', onClick: e => { const b = e.target.closest('[data-sample]'); if (b) openSample(SAMPLES[+b.dataset.sample]); },
-    render: () => `<p class="pv-note">Conversations the demo recorded, each a Thinking State: everything works without a key, and nothing is added to your memory.</p>`
+    render: () => `<p class="pv-note">Conversations recorded in the demo, with answers written for the sample and token counts estimated from their length. Each is a Thinking State: everything works without a key, and nothing is added to your memory.</p>`
       + SAMPLES.map((x, i) => `<button class="sample-row" type="button" data-sample="${i}"><span class="sr-title">${x.title}</span><span class="sr-what">${x.what}</span><span class="sr-tags">Shows ${x.shows.join(' · ')}</span></button>`).join('') });
 }
 async function openSample(x) {
@@ -5621,7 +5669,9 @@ let oQuery = '';
 // A text's lines without the Markdown that only makes sense at a line's start: list and task markers, headings
 const unmark = t => String(t || '').replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?/gm, '').replace(/^[ \t]*#{1,6}[ \t]+/gm, '');
 // Text without Markdown marks, for titles, snippets and search; an underscore inside a word, as in user_id, is part of it
-const plain = t => String(t || '').replace(/[#*`>~|]/g, '').replace(/_+/g, (u, i, s) => /[\p{L}\p{N}]/u.test(s[i - 1] || '') && /[\p{L}\p{N}]/u.test(s[i + u.length] || '') ? u : '').replace(/\s+/g, ' ').trim();
+// a text as a snippet or a title: no code fences, table rules, list or checkbox marks, link targets, nor Markdown signs
+const plain = t => String(t || '').split('\n').filter(l => !/^\s*(```|~~~)/.test(l) && !/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(l))
+  .map(l => l.replace(/^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')).join('\n').replace(/[#*`>~|]/g, '').replace(/_+/g, (u, i, s) => /[\p{L}\p{N}]/u.test(s[i - 1] || '') && /[\p{L}\p{N}]/u.test(s[i + u.length] || '') ? u : '').replace(/\s+/g, ' ').trim();
 function snippetAround(text, q) {
   const t = plain(text); const i = t.toLowerCase().indexOf(q);
   if (i < 0) return t.slice(0, 80);
@@ -5662,7 +5712,7 @@ function renderOutline() {
   };
   const html = node(c.branches[c.root]);
   tree.innerHTML = html ? `<ul>${html}</ul>` : '<div class="empty">No matches</div>';
-  $('#oCount').textContent = Object.keys(c.branches).length;
+  $('#oCount').textContent = Object.keys(c.branches).length - 1 || ''; // the branches beyond the conversation's own column
 
 
   const here = tree.querySelector('.orow.here');

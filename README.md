@@ -6,4 +6,4 @@
 
 Long AI chats pollute their own context: every dead end rides along into the next answer, and the threads you were following get lost. Mindbough lets you think in branches instead. Each branch sends the model only its own path, what a branch settles reaches the others as a decision, what holds for you everywhere is memory, and every prompt shows what it was built from, with its model and tokens. This app is the MVP, on Google's Gemini API: it stores each conversation as a Thinking State, plain files that you can export and give to an agent.
 
-This repository only hosts the built app on GitHub Pages. CI overwrites it on every change, so don't edit it here. The format, the tools and the app's source are in a repository that stays private until the first public release, when the format is published.
+This repository only hosts the built app on GitHub Pages. CI overwrites it on every change, so don't edit it here. The format and its tools are in a repository that stays private until the first public release, when the format is published.
