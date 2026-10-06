@@ -21,15 +21,16 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: blob:; media-src 'none'; object-src 'none'; connect-src 'self' https://generativelanguage.googleapis.com; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<!-- Rich markdown: GFM, syntax highlighting, math. If these can't load, a built-in renderer is used.
+<!-- Rich markdown: GFM, syntax highlighting, math. They load without holding the page (a CDN that hangs never blanks the app):
+     until they are here, or if they can't load, a built-in renderer is used, and the page draws again once they arrive.
      Integrity hashes pin the exact files: a tampered CDN copy is refused instead of running next to the API key. -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.12.0/styles/github.min.css" media="(prefers-color-scheme: light)" integrity="sha512-0aPQyyeZrWj9sCA46UlmWgKOP0mUipLQ6OZXu8l4IcAmD2u31EPEy9VcIMvl7SoAaKe8bLXZhYoMaE/in+gcgA==" crossorigin="anonymous" referrerpolicy="no-referrer">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.12.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)" integrity="sha512-rO+olRTkcf304DQBxSWxln8JXCzTHlKnIdnMUwYvQa9/Jd4cQaNkItIUj6Z4nvW1dqK0SKXLbn9h4KwZTNtAyw==" crossorigin="anonymous" referrerpolicy="no-referrer">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.47/katex.min.css" integrity="sha512-kI2+BaD3/4lqajGWnpHozrL4U8PFaP/ZCbCrMyftFQuzVYIak0qhP2ZJgP0fXNq/myQmRtRvwODhDS2Gxdg6Vg==" crossorigin="anonymous" referrerpolicy="no-referrer">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js" integrity="sha512-xeUh+KxNyTufZOje++oQHstlMQ8/rpyzPuM+gjMFYK3z5ILJGE7l2NvYL+XfliKURMpBIKKp1XoPN/qswlSMFA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.16/purify.min.js" integrity="sha512-flQmhkXNRQ3iUfvtdCobtpMjCb6kE+zLnTiAulAQJ3WykVfy84JvCMOo6vhwWXHTXjR25h9Zj+LyGFRWKjRoag==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.12.0/highlight.min.js" integrity="sha512-gzqHAlI1hVdzJ4wiQj/MkppDr6zgEdCoBsrXKRidcaZsSPvNQ3Fy5p7PpMt/8mltxTxMHj1Ur5NWbJdqIfpxgA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.47/katex.min.js" integrity="sha512-eDHxAxGzhSpNkUD1AP76+u07Nn3VtMwdj9GrN1uXDkjRGsroJhqtEr639ybY3iVOA58R5h+jWMJ9dlV5ilsYBQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.12.0/styles/github.min.css" media="print" data-media="(prefers-color-scheme: light)" onload="this.media=this.dataset.media" integrity="sha512-0aPQyyeZrWj9sCA46UlmWgKOP0mUipLQ6OZXu8l4IcAmD2u31EPEy9VcIMvl7SoAaKe8bLXZhYoMaE/in+gcgA==" crossorigin="anonymous" referrerpolicy="no-referrer">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.12.0/styles/github-dark.min.css" media="print" data-media="(prefers-color-scheme: dark)" onload="this.media=this.dataset.media" integrity="sha512-rO+olRTkcf304DQBxSWxln8JXCzTHlKnIdnMUwYvQa9/Jd4cQaNkItIUj6Z4nvW1dqK0SKXLbn9h4KwZTNtAyw==" crossorigin="anonymous" referrerpolicy="no-referrer">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.47/katex.min.css" media="print" onload="this.media='all'" integrity="sha512-kI2+BaD3/4lqajGWnpHozrL4U8PFaP/ZCbCrMyftFQuzVYIak0qhP2ZJgP0fXNq/myQmRtRvwODhDS2Gxdg6Vg==" crossorigin="anonymous" referrerpolicy="no-referrer">
+<script async onload="window.mbLib && mbLib()" src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js" integrity="sha512-xeUh+KxNyTufZOje++oQHstlMQ8/rpyzPuM+gjMFYK3z5ILJGE7l2NvYL+XfliKURMpBIKKp1XoPN/qswlSMFA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script async onload="window.mbLib && mbLib()" src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.4.16/purify.min.js" integrity="sha512-flQmhkXNRQ3iUfvtdCobtpMjCb6kE+zLnTiAulAQJ3WykVfy84JvCMOo6vhwWXHTXjR25h9Zj+LyGFRWKjRoag==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script async onload="window.mbLib && mbLib()" src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.12.0/highlight.min.js" integrity="sha512-gzqHAlI1hVdzJ4wiQj/MkppDr6zgEdCoBsrXKRidcaZsSPvNQ3Fy5p7PpMt/8mltxTxMHj1Ur5NWbJdqIfpxgA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script async onload="window.mbLib && mbLib()" src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.47/katex.min.js" integrity="sha512-eDHxAxGzhSpNkUD1AP76+u07Nn3VtMwdj9GrN1uXDkjRGsroJhqtEr639ybY3iVOA58R5h+jWMJ9dlV5ilsYBQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <style>
 :root{
   --bg:#E9EEF0; --panel:#F8FAFA; --side:#DFE6E9; --line:#CAD5D9; --ink:#13212B; --muted:#5E7079;
@@ -658,9 +659,9 @@ const whole = t => t.replace(/[\uD800-\uDBFF]$/, '');
 const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return whole(cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.13.0';
+const APP_VERSION = '0.14.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main ffb8e65'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main a49e82a'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -743,6 +744,8 @@ async function loadStored() {
   try {
     if (!window.indexedDB) throw new Error('no IndexedDB');
     idbConn = await idbOpen(IDB.name);
+    // another tab that opens the database at a newer version: this one lets go, saves nothing more, and asks for a reload
+    idbConn.onversionchange = () => { try { idbConn.close(); } catch (e) {} idbConn = null; storage = 'none'; toast('A newer version of the demo opened in another tab: reload this one', { label: 'Reload', fn: () => location.reload() }); };
     let text = await idbDo(idbConn, 'readonly', st => st.get('db')), ts = await idbDo(idbConn, 'readonly', st => st.get('ts'));
     if (text == null && ts == null) {
       // first run on IndexedDB: take over what the localStorage version saved; a preview copies the main demo
@@ -1052,13 +1055,14 @@ const PURIFY = {
   ALLOW_DATA_ATTR: false,
 };
 const RENDER_CLASS = /^(hljs(-[\w-]+)?|[a-z]+_|language-[\w+#.-]+|codehead|copymark-[0-9a-z]+)$/; // highlight.js and its scopes, code languages, the Copy row
-if (window.DOMPurify) DOMPurify.addHook('afterSanitizeAttributes', n => {
+let purifyHooked = false;
+function hookPurify() { if (purifyHooked || !window.DOMPurify) return; purifyHooked = true; DOMPurify.addHook('afterSanitizeAttributes', n => {
   const tag = n.nodeName.toLowerCase();
   if (tag === 'a') { n.setAttribute('target', '_blank'); n.setAttribute('rel', 'noopener noreferrer'); }
   // Only the read-only checkboxes of GFM task lists may stay
   if (tag === 'input') { n.setAttribute('type', 'checkbox'); n.setAttribute('disabled', ''); n.removeAttribute('src'); }
   if (n.hasAttribute && n.hasAttribute('class')) { const keep = n.getAttribute('class').split(/\s+/).filter(x => RENDER_CLASS.test(x)); if (keep.length) n.setAttribute('class', keep.join(' ')); else n.removeAttribute('class'); }
-});
+}); }
 // An image from another host would tell it who reads the answer: it becomes a link that names the host
 function imagesAsLinks(box) {
   box.querySelectorAll('img').forEach(img => {
@@ -1075,7 +1079,8 @@ function imagesAsLinks(box) {
 }
 function md(src) {
   if (!src) return '';
-  if (!(window.marked && window.DOMPurify)) return mdBasic(src);
+  hookPurify(); // the sanitizer's rules are on before its first use
+  if (!(window.marked && window.DOMPurify && purifyHooked)) { if (!libsFailed) drewBasic = true; return mdBasic(src); }
   try {
     // 1) protect code from math parsing
     const code = [];
@@ -1111,6 +1116,10 @@ function md(src) {
 // A message's Markdown, rendered once per text: a change elsewhere, a fold or a switch doesn't render every answer again.
 // By id and text, since an Undo or another tab replaces the objects; never the answer still streaming
 const mdCache = new Map();
+// the libraries come after the page started (or never): what was drawn without them is drawn again once they are here
+let drewBasic = false, libsFailed = false, libT = 0;
+window.mbLib = () => { if (!drewBasic) return; clearTimeout(libT); libT = setTimeout(() => { if (!(window.marked && window.DOMPurify)) return; drewBasic = false; mdCache.clear(); if (db && db.current) renderAll(false); }, 200); };
+window.addEventListener('load', () => { if (!(window.marked && window.DOMPurify)) libsFailed = true; }); // they failed: the built-in renderer stays
 function mdOf(m) {
   if (m.streaming) return md(m.text);
   const hit = mdCache.get(m.id);
@@ -1254,8 +1263,8 @@ function msgHTML(c, m) {
   else if (m.role === 'user') body = m.text ? `<div class="user-text">${esc(m.text)}</div>` : '';
   else if (m.error) body = errorHTML(m.error);
   else if (!m.text && m.streaming) body = '<span class="typing"><i></i><i></i><i></i></span>';
-  if (m.streaming && !streams.has(m.id) && !RO) body += '<div class="cut-note">Being answered in another tab</div>';
   else body = mdOf(m);
+  if (m.streaming && !streams.has(m.id) && !RO) body += '<div class="cut-note">Being answered in another tab</div>'; // after the chain: it must not take its else
   const all = Object.values(c.branches);
   const edits = all.filter(b => b.editOf === m.id);
   const originOf = b => b.editOf;
@@ -1474,7 +1483,11 @@ $('#foldAll').onclick = () => {
   save(); renderCanvas(); focusBranch(c.focus, true, collapse ? 'top' : 'auto');
 };
 // What you type stays in its conversation: going to another keeps it there, coming back brings it again
-const drafts = {}; let draftOf = null;
+const DRAFTS = 'mindbough_drafts';
+const drafts = (() => { try { const x = JSON.parse(localStorage.getItem(DRAFTS) || '{}'); return x && typeof x === 'object' ? Object.fromEntries(Object.entries(x).filter(([, v]) => v && typeof v.text === 'string').map(([k, v]) => [k, { text: v.text.slice(0, 20000), imgs: [] }])) : {}; } catch (e) { return {}; } })();
+let draftOf = null, draftT = 0;
+// the text you were writing survives a reload (its images don't: they are kept with the message once sent)
+function keepDrafts() { clearTimeout(draftT); draftT = setTimeout(() => { try { const out = {}; for (const [k, v] of Object.entries(drafts)) if (k !== draftOf && v.text.trim() && db.convos[k]) out[k] = { text: v.text }; if (draftOf && input.value.trim() && db.convos[draftOf]) out[draftOf] = { text: input.value }; localStorage.setItem(DRAFTS, JSON.stringify(out)); } catch (e) {} }, 400); }
 // something is typed or attached in a conversation's message box, so it isn't empty for the import or the sample that would replace it
 const typedIn = cid => cid === draftOf ? !!(input.value.trim() || draftImgs.length) : !!(drafts[cid] && ((drafts[cid].text || '').trim() || (drafts[cid].imgs || []).length));
 // what you were writing stays with its conversation: the text and the images attached to it
@@ -1485,6 +1498,7 @@ function swapDraft() {
   if (draftOf || d) { input.value = d ? d.text : ''; autosize(); }
   if (draftOf) { const had = draftImgs.length; draftImgs = d && d.imgs ? d.imgs : []; if (had || draftImgs.length) renderTray(); } // each conversation its own list
   draftOf = db.current;
+  keepDrafts();
 }
 function renderChrome() {
   const c = cur(); if (!c) return;
@@ -1577,6 +1591,7 @@ $('#canvas').addEventListener('click', async e => {
     const by = !m.flagged && m.decision && m.decision.replacedBy && c.messages[m.decision.replacedBy];
     if (by && by.flagged) { toast(`Replaced by “${snippetOf(by.decision.summary, 60)}”: choose it again in Compare`); return; }
     m.flagged = !m.flagged;
+    if (m.decision) { if (m.flagged) delete m.decision.unflaggedAt; else m.decision.unflaggedAt = Date.now(); } // the person's act, for the log (spec §7.1)
     // a flag makes the message a decision; its summary, a sentence and its details, is what later prompts carry (unflag keeps the text)
     if (m.flagged) { if (!m.decision) m.decision = { summary: '', at: Date.now() }; delete m.decision.replacedBy; if (!m.decision.summary) summarize(c, m); }
   }
@@ -1727,12 +1742,31 @@ function changedSince(c, m) {
 function staleWhy(c, m) {
   if (!m || m.streaming || m.srcRole || m.node || m.error) return null;
   if (m.role === 'model') { const x = changedSince(c, m)[0]; return x ? { kind: 'answer', x } : null; }
-  const ids = pathIds(c, m.id), prev = c.messages[ids[ids.length - 2]];
+  const prev = before(c, m);
   if (!prev || prev.role !== 'model' || prev.streaming || !(prev.versions || []).length) return null;
   return changedAt(prev) > Math.max(versionsOf(m)[0].ts || m.ts || 0, m.keptAt || 0) ? { kind: 'reply', x: prev } : null;
 }
-// the line sits on the first out-of-date message of a branch, never on more; what follows an answer being written waits for it
+// the message before this one on its path: the one before it in its branch, or the fork it continues from; no whole path is walked
+function before(c, m) {
+  const b = c.branches[m.branchId]; if (!b) return null;
+  const i = b.msgIds.indexOf(m.id);
+  if (i > 0) return c.messages[b.msgIds[i - 1]] || null;
+  // the first message of its branch: the message the branch forks after; forking from its parent's start, what came before that
+  let x = b; const seen = new Set();
+  while (x && x.parentId && !seen.has(x.id)) { seen.add(x.id); if (x.forkMsgId) return c.messages[x.forkMsgId] || null; x = c.branches[x.parentId]; }
+  return null;
+}
+// the line sits on the first out-of-date message of a branch, never on more; what follows an answer being written waits for it.
+// One drawing asks it for every message of a branch: it is worked out once per branch per drawing (a long branch drew in O(n²))
+let staleMemo = null;
 function staleLine(c, b) {
+  if (!b) return null;
+  if (!staleMemo) { staleMemo = new Map(); queueMicrotask(() => { staleMemo = null; }); }
+  const k = `${c.id}|${b.id}`;
+  if (!staleMemo.has(k)) staleMemo.set(k, staleLineOf(c, b));
+  return staleMemo.get(k);
+}
+function staleLineOf(c, b) {
   for (const id of b ? b.msgIds : []) { const m = c.messages[id]; if (m && m.streaming) return null; const why = staleWhy(c, m); if (why) return { mid: id, ...why }; }
   return null;
 }
@@ -3098,6 +3132,7 @@ function settled() {
 function takeFrom(next) {
   if (!next || !next.convos || !Array.isArray(next.order)) return;
   const here = db.current, focus = db.convos[here] && db.convos[here].focus; // this tab stays where it is
+  const shownWas = db.convos[here] ? JSON.stringify(db.convos[here]) : null; // drawn again only if the conversation on screen changed
   db = next;
   if (db.convos[here]) { db.current = here; if (focus && db.convos[here].branches[focus]) db.convos[here].focus = focus; }
   if (!Array.isArray(db.memory)) db.memory = [];
@@ -3107,7 +3142,8 @@ function takeFrom(next) {
   fillModels(modelList());
   editing = null;
   const mine = reapplyMemOps();
-  if (db.current) renderAll(false); else newConvo();
+  if (db.current && db.current === here && shownWas !== null && JSON.stringify(db.convos[here]) === shownWas) { renderSidebar(); renderDecCount(); }
+  else if (db.current) renderAll(false); else newConvo();
   refreshContextPanel();
   if (mine) save();
 }
@@ -3131,7 +3167,7 @@ if (tabs) tabs.onmessage = async e => {
   } catch (err) { console.error(err); }
 };
 // Phones kill background tabs without warning: save whatever is pending when the page is hidden
-window.addEventListener('pagehide', () => { save(); writeNative(true); });
+window.addEventListener('pagehide', () => { save(); writeNative(true); keepDrafts(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && nativeT) writeNative(true); }); // a phone may close a hidden app without a pagehide
 
 /* ---------------- sending ---------------- */
@@ -3158,7 +3194,7 @@ function paintSend() {
   sendBtn.disabled = !on && !hasDraft();
   const pv = $('#promptPreview'); pv.disabled = !hasDraft(); pv.title = hasDraft() ? 'Preview the prompt your next message would send' : 'Write a message first: the next prompt is built around it';
 }
-input.addEventListener('input', () => paintSend());
+input.addEventListener('input', () => { paintSend(); keepDrafts(); });
 // One answer at a time per branch
 function busyNote() { toast('Wait for the answer in this branch to finish'); }
 // a second tap of a double tap on Send is not a Stop of the answer the first one started; a Stop after Create, a regeneration or
@@ -3185,7 +3221,7 @@ async function send() {
   if (needKey()) return;
   let c = cur(); if (!c) { newConvo(); c = cur(); }
   const images = takeDraftImages(); // text, images, or both (F-36)
-  input.value = ''; autosize(); paintSend();
+  input.value = ''; autosize(); paintSend(); keepDrafts(); // sent: no draft to keep
   sendToBranch(c, c.focus, text, null, false, images);
 }
 
@@ -4086,9 +4122,9 @@ function decisionsPanelClick(e) {
     case 'hist': panelHist = panelHist === m.id ? null : m.id; break;
     case 'reflag': m.flagged = true; delete m.decision.replacedBy; c.updated = Date.now(); save(); rerenderMsg(c.id, m.id); toast('Flagged again: it goes into the prompts'); break;
     case 'restore': { const i = +btn.dataset.i, h = m.decision.history[i]; m.decision.history.splice(i, 1); setDecision(m, h.summary, h.model, h.sig, h.details, true); if (h.at) m.decision.at = h.at; c.updated = Date.now(); save(); break; } // Restore: the wording as it was, when and for which text (F-22)
-    case 'remove': { m.flagged = false; panelEdit = panelHist = null; c.updated = Date.now(); save(); rerenderMsg(c.id, m.id);
+    case 'remove': { m.flagged = false; if (m.decision) m.decision.unflaggedAt = Date.now(); panelEdit = panelHist = null; c.updated = Date.now(); save(); rerenderMsg(c.id, m.id);
       const cid = c.id, mid = m.id;
-      toast('Unflagged: it leaves the prompts', { label: 'Undo', fn: () => { const lc = db.convos[cid], lm = lc && lc.messages[mid]; if (!lm) return; lm.flagged = true; lc.updated = Date.now(); save(); if (db.current === cid) { rerenderMsg(cid, mid); renderOutline(); renderDecCount(); } refreshDecisions(); toast('Flagged again'); } });
+      toast('Unflagged: it leaves the prompts', { label: 'Undo', fn: () => { const lc = db.convos[cid], lm = lc && lc.messages[mid]; if (!lm) return; lm.flagged = true; if (lm.decision) delete lm.decision.unflaggedAt; lc.updated = Date.now(); save(); if (db.current === cid) { rerenderMsg(cid, mid); renderOutline(); renderDecCount(); } refreshDecisions(); toast('Flagged again'); } });
       break; }
   }
   refreshDecisions();
@@ -4176,6 +4212,11 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
+  { version: '0.14.0', items: [
+    'Fixed: Edit opens your message in a box again, and your messages show as you typed them. A slow CDN no longer blanks the app, and a long Thinking State opens in a second.',
+    'Another tool\'s Thinking State keeps its nodes\' own text when you exclude or edit there, and a fact it words otherwise is offered as a rewording.',
+    'A session is append-only now: what changes later (a status, a kept message, a comparison) lives on the nodes. An export no longer carries a copy of a comparison\'s prompt.',
+  ] },
   { version: '0.13.0', items: [
     '<b>Auto</b> in the model picker: rules pick the model of each request, from fast to frontier, and the prompt view and the Thinking State say which rule picked it.',
   ] },
@@ -4468,7 +4509,7 @@ function nodeDoc(n, ids) {
     out.push('  revisions:');
     n.revisions.forEach(r => out.push(`    - { ${['title', 'description', 'body'].filter(k => r[k] != null).map(k => `${k}: ${yq(r[k])}, `).join('')}generated: { by: ${yq(r.generated.by)}, at: ${yq(r.generated.at)} } }`)); // the fields that changed (§8.5)
   }
-  if (n.ext) out.push('  ext:', '    mindbough-demo:', ...Object.entries(n.ext).map(([k, v]) => `      ${k}: ${yq(String(v))}`)); // spec §5.3
+  if (n.ext) out.push('  ext:', '    mindbough-demo:', ...Object.entries(n.ext).map(([k, v]) => `      ${k}: ${typeof v === 'string' ? yq(v) : yflow(v)}`)); // spec §5.3
   return out.concat('---', '', n.body || '').join('\n').trimEnd() + '\n';
 }
 // Another tool's Thinking State, opened here: each file the demo writes differently keeps the text it had and the text the
@@ -4515,8 +4556,13 @@ function mergeDoc(k, now, own) {
   // which an import may have changed on purpose ("… (imported)")
   if (own) { meta.title = n.meta.title; if (objOf(n.meta.thinking)) for (const k of ['profile', 'id', 'root']) if (n.meta.thinking[k] !== undefined) meta.thinking[k] = n.meta.thinking[k]; }
   // the body: as it was, or with what was said here since added after it; a manifest's text is its author's
-  const grown = w.body && n.body.startsWith(w.body) ? n.body.slice(w.body.length) : null;
-  const body = n.body === w.body || (own && o.body) ? o.body : grown !== null ? `${o.body}${/^## Conversation/m.test(o.body) ? '' : `${o.body ? '\n\n' : ''}## Conversation`}${grown}` : n.body;
+  // the body: its author's text stays; the demo writes only its own ## Conversation section, which takes the place of the one it
+  // wrote before, if any (a manifest's text is its author's alone)
+  const conv = t => { const x = String(t || ''), i = x.search(/^## Conversation[ \t]*$/m); return i < 0 ? [x.trim(), ''] : [x.slice(0, i).trim(), x.slice(i).trim()]; };
+  const body = n.body === w.body || (own && o.body) ? o.body : [conv(o.body)[0], conv(n.body)[1]].filter(Boolean).join('\n\n');
+  // the fields the demo didn't change keep their file's own text, its quoting and its order: only the body changes then
+  const head = String(k.text).match(/^---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n/);
+  if (head && JSON.stringify(meta) === JSON.stringify(o.meta)) return body === o.body ? k.text : `${head[0]}\n${String(body).trim()}\n`;
   return metaDoc(meta, body);
 }
 // A list (log.md, memory/index.md) the same way: its lines stay, the demo's new lines join their day, and those it stopped writing go
@@ -4556,7 +4602,7 @@ function keepOf(r, files, c, bins = []) {
   for (const f of files) {
     if (!f.name.startsWith(r.dir)) continue;
     const p = f.name.slice(r.dir.length), was = now.get(p);
-    if (was === f.text || p === 'index.md' || p === 'nodes/index.md' || ((p === 'README.md' || p === 'memory/index.md') && demoMade)) continue; // written the same, or the demo's own (an Export all writes its memory index without the facts)
+    if (was === f.text || p === 'index.md' || p === 'nodes/index.md' || (p === 'memory/index.md' && demoMade)) continue; // written the same, or the demo's own (an Export all writes its memory index without the facts)
     if (p === session) { // the lines the demo doesn't write are written back after its own; the others as read while unchanged (S6)
       // (a copy has a session of its own: there, the lines of kinds the demo doesn't read)
       const ids = new Set(was === undefined ? [] : was.split('\n').map(lineId)), other = e => !['message', 'branch', 'call'].includes(e.kind) && !(e.kind === 'tool' && e.tool === 'web_search');
@@ -4589,7 +4635,12 @@ function sessionAsRead(now, k) {
   const cut = t => t.split('\n').filter(l => l.trim()), mine = cut(now), was = cut(k.was);
   if (mine.length === was.length && mine.every((l, i) => same(l, was[i]))) return k.text || null; // nothing changed: none if it came with none
   const byId = t => new Map(t.map(l => [lineId(l), l])), read = cut(k.text), then = byId(was), here = byId(mine), had = byId(read);
-  const out = read.map(l => { const id = lineId(l); return id === null || !here.has(id) ? (then.has(id) ? null : l) : !then.has(id) || same(then.get(id), here.get(id)) ? l : here.get(id); });
+  // a line the demo changed here (excluded, say) is merged key by key into the line as it was read: its author's keys, ext and
+  // order stay, and only the keys the demo changed take the demo's values (spec S6: a line changes only in what changed)
+  const merged = (l, a, z) => { try { const o = JSON.parse(l), x = JSON.parse(a), y = JSON.parse(z), keys = new Set([...Object.keys(x), ...Object.keys(y)]);
+    for (const key of keys) { if (JSON.stringify(x[key]) === JSON.stringify(y[key])) continue; if (y[key] === undefined) delete o[key]; else o[key] = y[key]; }
+    return JSON.stringify(o).replace(/[\u2028\u2029\u0085]/g, ch => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0')); } catch (e) { return z; } };
+  const out = read.map(l => { const id = lineId(l); return id === null || !here.has(id) ? (then.has(id) ? null : l) : !then.has(id) || same(then.get(id), here.get(id)) ? l : merged(l, then.get(id), here.get(id)); });
   return out.filter(l => l !== null).concat(mine.filter(l => !had.has(lineId(l)))).join('\n') + '\n';
 }
 // One conversation → a Thinking State bundle: a Thought (or the root Question) per branch, a Decision per flagged message,
@@ -4607,6 +4658,13 @@ function thinkingStateFiles(c, quiet, mine, all) {
 }
 function bundleFilesOf(c, quiet, mine, all) {
   const taken = new Set(), nodes = [], byBranch = {};
+  // What changes after a session line was written lives on the node, not on the line, so a session stays append-only (spec S6,
+  // §5.3): when a branch's status was set, and the messages kept as valid after an edit above them (F-35), by their first entry
+  const lateOf = (b, msgs) => { const kept = Object.fromEntries(msgs.filter(m => m.keptAt).map(m => [m.id, isoOf(m.keptAt)]));
+    return { ...(b.status && b.statusAt ? { statusAt: isoOf(b.statusAt) } : {}), ...(Object.keys(kept).length ? { kept } : {}) }; };
+  // a saved comparison, as the demo keeps it, on its choice point: what it was built from by size and by reference, its texts only
+  // in the demo's own storage (an export left out a copy of the prompt, a quarter of a session)
+  const cmpOut = cmp => { const x = JSON.parse(JSON.stringify(Object.fromEntries(CMP_KEYS.filter(k => cmp[k] !== undefined).map(k => [k, cmp[k]])))); if (!mine) { omitMemory(x.request); if (x.request && Array.isArray(x.request.blocks)) x.request.blocks.forEach(b => { if (b.kind !== 'memory') delete b.text; }); } return x; };
   const keep = (v, t) => { const id = typeof v === 'string' && TS_ID.test(v) && !taken.has(v) ? v : nodeId(t, taken); taken.add(id); return id; };
   const iso = isoOf;
   let given = false;
@@ -4650,12 +4708,13 @@ function bundleFilesOf(c, quiet, mine, all) {
     // so (spec §7.1); a card you didn't touch writes its node as it came
     const cardDec = nd && nd.type === 'Decision' ? own : null, cardFlag = cardDec ? (cardDec.flagged ? (nd.status === 'parked' ? 'accepted' : nd.status) : nd.status === 'accepted' ? 'parked' : nd.status) : null;
     const cardWords = cardDec && cardDec.decision && cardDec.decision.summary && cardDec.decision.summary !== asRead(nd.description || nd.title) ? cardDec.decision.summary : '';
+    const said = b.msgIds.filter(id => c.messages[id] && !c.messages[id].node); // a card is its node, not something said here
     const wordedAt = Math.max((isRoot ? c.namedAt || c.created : b.namedAt || b.created) || 0, firstLines.length ? lead.editedAt || lead.ts || 0 : 0);
     nodes.push({ id, type: nd ? nd.type : isRoot && c.rootType ? c.rootType : 'Thought', title: whole((title || id).slice(0, 120)),
       ...(nd ? (renamedCard ? { generated: { by: nameByOf(b), at: iso(b.namedAt || b.created) } } : {}) : { generated: { by: titleBy, at: iso(wordedAt) } }), ...(revs.length ? { revisions: revs } : {}),
       description: nd ? cardWords || nd.description || nd.title : eo ? `Edited version of: ${snippetOf(eo.text, 200)}` : desc0,
       status: nd ? (b.parentId && statusOf(b) !== (cardStatus || 'open') ? statusOf(b) : cardFlag || nd.status) : b.parentId ? statusOf(b) : 'open', links: nd ? nd.links : null, parent: b.parentId ? byBranch[b.parentId] : null, sources: [{ resource: b.parentId ? `/${session}#br${b.id}` : b.msgIds[0] ? `/${session}#${b.msgIds[0]}` : `/${session}`, title: 'Where this branch starts in the session' }],
-      body: msgs.length ? `## Conversation\n\n${transcript(b.msgIds)}` : '' });
+      body: said.length ? `## Conversation\n\n${transcript(said)}` : '', ...(Object.keys(lateOf(b, msgs)).length ? { ext: lateOf(b, msgs) } : {}) });
     // a flag is an open Decision, a summary accepts it, and an unflagged one keeps its summary as a parked Decision (spec §7.1)
     for (const m of msgs.filter(x => x !== own && (x.flagged || (x.decision && x.decision.summary)))) {
       const d = m.decision || {}, summary = d.summary || sentenceOf(m.text, 240) || sentenceOf(withMarks(m), 240) || 'A flagged message'; // a message of images is titled by them
@@ -4668,7 +4727,7 @@ function bundleFilesOf(c, quiet, mine, all) {
         generated: { by: m.decision && m.decision.summary ? (m.decision.model ? `mindbough-demo/${m.decision.model}` : 'human:me') : (m.role === 'model' && m.model ? `mindbough-demo/${m.model}` : 'human:me'),
           at: isoOf((m.decision && m.decision.at) || m.ts) },
         sources: [{ resource: `/${session}#${m.id}`, title: 'The flagged message', author: m.role === 'model' ? `mindbough-demo/${m.model || 'unknown'}` : 'human:me' }],
-        body: decisionBody(d, m.text) });
+        body: decisionBody(d, m.text), ...(!m.flagged && d.unflaggedAt && okTime(d.unflaggedAt) ? { ext: { unflaggedAt: isoOf(d.unflaggedAt) } } : {}) });
     }
   }
   // options, comparisons and choices (spec §14.2–14.4): the message branches continue from is a choice point, a Question;
@@ -4692,7 +4751,7 @@ function bundleFilesOf(c, quiet, mine, all) {
       description: dm ? `Answered: ${dm.decision.summary}` : qOpen, status: dm ? 'accepted' : 'open', parent: byBranch[b.id],
       // answered, it is your choice that words it, and the choice point it was stays in its revisions, as mb.py decide writes it (P4)
       generated: dm ? { by: 'human:me', at: iso((cmp && cmp.chosenAt) || dm.decision.at) } : qGen, ...(dm ? { revisions: [{ description: qOpen, generated: qGen }] } : {}),
-      sources: [{ resource: `/${session}#${m.id}`, title: 'Where the options start' }], ext: { pattern: 'choice' }, body: '' });
+      sources: [{ resource: `/${session}#${m.id}`, title: 'Where the options start' }], ext: { pattern: 'choice', ...(cmp ? { compare: cmpOut(cmp) } : {}) }, body: '' });
     for (const k of opts) {
       const n = nodeOf(byBranch[k.id]);
       n.parent = qid; n.links = { ...(n.links || {}), answers: [qid] };
@@ -4841,6 +4900,8 @@ function logOf(c, nodes, byBranch, iso) {
     }
   }
   for (const b of Object.values(c.branches)) if (b.parentId && b.status && b.statusAt && byId.get(byBranch[b.id])) out.push([iso(b.statusAt), `* **Status**: ${link(byId.get(byBranch[b.id]))} is ${b.status}.`]);
+  // unflagging is the person's act too (spec §7.1): a decision left unflagged says when
+  for (const m of Object.values(c.messages)) if (!m.flagged && m.decision && okTime(m.decision.unflaggedAt) && byId.get(m.nodeId) && byId.get(m.nodeId).status === 'parked') out.push([iso(m.decision.unflaggedAt), `* **Status**: ${link(byId.get(m.nodeId))} is parked: unflagged.`]);
   out.push([iso(c.created), `* **Creation**: “${String(c.title).replace(/[[\]]/g, '')}”, a conversation in the Mindbough demo.`]);
   out.forEach(x => { x[1] = x[1].replace(/([.!?…])\]\(([^)]*)\)\.$/, '$1]($2)'); }); // a title that ends a sentence ends the line
   out.sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0));
@@ -4882,7 +4943,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       const fork = b.forkMsgId && c.messages[b.forkMsgId] ? b.forkMsgId : null;
       const brId = reuse(b.eid) || derive('br' + b.id);
       const card = c.messages[b.msgIds[0]] && c.messages[b.msgIds[0]].node; // a node of an opened Thinking State, shown as a card: the demo's
-      const own = { ...(b.option ? { option: b.option } : {}), ...(b.status && b.statusAt ? { statusAt: iso(b.statusAt) } : {}) };
+      const own = { ...(b.option ? { option: b.option } : {}) }; // set when the branch is made; its status time is on its node (S6)
       lines.push({ id: brId, kind: 'branch', node, after: fork, by: b.by || (card ? 'process:mindbough-demo' : 'human:me'), at: iso(b.created), ...(Object.keys(own).length ? { ext: { 'mindbough-demo': own } } : {}) });
       after = brId;
     }
@@ -4932,8 +4993,9 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       // the demo's own data (spec §5.3): an answer edited in place, a streaming answer's previous version, a cached comparison,
       // and a card of a node that came from an opened Thinking State
       // a saved comparison, in a fixed key order so the same comparison always writes the same line
-      const cmp = m.compare && JSON.parse(JSON.stringify(Object.fromEntries(CMP_KEYS.filter(k => m.compare[k] !== undefined).map(k => [k, m.compare[k]])))); if (cmp && !mine) omitMemory(cmp.request);
-      const own = { ...(m.request && m.request.usage && m.request.usage.tools && !human ? { toolTokens: m.request.usage.tools } : {}), ...(m.edited ? { edited: true } : {}), ...(m.keptAt ? { kept: iso(m.keptAt) } : {}), ...(m.streaming && m.prev ? { prev: m.prev } : {}), ...(cmp ? { compare: cmp } : {}),
+      // a comparison with a choice point lives on that node (S6); only one without (its branches gone) stays on the line
+      const cmp = m.compare && !(m.choiceId && nodes.some(n => n.id === m.choiceId)) && JSON.parse(JSON.stringify(Object.fromEntries(CMP_KEYS.filter(k => m.compare[k] !== undefined).map(k => [k, m.compare[k]])))); if (cmp && !mine) omitMemory(cmp.request);
+      const own = { ...(m.request && m.request.usage && m.request.usage.tools && !human ? { toolTokens: m.request.usage.tools } : {}), ...(m.edited ? { edited: true } : {}), ...(m.streaming && m.prev ? { prev: m.prev } : {}), ...(cmp ? { compare: cmp } : {}),
         ...(m.node ? { card: { node: m.node, ...(m.flagged ? { flagged: true } : {}), ...(m.decision ? { decision: m.decision } : {}) } } : {}) };
       if (Object.keys(own).length) e.ext = { 'mindbough-demo': own };
       if (m.search && !back) {
@@ -4990,7 +5052,7 @@ const jsonOf = (v, max) => { try { const t = JSON.stringify(v); return t && t.le
 const UNZIP = { text: 5e6, session: 1e8, image: 2e7, file: 2e7, images: 5000, total: 3e8 };
 async function inflated(data, method, max) {
   if (method === 0) return data.length <= max ? data : null;
-  if (method !== 8) return null;
+  if (method !== 8 || !window.DecompressionStream) return null; // Safari before 16.4 can't inflate: such an entry is named, not read
   const rd = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader(), parts = [];
   let n = 0;
   for (;;) { const { value, done } = await rd.read(); if (done) break; n += value.length; if (n > max) { rd.cancel().catch(() => {}); return null; } parts.push(value); }
@@ -5017,7 +5079,7 @@ async function unzipText(buf) {
     if (pic && images.length >= UNZIP.images) { skipped.push(`${name} (over ${UNZIP.images} images)`); continue; }
     const start = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true), data = u8.subarray(start, start + size);
     const bytes = await inflated(data, method, Math.min(max, UNZIP.total - total));
-    if (!bytes) { skipped.push(`${name} (${method === 0 || method === 8 ? 'too large' : 'compressed in a way this browser can’t read'})`); continue; }
+    if (!bytes) { skipped.push(`${name} (${method === 8 && !window.DecompressionStream ? 'compressed: this browser can’t unzip it; iOS 16.4 or later can' : method === 0 || method === 8 ? 'too large' : 'compressed in a way this browser can’t read'})`); continue; }
     total += bytes.length;
     if (pic) images.push({ name, bytes: bytes.slice() });
     else if (text) out.push({ name, text: dec.decode(bytes) });
@@ -5258,13 +5320,15 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     const parentNode = nid === rootId ? null : up(nid);
     const mine = slots.filter(e => String(e.node) === nid);
     const bext = be && isObj(be.ext) && isObj(be.ext['mindbough-demo']) ? be.ext['mindbough-demo'] : {};
+    // what changed after the lines were written is on the node (S6); exports of 0.13 and earlier have it on the lines
+    const next = isObj(th(node).ext) && isObj(th(node).ext['mindbough-demo']) ? th(node).ext['mindbough-demo'] : {}, keptOn = isObj(next.kept) ? next.kept : {};
     const b = { id, parentId: parentNode ? bidOf(parentNode) : null, forkMsgId: be && be.after && toMsg.has(be.after) ? toMsg.get(be.after) : null, msgIds: [],
       created: time(be ? be.at : mine[0] && mine[0].at, convo.created), nodeId: nid };
     if (be) { b.eid = be.id; if (foreignBy(be.by)) b.by = be.by; } // its branch entry, kept when written again, and who made it
     { const st = th(node).status; if (nid !== rootId && ['accepted', 'parked', 'rejected', 'superseded'].includes(st)) b.status = st === 'superseded' ? 'rejected' : st; } // superseded is not in force either
     if (!own && (b.status === 'parked' || b.status === 'rejected')) b.collapsed = true; // an opened Thinking State shows its dropped lines folded
     if (isObj(bext.option)) b.option = { ...(typeof bext.option.why === 'string' ? { why: bext.option.why.slice(0, 200) } : {}), ...(typeof bext.option.call === 'string' ? { call: bext.option.call } : {}) };
-    if (b.status && typeof bext.statusAt === 'string' && Number.isFinite(Date.parse(bext.statusAt))) b.statusAt = Date.parse(bext.statusAt); // when, for the log (W9)
+    { const sa = typeof next.statusAt === 'string' ? next.statusAt : bext.statusAt; if (b.status && typeof sa === 'string' && Number.isFinite(Date.parse(sa))) b.statusAt = Date.parse(sa); } // when, for the log (W9)
     for (const slot of mine) {
       const chain = [slot]; { let x = slot; const seen = new Set(); while (newest.has(x.id) && !seen.has(x.id)) { seen.add(x.id); x = newest.get(x.id); chain.push(x); } }
       const v = chain[chain.length - 1], role = slot.role === 'user' ? 'user' : 'model';
@@ -5285,7 +5349,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
       if (role === 'user') { const im = imagesFrom(v.attachments); if (im.length) m.images = im; } // images attached to it (F-36)
       const ext = isObj(v.ext) && isObj(v.ext['mindbough-demo']) ? v.ext['mindbough-demo'] : {};
       if (ext.edited) m.edited = true;
-      if (typeof ext.kept === 'string' && Number.isFinite(Date.parse(ext.kept))) m.keptAt = Date.parse(ext.kept); // kept as valid after an edit above (F-35)
+      { const kt = typeof keptOn[slot.id] === 'string' ? keptOn[slot.id] : ext.kept; if (typeof kt === 'string' && Number.isFinite(Date.parse(kt))) m.keptAt = Date.parse(kt); } // kept as valid after an edit above (F-35)
       if (isObj(ext.compare)) m.compare = ext.compare; // a saved comparison; an import rebuilds it from known fields (adoptConvo)
       // a card of a node that came from an opened Thinking State (an import rebuilds it from known fields: adoptConvo)
       if (isObj(ext.card) && isObj(ext.card.node)) { m.node = ext.card.node; if (ext.card.flagged) m.flagged = true; if (isObj(ext.card.decision)) m.decision = ext.card.decision; }
@@ -5370,7 +5434,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     if (pattern !== 'choice' && pattern !== 'comparison') continue;
     used.add(nid);
     const mid = pattern === 'choice' && anchorOf(node);
-    if (mid && convo.messages[mid]) { convo.messages[mid].choiceId = nid; choiceAt.set(nid, mid); }
+    if (mid && convo.messages[mid]) { convo.messages[mid].choiceId = nid; choiceAt.set(nid, mid); if (isObj(x['mindbough-demo'].compare)) convo.messages[mid].compare = x['mindbough-demo'].compare; } // a comparison on its choice point (S6)
   }
   // decisions anchored at entries (spec §7.1, §10.6)
   for (const [nid, node] of nodes) {
@@ -5383,6 +5447,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     if (status !== 'open') {
       const det = detailsIn(node.body);
       m.decision = { summary: asRead(node.meta.description || node.meta.title || ''), ...(det.length ? { details: det } : {}), at: time(isObj(node.meta.generated) ? node.meta.generated.at : null, m.ts), ...(modelOf(by) ? { model: modelOf(by) } : {}) };
+      { const ux = isObj(t.ext) && isObj(t.ext['mindbough-demo']) ? t.ext['mindbough-demo'].unflaggedAt : null; if (typeof ux === 'string' && Number.isFinite(Date.parse(ux))) m.decision.unflaggedAt = Date.parse(ux); } // when it was unflagged (§7.1)
       const hist = (Array.isArray(t.revisions) ? t.revisions : []).filter(x => isObj(x) && x.description).slice(0, 10).map(x => ({ summary: asRead(x.description), ...(detailsIn(x.body).length ? { details: detailsIn(x.body) } : {}), at: time(isObj(x.generated) ? x.generated.at : null, m.ts), ...(isObj(x.generated) && modelOf(x.generated.by) ? { model: modelOf(x.generated.by) } : {}) }));
       if (hist.length) m.decision.history = hist;
       const q = (Array.isArray(t.answers) ? t.answers : []).map(String).find(x => choiceAt.has(x));
@@ -5747,7 +5812,7 @@ const convoDigest = c => sigOf(JSON.stringify(dfs(c).map(b => [b.name || '', b.s
 // `memory: false` leaves memory as it is (the sample doesn't add facts to yours)
 async function importZip(buf, { memory = true, reuse = false } = {}) {
   let added = [], failed = 0, facts = 0, left = 0, again = 0;
-  const fresh = [], opened = []; // facts of the conversations that memory doesn't have yet; the Thinking States opened
+  const fresh = [], opened = [], reworded = []; // reworded: a fact of yours that the files word otherwise (its item, by id) // facts of the conversations that memory doesn't have yet; the Thinking States opened
   const convos = await openThinkingStates(buf);
   if (!convos.length && !(convos.home || []).length) throw new Error('No Thinking State in this zip: it needs a README.md with type: Thinking State');
   convos.forEach(c => {
@@ -5762,10 +5827,10 @@ async function importZip(buf, { memory = true, reuse = false } = {}) {
     added.push(at);
     // facts remembered from this conversation (spec §9), linked to their messages again; asked about also when the conversation was
     // here already, so a Cancel the first time can be an OK the second
-    for (const f of memory && !SAMPLE_IDS.includes(c.tsId) ? c.facts || [] : []) { // a sample's fact is its persona's, never yours
+    for (const f of memory ? (c.facts || []).filter(f => !SAMPLE_ITEMS.includes(f.itemId)) : []) { // a sample's own fact is its persona's, never yours; one you remembered in your copy is yours
       if (f.mid && !Object.prototype.hasOwnProperty.call(db.convos[at].messages, f.mid)) continue;
       const known = db.memory.find(x => (f.itemId && x.itemId === f.itemId) || x.text === f.text);
-      if (known) { if (!(known.src && db.convos[known.src.cid])) known.src = { cid: at, mid: f.mid }; continue; } // a fact whose conversation is gone follows it here
+      if (known) { if (!(known.src && db.convos[known.src.cid])) known.src = { cid: at, mid: f.mid }; if (f.itemId && known.itemId === f.itemId && known.text !== f.text && !reworded.some(r => r.known === known)) reworded.push({ known, f }); continue; } // a fact whose conversation is gone follows it here
       if (!fresh.some(x => x.f.text === f.text)) fresh.push({ f, id: at });
     }
   });
@@ -5776,7 +5841,7 @@ async function importZip(buf, { memory = true, reuse = false } = {}) {
   const home = (memory ? convos.home || [] : []).filter(f => {
     const c = f.bundle && Object.values(db.convos).find(x => x.tsId === f.bundle && Object.prototype.hasOwnProperty.call(x.messages, f.mid));
     const known = db.memory.find(x => x.itemId === f.itemId || x.text === f.text);
-    if (known) { if (c && !(known.src && db.convos[known.src.cid])) known.src = { cid: c.id, mid: f.mid }; return false; }
+    if (known) { if (c && !(known.src && db.convos[known.src.cid])) known.src = { cid: c.id, mid: f.mid }; if (known.itemId === f.itemId && known.text !== f.text && !reworded.some(r => r.known === known)) reworded.push({ known, f }); return false; }
     return !fresh.some(x => x.f.text === f.text);
   });
   const n = fresh.length + home.length, first = (fresh[0] && fresh[0].f) || home[0], quote = n ? `“${first.text.slice(0, 80)}${first.text.length > 80 ? '…' : ''}”` : '';
@@ -5790,6 +5855,12 @@ async function importZip(buf, { memory = true, reuse = false } = {}) {
       db.memory.push({ id: uid(), text: f.text, at: f.at, ...(f.off ? { off: true } : {}), ...(!db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}), ...(c ? { src: { cid: c.id, mid: f.mid }, from: c.title } : f.from ? { from: f.from } : {}), ...(f.history ? { history: f.history } : {}), ...(f.by ? { by: f.by } : {}), ...(f.file ? { file: f.file, ...(f.fileAt ? { fileAt: f.fileAt } : {}) } : {}) }); facts++;
     }
   } else left = n;
+  // a fact of yours reworded in the files (by another tool, or in another browser) is offered as a rewording: OK takes it, and
+  // your wording goes to its history; Cancel keeps yours (F-23, W11)
+  const rw = memory ? reworded.filter(r => db.memory.includes(r.known)) : [];
+  if (rw.length && confirm(`This file words ${rw.length === 1 ? 'a fact of yours' : `${rw.length} facts of yours`} differently:\n\n“${snippetOf(rw[0].known.text, 80)}”\n→ “${snippetOf(rw[0].f.text, 80)}”\n\nTake its wording? Yours goes to the fact's history.`)) {
+    for (const { known, f } of rw) { known.history = [{ text: known.text, at: known.at || Date.now(), ...(known.by ? { by: known.by } : {}) }, ...(known.history || [])].slice(0, 10); known.text = f.text; known.at = Date.parse(f.at) || f.at || Date.now(); if (f.by) known.by = f.by; else delete known.by; if (f.file) known.file = f.file; memOp('add', known); facts++; }
+  }
   // what the demo doesn't write the same of each Thinking State opened, with its facts now yours or not
   for (const [from, id] of opened) { try { const k = keepOf(from.r, from.files, db.convos[id], from.bins); if (k) db.convos[id].keep = k; } catch (err) { console.error(err); } }
   // a memory item that is now one of your facts is yours: kept as its file, it would come back after you forget it
@@ -5824,6 +5895,7 @@ $('#importFile').addEventListener('change', async e => {
 // (prompts, tokens, helper calls, comparisons, choices, statuses, versions, web searches) is there without a key.
 // Each shows a different way of thinking; none adds its facts to your memory, also when its zip is imported
 const SAMPLE_IDS = ['20260930-owu5la', '20261001-u60yd1', '20261001-l0e3fl'];
+const SAMPLE_ITEMS = ['20261003-xgnn31', '20261003-8p85gr', '20261003-ia8n0n']; // the samples' own memory items, by id
 const SAMPLES = [
   { file: 'examples/sample-thinking-state.zip', title: 'Choose a database', what: 'A decision: three options, a comparison and a choice.', shows: ['Options', 'Compare', 'Choose', 'Versions'] },
   { file: 'examples/sample-troubleshooting.zip', title: 'Why did checkout get slow?', what: 'Troubleshooting: a branch per cause, each checked, then fixed or ruled out.', shows: ['Causes as branches', 'Ruled out', 'They add up', 'Fix plan'] },
