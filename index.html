@@ -387,7 +387,7 @@ button.decision:not(:disabled):hover{box-shadow:0 0 0 3px var(--flag-soft)}
 .actions{display:flex;gap:2px;margin-top:3px;opacity:0;transition:opacity .15s}
 .msg.user .actions{justify-content:flex-end}
 .msg:hover .actions,.msg:focus-within .actions,.msg.flagged .actions,.msg.hidden .actions,.msg.error .actions{opacity:1}
-.col.focused .col-body>.msg:last-child:not(:hover,:focus-within,.flagged,.hidden,.error) .actions{opacity:.6}
+@media (hover:hover){.col.focused .col-body>.msg:last-child:not(:hover,:focus-within,.flagged,.hidden,.error) .actions{opacity:.6}} /* a desktop's hint, never a phone's */
 @media (hover:none){.actions{opacity:1}}
 @media (max-width:440px){.actions{gap:0}.actions .ib{padding:5px 4px}.col-head .back .lbl{display:none}.col-head .name small{display:none}}
 @media (max-width:380px){.actions .ib{padding:5px 3px}}
@@ -458,6 +458,7 @@ button.tag.e{border:0;background:none;color:inherit;font-family:inherit;cursor:p
 .reask.answer-now{border-color:var(--accent)}
 .ib.on-mem{color:var(--k-memory)}
 .kid.cmp{display:inline-flex;align-items:center;gap:4px;background:none;font-weight:600}
+.kid.cmp:hover{background:var(--accent-soft);color:var(--accent)} /* the chip keeps its words when pointed at or tapped */
 .kid.cmp .i{width:13px;height:13px}
 .model-chip{border:1px solid var(--line);background:none;color:var(--muted);border-radius:6px;padding:0 6px;font-size:11px;font-weight:500;font-family:"IBM Plex Mono",ui-monospace,monospace;display:inline-flex;align-items:center;gap:4px;line-height:18px}
 button.model-chip:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
@@ -545,7 +546,13 @@ button.model-chip svg.i{width:11px;height:11px}
   .col-head .ib{min-width:40px;min-height:40px;justify-content:center}
   .sheet-head .ib,[data-sheet-close].ib{min-width:40px;min-height:40px;justify-content:center}
   .dp-actions .btn,.dec-stale .linkbtn,.decision .edit-actions .btn,.pv-actions .btn{min-height:40px}
-  #promptPreview,#webSearch,#model{min-height:40px}
+  #promptPreview,#webSearch,#model{min-height:40px}#promptPreview,#webSearch{min-width:40px;justify-content:center}
+  #crumbs button,.stale-line .ib,.ofold-all,.side-tools button,.set-row select,#showKey{min-height:40px}
+  .stale-line .ib,#showKey{min-width:40px;justify-content:center}
+  #openHelp{min-width:40px;justify-content:center}
+  button.tag.e,.codehead button,.cmp-go,.keyhint button,[data-key-send],.err-said summary,#settingsView a{position:relative}
+  #settingsView a::after{content:"";position:absolute;inset:-12px -2px}
+  button.tag.e::after,.codehead button::after,.cmp-go::after,.keyhint button::after,[data-key-send]::after,.err-said summary::after{content:"";position:absolute;inset:-11px -4px}
   #model{font-family:inherit}}
 .mem-use{display:flex;align-items:center;gap:6px;min-height:40px;padding:0 8px 0 2px;font-size:13px;color:var(--muted);cursor:pointer}
 .mem-use input{width:18px;height:18px;margin:0}
@@ -651,9 +658,9 @@ const whole = t => t.replace(/[\uD800-\uDBFF]$/, '');
 const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return whole(cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.11.0';
+const APP_VERSION = '0.12.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 40521d6'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 7b98ced'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1672,6 +1679,7 @@ function openModelMenu(anchor, c, m, mode = 'regen') {
   placeMenu(menu, anchor);
 }
 function placeMenu(menu, anchor) {
+  menuAnchor = anchor;
   menu.style.left = '0px'; menu.style.top = '0px'; // measured where it has room, not squeezed at its last place
   menu.classList.add('show');
   const r = anchor.getBoundingClientRect();
@@ -1784,7 +1792,10 @@ function messageMore(c, m, act) {
     toast(m.hidden ? (m.flagged && m.decision && m.decision.summary ? 'Excluded from history. Its decision still goes into every prompt' : 'Excluded: the model no longer sees this message') : 'Included in the history again');
   }
 }
-function closeModelMenu() { $('#modelMenu').classList.remove('show'); menuFor = null; }
+// a menu gives focus back to the ⋯ that opened it, and closes when focus leaves it
+let menuAnchor = null;
+function closeModelMenu() { const m = $('#modelMenu'), inside = m.contains(document.activeElement); m.classList.remove('show'); menuFor = null; if (inside && menuAnchor && document.contains(menuAnchor)) menuAnchor.focus({ preventScroll: true }); menuAnchor = null; }
+document.addEventListener('focusin', e => { const m = $('#modelMenu'); if (m.classList.contains('show') && !m.contains(e.target) && e.target !== menuAnchor) { menuAnchor = null; closeModelMenu(); } });
 $('#modelMenu').addEventListener('click', e => {
   const cv = e.target.closest('[data-conv]');
   if (cv && menuFor && menuFor.mode === 'conv') { const id = menuFor.cid; closeModelMenu(); convAction(id, cv.dataset.conv); return; }
@@ -3632,7 +3643,10 @@ async function streamInto(c, am, req, key, picked, backup) {
 
 /* ---------------- sheet: Settings and other panels ---------------- */
 let sheetView = null; // { title, settings?: true, render?: () => html, onClick?: e => void, back?: () => void }
+// A sheet is a modal: the page behind it is inert, focus moves in, and goes back where it was when the sheet closes (F-01, F-10)
+let sheetFrom = null;
 function openSheet(view) {
+  if ($('#sheet').hidden) sheetFrom = document.activeElement;
   sheetView = view;
   closeModelMenu();
   $('#toast').classList.remove('show', 'act'); // an earlier toast would sit over the sheet; one raised from the sheet shows above it
@@ -3643,9 +3657,12 @@ function openSheet(view) {
   $('#sheetBack').hidden = !view.back;
   $('.sheet-panel').classList.toggle('tall', !!view.tall); // tabs and levels: one height on a phone
   $('#sheet').hidden = false;
+  $('.app').inert = true;
+  // a field that asked for focus keeps it; else the close button, which opens no keyboard on a phone
+  requestAnimationFrame(() => { if (!$('#sheet').hidden && !$('#sheet').contains(document.activeElement)) { const b = $('.sheet-head [data-sheet-close]'); if (b) b.focus({ preventScroll: true }); } });
 }
 // a fact not saved is not kept, and an edit open in the sheet ends with it: other tabs' saves apply again
-function closeSheet() { $('#sheet').hidden = true; sheetView = null; $('#sheetDyn').innerHTML = ''; memDraft = null; memEdit = panelEdit = panelHist = null; setTimeout(settled); }
+function closeSheet() { $('#sheet').hidden = true; $('.app').inert = false; if (sheetFrom && document.contains(sheetFrom) && sheetFrom.focus) sheetFrom.focus({ preventScroll: true }); sheetFrom = null; sheetView = null; $('#sheetDyn').innerHTML = ''; memDraft = null; memEdit = panelEdit = panelHist = null; setTimeout(settled); }
 $('#sheet').addEventListener('click', e => {
   if (e.target.closest('[data-sheet-close]')) { closeSheet(); return; }
   if (e.target.closest('[data-key-send]')) { closeSheet(); send(); return; } // the key works now
@@ -4089,6 +4106,7 @@ const HELP = [
     <p class="help-why">Try alternatives without mixing them.</p>
     <ul><li><b>Branch out</b> under an answer: a new column that continues from there. The model sees only that branch's path, so dead ends don't pollute the context. A branch you leave without writing in it goes away. Under your own message, <b>Branch out</b> offers <b>Edit in a new branch</b>, or another answer from any model in a new branch.</li>
     <li>Under a message: <b>Branch out</b>, the flag (a decision), the bookmark (<b>Remember</b>) and the eye (<b>Exclude from history</b>): what the next prompts carry. <b>⋯</b> holds the rest: how the prompt of an answer was built, regenerate it with any model, branch into options, edit, copy the message or the conversation up to here, and delete. An error has <b>Try again</b> instead.</li>
+    <li>On a phone, Back closes a ⋯ menu or a sheet before it would leave the app. With a keyboard, a sheet holds the focus until Esc.</li>
     <li><b>Delete</b>: your question goes with its answer; an answer goes alone, and its question waits with <b>Answer</b>. <b>Undo</b> in the toast brings it back, unless the conversation changed since (moving between branches or folding them changes nothing). Deleting a branch, a memory fact, or unflagging in the decisions panel works the same way; only deleting a whole conversation asks first.</li>
     <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place too. Either way the earlier text is kept: the message is tagged <b>edited</b>, and the tag opens its versions, with <b>Restore</b>. What the edit made out of date gets a line, on the first such message of the branch: <b>⋯</b> on it regenerates it in place, keeps it as valid or answers in a new branch, and the line moves on to the next.</li>
     <li>Tap an answer's model chip to regenerate it with any model. The old answer stays as a version (<b>N versions</b> next to the model); in the middle of a chain the new one opens in a new branch. Every version is kept, and <b>Restore</b> puts an earlier one back as the current text; each text shows once.</li>
@@ -4128,10 +4146,11 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
-  { version: 'Unreleased', items: [
+  { version: '0.12.0', items: [
     'Your own data as written and whole: a decision keeps its Markdown and all its details after an update, and no longer reads as changed; every refreshed comparison stays; a memory draft never reaches a shared page, also from an older export.',
     'Fixed: with the question excluded, no path answers it again; an unused Branch out is never saved; Undo of a delete works when what you deleted was streaming; a double tap on Send no longer stops its answer.',
     'Two tabs answering one conversation keep both answers; a tab opened while another streams shows that answer as being answered there.',
+    'On a phone: Back closes a ⋯ menu first, every control is 40 px, the last answer\'s actions are no longer dimmed, and sheets hold the keyboard focus.',
     'Memory: each fact has Use; untick it and the fact stays, out of every prompt. Another tool\'s project memory stays in its bundle when you add it to yours.',
     'An agent\'s decisions in an opened Thinking State are in force, and every file of it comes back as it was, binary files too; hostile zips are bounded by what they hold.',
     'A choice records what it was made among, so a branch or an option added later is never "Not chosen"; Compare and Choose wait for the options\' answers.',
@@ -5836,14 +5855,16 @@ $('#toggleSide').onclick = () => {
 // Back on a phone (Android's button, iOS's edge swipe) goes back in the browser's history. An open sheet, or a side panel on a phone,
 // holds one step of it, so Back closes it, or goes a level up in it, instead of leaving the app
 let held = false, dropping = false;
-const overlayOpen = () => !$('#imgView').hidden || !$('#sheet').hidden || $('#sidebar').classList.contains('open') || (isMobile() && !!ui.outline);
+// a ⋯ menu is an overlay too: Back closes it rather than leaving the app (F-24)
+const overlayOpen = () => $('#modelMenu').classList.contains('show') || !$('#imgView').hidden || !$('#sheet').hidden || $('#sidebar').classList.contains('open') || (isMobile() && !!ui.outline);
 function hold() { if (held) return; try { history.pushState({ mbOverlay: true }, ''); held = true; } catch (e) {} }
 function release() { if (!held || overlayOpen()) return; held = false; if (history.state && history.state.mbOverlay) { dropping = true; history.back(); } }
 window.addEventListener('popstate', () => {
   if (dropping) { dropping = false; return; }
   if (!held) return;
   held = false;
-  if (!$('#imgView').hidden) closeImage(); // an image open full screen, over the canvas or a sheet (F-36)
+  if ($('#modelMenu').classList.contains('show')) closeModelMenu(); // the menu first: opened from the sidebar, the sidebar goes next
+  else if (!$('#imgView').hidden) closeImage(); // an image open full screen, over the canvas or a sheet (F-36)
   else if (!$('#sheet').hidden) { if (sheetView && sheetView.back) sheetView.back(); else closeSheet(); }
   else if ($('#sidebar').classList.contains('open')) $('#sidebar').classList.remove('open');
   else if (isMobile() && ui.outline) toggleOutline(false);
@@ -5854,6 +5875,7 @@ window.addEventListener('popstate', () => {
   mo.observe($('#sheet'), { attributes: true, attributeFilter: ['hidden'] });
   mo.observe($('#imgView'), { attributes: true, attributeFilter: ['hidden'] });
   mo.observe($('#sidebar'), { attributes: true, attributeFilter: ['class'] });
+  mo.observe($('#modelMenu'), { attributes: true, attributeFilter: ['class'] });
   mo.observe($('.app'), { attributes: true, attributeFilter: ['class'] }); }
 // tap outside closes drawers on small screens; that tap must not also press what is under it (e.g. Delete)
 let swallowClick = false;
