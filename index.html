@@ -670,9 +670,9 @@ const whole = t => t.replace(/[\uD800-\uDBFF]$/, '');
 const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return whole(cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.15.0';
+const APP_VERSION = '0.16.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 7fdf1f1'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main ca6ec03'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2269,7 +2269,9 @@ function fillPrompts() {
   const box = $('#helperPrompts'); if (!box) return;
   box.innerHTML = HELPER_TASKS.map(t => {
     const p = promptFor(t.id), open = hpEdit === t.id, built = `${t.id}@${PROMPTS[t.id].version}`;
+    const earlier = ((db.prompts[t.id] || {}).history || []).map(x => `${t.id}@${x.version}`);
     return `<div class="hp" data-hp="${t.id}"><div class="hp-top"><span>${esc(t.label)}</span><code class="hp-id">${esc(p.id)}</code>${p.mine ? '<span class="hp-mine">yours</span>' : ''}</div>`
+      + (earlier.length ? `<p class="set-hint hp-was">Kept: ${earlier.map(x => `<code>${esc(x)}</code>`).join(', ')}</p>` : '')
       + (open ? `<textarea class="dp-area hp-area" aria-label="Instructions for ${esc(t.label.toLowerCase())}" spellcheck="false"></textarea>`
         + '<p class="set-hint">The helper gets these, then what it works on under the demo’s headings, and replies in the shape the demo asks for.</p>'
         + `<div class="hp-btns"><button class="btn primary" data-hp-act="save">Save as ${esc(t.id)}@${esc(nextPromptVersion(t.id))}</button><button class="btn" data-hp-act="cancel">Cancel</button></div>`
@@ -2279,8 +2281,13 @@ function fillPrompts() {
   const a = hpEdit && box.querySelector(`[data-hp="${hpEdit}"] .hp-area`);
   if (a) a.value = promptFor(hpEdit).text;
 }
+// your earlier versions, newest first: a call that names one can still be traced (spec §14.8)
+const PROMPT_HISTORY = 10;
+const historyWith = (task, extra) => { const o = db.prompts[task] || {}, own = ownPrompt(task);
+  return [...(own ? [{ text: own.text, version: own.version, ...(own.at ? { at: own.at } : {}), ...(own.by ? { by: own.by } : {}) }] : []), ...(extra || []), ...(Array.isArray(o.history) ? o.history : [])]
+    .filter((x, i, a) => x && typeof x.text === 'string' && a.findIndex(y => y && String(y.version) === String(x.version)) === i).slice(0, PROMPT_HISTORY); };
 function useBuiltIn(task) {
-  if (db.prompts[task]) db.prompts[task] = { version: db.prompts[task].version }; // its number stays taken
+  if (db.prompts[task]) { const history = historyWith(task); db.prompts[task] = { version: db.prompts[task].version, ...(history.length ? { history } : {}) }; } // its number stays taken
   hpEdit = null; save(); fillPrompts();
 }
 $('#helperPrompts').addEventListener('click', e => {
@@ -2298,8 +2305,8 @@ $('#helperPrompts').addEventListener('click', e => {
   if (!text) { toast('Instructions can’t be empty. Cancel keeps the ones in force.'); if (a) a.focus(); return; }
   if (text === promptFor(task).text) { hpEdit = null; fillPrompts(); return; } // nothing changed
   if (text === PROMPTS[task].text) { useBuiltIn(task); toast(`${t.label}: the built-in words, so ${built}`); return; }
-  const version = nextPromptVersion(task);
-  db.prompts[task] = { text, version, at: Date.now() };
+  const version = nextPromptVersion(task), history = historyWith(task);
+  db.prompts[task] = { text, version, at: Date.now(), ...(history.length ? { history } : {}) };
   hpEdit = null; save(); fillPrompts();
   toast(`Saved as ${task}@${version}: the next calls for ${t.label.toLowerCase()} follow it`);
 });
@@ -4287,7 +4294,7 @@ const HELP = [
     <ul><li>Pick the model for your next request above the message box. Each answer shows the model that wrote it, and its prompt view the tokens.</li>
     <li><b>Auto</b>, first in the model picker, lets rules pick the model of each request you send: the effort of the line you write in, if its node has one, images, a long message or code (the frontier model), a short follow-up (a fast one), else the balanced one. Each answer's prompt view says which rule picked its model, and the Thinking State keeps it.</li>
     <li>Settings → <b>Models for helper tasks</b>: the model for decisions, names, options, comparisons and memory drafts. <b>Automatic</b> takes a light model, the newest Flash-Lite your key can reach; decisions, names and memory drafts can be turned off. It also sums this conversation's helper calls, and an answer's prompt view lists the ones made on it.</li>
-    <li>Settings → <b>Instructions for helper tasks</b>: what each helper is told, such as <code>summary@2</code> for decisions. <b>See and edit</b>, then save, and they are yours, as <code>summary@2.1</code>: every later call follows them and names them, in its prompt view and in the Thinking State. <b>Use the built-in</b> brings the demo's back. Export all saves them in <code>home/prompts/</code>, and an import asks before it uses them.</li>
+    <li>Settings → <b>Instructions for helper tasks</b>: what each helper is told, such as <code>summary@2</code> for decisions. <b>See and edit</b>, then save, and they are yours, as <code>summary@2.1</code>: every later call follows them and names them, in its prompt view and in the Thinking State. <b>Use the built-in</b> brings the demo's back. Export all saves them in <code>home/prompts/</code>, your earlier versions too, so the instructions of every call can still be found, and an import asks before it uses them.</li>
     <li><b>Web</b> (the globe next to the model picker) is on from the start: the model may search the web with Google Search, inside the Gemini API, when a message needs fresh facts. The answer lists its sources, with Google's Search Suggestions under them, as the Gemini API terms ask (shown, never exported), and the prompt view says whether it searched. Turn it off for private topics, or to avoid search costs.</li></ul>` },
   { id: 'data', title: 'Your data and the format', cards: ['F-13', 'F-14', 'F-17', 'F-25', 'F-26'], body: `
     <p class="help-why">Yours: open files that any tool can read.</p>
@@ -4303,6 +4310,9 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
+  { version: '0.16.0', items: [
+    'Your earlier versions of a helper\'s instructions are kept and exported, so every call\'s instructions can be found. A choice\'s "Not chosen" and "Answered" are yours in the data, with who named each option kept, and a helper call sits on the message it served.',
+  ] },
   { version: '0.15.0', items: [
     'What each helper model is told is yours to read and change: Settings → Instructions for helper tasks. Every helper call names the instructions it used, such as summary@2.1, and Export all saves them.',
   ] },
@@ -4501,7 +4511,7 @@ async function exportAllStates() {
   for (const t of HELPER_TASKS) {
     const o = ownPrompt(t.id), v = o ? String(o.version) : PROMPTS[t.id].version;
     files.push({ name: `home/prompts/${t.id}.md`, text: ['---', 'type: Prompt', `title: ${yq(t.label)}`, `description: ${yq(PROMPTS[t.id].description)}`, `version: ${typeof v === 'number' ? v : yq(v)}`,
-      `generated: { by: ${yq(o ? o.by || 'human:me' : `mindbough-demo/${APP_VERSION}`)}${o && o.at ? `, at: ${yq(isoOf(o.at))}` : ''} }`, '---', '', promptFor(t.id).text, ''].join('\n') });
+      `generated: { by: ${yq(o ? o.by || 'human:me' : `mindbough-demo/${APP_VERSION}`)}${o && o.at ? `, at: ${yq(isoOf(o.at))}` : ''} }`, ...promptRevisions(t.id), '---', '', promptFor(t.id).text, ''].join('\n') });
   }
   items.forEach(x => files.push({ name: `home/memory/${x.id}.md`, text: itemDoc(x.fact, ['---', 'type: Memory', `title: ${yq(x.title)}`, `description: ${yq(x.description)}`, `generated: { by: ${yq(x.by || 'human:me')}, at: ${yq(x.at)} }`,
     ...(x.source ? ['sources:', `  - { resource: ${yq(x.source.resource)}, title: ${yq(x.source.title)} }`] : []), ...x.thinking, '---', ''].join('\n'), 'home') }));
@@ -4530,6 +4540,9 @@ function homeFacts(files) {
   }
   return out;
 }
+// your earlier versions of a task's instructions, as thinking.revisions lines of its Prompt document (spec §14.8)
+const promptRevisions = task => { const h = ((db.prompts[task] || {}).history || []).filter(x => x && typeof x.text === 'string');
+  return h.length ? ['thinking:', '  revisions:', ...h.map(x => `    - { version: ${yq(String(x.version))}, body: ${yq(x.text)}, generated: { by: ${yq(x.by || 'human:me')}${x.at ? `, at: ${yq(isoOf(x.at))}` : ''} } }`)] : []; };
 // A person's instructions for helper tasks in a zip (home/prompts/<task>.md, spec §14.8). The demo's own, of any version, aren't
 // offered: the ones this version ships are in force. Nor are names that aren't a helper task here
 function homePrompts(files) {
@@ -4542,7 +4555,10 @@ function homePrompts(files) {
     if (typeof by === 'string' && by.startsWith('mindbough-demo/')) continue;
     const v = fm.meta.version, version = typeof v === 'number' && Number.isFinite(v) ? String(v) : typeof v === 'string' ? v.trim() : '', text = cleanPromptText(fm.body), at = Date.parse(gen.at);
     if (!text || !/^[0-9A-Za-z][0-9A-Za-z.+-]{0,19}$/.test(version)) continue;
-    out.push({ task: m[2], text, version, ...(Number.isFinite(at) ? { at } : {}), ...(actorOk(by) && by !== 'human:me' ? { by } : {}) });
+    const revs = objOf(fm.meta.thinking) && Array.isArray(fm.meta.thinking.revisions) ? fm.meta.thinking.revisions : [];
+    const history = revs.filter(objOf).map(r => { const rv = typeof r.version === 'number' && Number.isFinite(r.version) ? String(r.version) : typeof r.version === 'string' ? r.version.trim() : '', rt = cleanPromptText(r.body), g = objOf(r.generated) ? r.generated : {}, ra = Date.parse(g.at);
+      return rt && /^[0-9A-Za-z][0-9A-Za-z.+-]{0,19}$/.test(rv) && rv !== version ? { text: rt, version: rv, ...(Number.isFinite(ra) ? { at: ra } : {}), ...(actorOk(g.by) && g.by !== 'human:me' ? { by: g.by } : {}) } : null; }).filter(Boolean).slice(0, PROMPT_HISTORY);
+    out.push({ task: m[2], text, version, ...(Number.isFinite(at) ? { at } : {}), ...(actorOk(by) && by !== 'human:me' ? { by } : {}), ...(history.length ? { history } : {}) });
   }
   return out;
 }
@@ -4864,10 +4880,11 @@ function bundleFilesOf(c, quiet, mine, all) {
     const name = bid => c.branches[bid] ? branchName(c.branches[bid], c) : 'a branch';
     const qOpen = `A choice point: ${opts.length} option${opts.length === 1 ? '' : 's'} explored from here.`;
     const qGen = { by: cmp && cmp.question ? `mindbough-demo/${cmp.model || 'unknown'}` : 'human:me', at: iso(cmp ? cmp.at : Math.min(...opts.map(k => k.created))) };
-    nodes.push({ id: qid, type: 'Question', title: whole(((cmp && cmp.question) || sentenceOf(q ? q.text : m.text, 120) || 'A choice').slice(0, 120)),
+    const qTitle = whole(((cmp && cmp.question) || sentenceOf(q ? q.text : m.text, 120) || 'A choice').slice(0, 120));
+    nodes.push({ id: qid, type: 'Question', title: qTitle,
       description: dm ? `Answered: ${dm.decision.summary}` : qOpen, status: dm ? 'accepted' : 'open', parent: byBranch[b.id],
       // answered, it is your choice that words it, and the choice point it was stays in its revisions, as mb.py decide writes it (P4)
-      generated: dm ? { by: 'human:me', at: iso((cmp && cmp.chosenAt) || dm.decision.at) } : qGen, ...(dm ? { revisions: [{ description: qOpen, generated: qGen }] } : {}),
+      generated: dm ? { by: 'human:me', at: iso((cmp && cmp.chosenAt) || dm.decision.at) } : qGen, ...(dm ? { revisions: [{ ...(qGen.by !== 'human:me' ? { title: qTitle } : {}), description: qOpen, generated: qGen }] } : {}), // a helper's title stays its own
       sources: [{ resource: `/${session}#${m.id}`, title: 'Where the options start' }], ext: { pattern: 'choice', ...(cmp ? { compare: cmpOut(cmp) } : {}) }, body: '' });
     for (const k of opts) {
       const n = nodeOf(byBranch[k.id]);
@@ -4880,7 +4897,8 @@ function bundleFilesOf(c, quiet, mine, all) {
       }
       if (dm && alt && k.id !== chosen && n.status === 'rejected') {
         n.revisions = [{ title: n.title, description: n.description, generated: n.generated || { by: 'human:me', at: iso(k.created) } }, ...(n.revisions || [])].slice(0, 10);
-        n.description = notChosenText(c, m.compare, k.id); // why it lost
+        n.description = notChosenText(c, m.compare, k.id); // why it lost, worded for your choice: yours (P4)
+        n.generated = { by: 'human:me', at: iso((cmp && cmp.chosenAt) || dm.decision.at) };
       }
     }
     let fid = null;
@@ -5130,7 +5148,8 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
   }
   for (const x of (c.calls || []).slice().sort((a, b) => a.at - b.at)) {
     const m = x.mid && c.messages[x.mid], chars = x.chars | 0;
-    lines.push({ id: x.id, kind: 'call', task: x.task, ...(m ? { node: byBranch[m.branchId] } : x.mid ? {} : { node: byBranch[c.root] }), by: `mindbough-demo/${x.model || 'unknown'}`, at: iso(x.at), // on a message deleted since: no node
+    const after = x.request ? x.after : m ? m.id : null; // the message it served (spec §10.3); a call read back keeps its line as it was
+    lines.push({ id: x.id, kind: 'call', task: x.task, ...(m ? { node: byBranch[m.branchId] } : x.mid ? {} : { node: byBranch[c.root] }), ...(after ? { after } : {}), by: `mindbough-demo/${x.model || 'unknown'}`, at: iso(x.at), // on a message deleted since: no node
       request: x.request || { at: iso(x.at), chars, ...(callPrompt(x) ? { prompt: callPrompt(x) } : {}), blocks: [{ kind: 'prompt', chars }] }, // as read
       ...(x.usage ? { usage: { input: x.usage.prompt | 0, output: x.usage.answer | 0, ...(x.usage.thoughts ? { reasoning: x.usage.thoughts | 0 } : {}) } } : {}),
       // a memory draft is about you: like memory itself, its text stays out of exports and shared pages
@@ -5521,7 +5540,10 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     if (nid !== rootId && title && !auto) b.name = whole(title.slice(0, 60));
     // who worded the node (P3), and the names it had (W11); the root node is worded by the conversation's title. A name a helper
     // or another tool gave comes back when you clear yours
-    const gen = isObj(node.meta.generated) ? node.meta.generated : {}, actor = v => actorOk(v) ? v : '';
+    const actor = v => actorOk(v) ? v : '', rev0 = Array.isArray(th(node).revisions) && isObj(th(node).revisions[0]) ? th(node).revisions[0] : null;
+    // an option a choice turned down is worded for you (P4): who named it is in the wording that choice replaced
+    const turned = /^Not chosen:/.test(String(node.meta.description || '')) && rev0 && isObj(rev0.generated) && actor(rev0.generated.by) && String(rev0.title || '') === String(node.meta.title || '');
+    const gen = turned ? rev0.generated : isObj(node.meta.generated) ? node.meta.generated : {};
     const titles = (Array.isArray(th(node).revisions) ? th(node).revisions : []).filter(x => isObj(x) && typeof x.title === 'string' && x.title.trim() && x.description == null).slice(0, 10)
       .map(x => ({ title: x.title.trim().slice(0, nid === rootId ? 80 : 60), at: time(isObj(x.generated) ? x.generated.at : null, b.created), by: actor(isObj(x.generated) && x.generated.by) || 'human:me' }));
     const holder = nid === rootId ? convo : b, gby = actor(gen.by), tool = gby && !gby.startsWith('human:') && gby !== 'process:mindbough-demo';
@@ -5537,11 +5559,13 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     convo.branches[id] = b;
   }
   convo.root = bidOf(rootId); convo.focus = convo.root;
+  const entryIds = new Set(entries.map(y => y.id));
   convo.calls = entries.filter(e => e.kind === 'call' && typeof e.task === 'string').map(e => {
     const ext = isObj(e.ext) && isObj(e.ext['mindbough-demo']) ? e.ext['mindbough-demo'] : {}, mid = ext.message && toMsg.get(String(ext.message));
     return { id: e.id, task: e.task.slice(0, 40), at: time(e.at, now), model: modelOf(e.by), chars: isObj(e.request) ? Math.max(0, e.request.chars | 0) : 0, ...(mid ? { mid } : {}),
       ...(isObj(e.usage) ? { usage: { prompt: e.usage.input | 0, answer: e.usage.output | 0, thoughts: e.usage.reasoning | 0 } } : {}),
       ...(typeof e.output === 'string' && e.output ? { output: e.output.slice(0, 300) } : {}), ...(typeof e.error === 'string' && e.error ? { error: e.error.slice(0, 200) } : {}),
+      ...(typeof e.after === 'string' && entryIds.has(e.after) ? { after: e.after } : {}), // the entry it served, as written
       ...(isObj(e.request) ? { request: e.request } : {}) }; // its request as written, blocks and all
   });
   // choice points and comparisons the demo wrote (spec §14): data about the conversation, not cards of their own
@@ -5988,7 +6012,8 @@ async function importZip(buf, { memory = true, reuse = false } = {}) {
   if (offers.length && confirm(`This file holds instructions for ${offers.length === 1 ? 'a helper task' : `${offers.length} helper tasks`}, as an Export all does: ${named}.\n\nUse ${offers.length === 1 ? 'them' : 'these'}? Every later call for ${offers.length === 1 ? 'that task' : 'those tasks'} follows them, instead of ${offers.map(x => promptFor(x.task).id).join(', ')}, and they go to the model with your messages.\n\nOK uses them. Cancel keeps yours.`)) {
     for (const x of offers) {
       const had = db.prompts[x.task];
-      db.prompts[x.task] = { text: x.text, version: had && String(had.version) === x.version ? nextPromptVersion(x.task) : x.version, at: x.at || Date.now(), ...(x.by ? { by: x.by } : {}) };
+      const version = had && String(had.version) === x.version ? nextPromptVersion(x.task) : x.version, history = historyWith(x.task, x.history).filter(h => String(h.version) !== version);
+      db.prompts[x.task] = { text: x.text, version, at: x.at || Date.now(), ...(x.by ? { by: x.by } : {}), ...(history.length ? { history } : {}) };
     }
     tasks = offers.length; fillPrompts();
   }
