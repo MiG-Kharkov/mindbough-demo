@@ -648,7 +648,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.11.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 8689bff'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 0efb407'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1072,9 +1072,10 @@ function md(src) {
     const math = [], PH = 'MATHPH' + uid().replace(/[^a-z0-9]/gi, '') + 'N'; // a token per render, which no text can forge
     const put = (tex, display) => { math.push({ tex, display }); return `${PH}${math.length - 1}Z`; };
     // (inline $…$ avoids regex lookbehind, which is a syntax error before iOS 16.4 and would stop the whole app)
-    s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_, t) => put(t, true))
-         .replace(/\\\[([\s\S]+?)\\\]/g, (_, t) => put(t, true))
-         .replace(/\\\(([\s\S]+?)\\\)/g, (_, t) => put(t, false))
+    // \[…\] and \(…\) by a scan, not a lazy regex: with no closer, each opener would scan to the end, and a long text of openers
+    // froze the app for minutes at every start; with no closer after one opener there is none after the later ones either
+    const pairs = (t, a, z, display) => { let out = '', i = 0; for (;;) { const j = t.indexOf(a, i); if (j < 0) break; const k = t.indexOf(z, j + a.length + 1); if (k < 0) break; out += t.slice(i, j) + put(t.slice(j + a.length, k), display); i = k + z.length; } return out + t.slice(i); };
+    s = pairs(pairs(s.replace(/\$\$([\s\S]+?)\$\$/g, (_, t) => put(t, true)), '\\[', '\\]', true), '\\(', '\\)', false)
          .replace(/(^|[^\\$\w])\$(?![\s$])([^$\n]*?[^\s\\$])\$(?![\w$])/g, (_, pre, t) => pre + put(t, false));
     s = s.replace(/\u0001C(\d+)\u0001/g, (_, i) => code[i]);
     // 3) markdown → sanitized HTML, then our own Copy buttons
@@ -3382,6 +3383,7 @@ function cleanImages(list) {
 // a session's attachments: only images whose file name, hash and type agree (S7)
 const imagesFrom = list => cleanImages((Array.isArray(list) ? list : []).map(x => { const f = x && typeof x === 'object' && /^\/sessions\/files\/([0-9a-f]{64})\.[a-z0-9]{1,5}$/.exec(String(x.resource || '')); return f && f[1] === x.sha256 ? { sha256: f[1], mime: x.mime, bytes: x.bytes, w: x.width, h: x.height, alt: x.alt } : null; }));
 const b64Bytes = t => { try { const bin = atob(t); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; } catch (e) { return null; } };
+const bytesB64 = u => { let t = ''; for (let i = 0; i < u.length; i += 0x8000) t += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(t); };
 const b64Of = data => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).slice(String(fr.result).indexOf(',') + 1)); fr.onerror = () => rej(fr.error); fr.readAsDataURL(new Blob([data])); });
 // the files of an import, kept only when their bytes are the image their name says (S7, spec §10.6)
 async function verifiedImages(pics) {
@@ -3421,6 +3423,9 @@ function itemIdOf(x) {
   return x.itemId;
 }
 function decisionsIn(c) { return Object.values(c.messages).filter(m => m.flagged && m.decision && m.decision.summary && !droppedAt(c, m.branchId)).sort((a, b) => a.ts - b.ts); }
+// the other settled ground: accepted Constraints and Assumptions of an opened Thinking State, in force as its files say, without a
+// flag of their own (spec §13: In force)
+function groundIn(c) { return Object.values(c.messages).filter(m => m.node && ['Constraint', 'Assumption'].includes(m.node.type) && m.node.status === 'accepted' && !droppedAt(c, m.branchId)).sort((a, b) => a.ts - b.ts); }
 // { kind, label, text } blocks sent as the system instruction, in this order
 function systemBlocks(c, skip) {
   const blocks = [];
@@ -3428,7 +3433,8 @@ function systemBlocks(c, skip) {
   if (memory.length) blocks.push({ kind: 'memory', label: `Memory · ${memory.length}`, text: 'Things to remember about the user and their work (shared by all conversations):\n' + memory.map(x => `- ${x.text}`).join('\n'), items: memory.map(itemIdOf) });
   // an answer written again gets neither its own decision nor those made further down its branch: they grew from what is replaced
   const decisions = decisionsIn(c).filter(m => !skip || (m.id !== skip && !pathIds(c, m.id).includes(skip)));
-  if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions made in this conversation:\n' + decisions.map(m => decisionLine(m.decision)).join('\n'), ids: decisions.map(m => m.id) });
+  const ground = groundIn(c).filter(m => !skip || !pathIds(c, m.id).includes(skip)), n = decisions.length + ground.length;
+  if (n) blocks.push({ kind: 'decisions', label: `Decisions · ${n}`, text: 'Decisions made in this conversation:\n' + decisions.map(m => decisionLine(m.decision)).concat(ground.map(m => `- ${m.node.type}: ${m.node.description || m.node.title}`)).join('\n'), ids: decisions.concat(ground).map(m => m.id) });
   if (blocks.length) blocks.unshift({ kind: 'harness', label: 'Harness', text: HARNESS });
   return blocks;
 }
@@ -4119,6 +4125,7 @@ const WHATS_NEW = [
     'Your own data as written and whole: a decision keeps its Markdown and all its details after an update, and no longer reads as changed; every refreshed comparison stays; a memory draft never reaches a shared page, also from an older export.',
     'Fixed: with the question excluded, no path answers it again; an unused Branch out is never saved; Undo of a delete works when what you deleted was streaming; a double tap on Send no longer stops its answer.',
     'Two tabs answering one conversation keep both answers; a tab opened while another streams shows that answer as being answered there.',
+    'An agent\'s decisions in an opened Thinking State are in force, and every file of it comes back as it was, binary files too; hostile zips are bounded by what they hold.',
     'A choice records what it was made among, so a branch or an option added later is never "Not chosen"; Compare and Choose wait for the options\' answers.',
     'Each text shows once among an answer\'s versions, a restored one as Current; an open edit keeps its text when you leave its conversation and come back.',
   ] },
@@ -4280,7 +4287,7 @@ async function exportAllStates() {
     for (let k = 2; used.has(folder); k++) folder = `${slug(c.title) || 'conversation'}-${k}`;
     used.add(folder);
     const out = thinkingStateFiles(c, true, false, true);
-    out.files.forEach(f => files.push({ name: folder + f.name.slice(f.name.indexOf('/')), text: f.text }));
+    out.files.forEach(f => files.push({ ...f, name: folder + f.name.slice(f.name.indexOf('/')) })); // a kept file may be bytes
     files.push(...await imageFiles(c, folder));
     latest = Math.max(latest, Date.parse(out.at) || 0);
   }
@@ -4415,7 +4422,11 @@ function metaDoc(meta, body) {
   return out.concat('---', '', body || '').join('\n').trimEnd() + '\n';
 }
 function mergeDoc(k, now, own) {
-  if (now === k.was) return k.text;
+  // unchanged here: the file as it came; but a manifest of a copy ("… (imported)") has its own id and title, which the file as
+  // it came doesn't say, so it is merged like a changed one
+  const moved = () => { const a = frontmatter(k.text), n = frontmatter(now), ta = a && objOf(a.meta.thinking) ? a.meta.thinking : {}, tn = n && objOf(n.meta.thinking) ? n.meta.thinking : {};
+    return !!(a && n) && (a.meta.title !== n.meta.title || ta.id !== tn.id || ta.root !== tn.root); };
+  if (now === k.was && !(own && moved())) return k.text;
   const o = frontmatter(k.text), w = frontmatter(k.was), n = frontmatter(now);
   if (!o || !w || !n) return now;
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -4466,14 +4477,16 @@ function mergeLines(k, now) {
   return lines.join('\n') + '\n';
 }
 // What to keep of a Thinking State just opened: its files beside what the demo writes for the conversation it became
-function keepOf(r, files, c) {
+function keepOf(r, files, c, bins = []) {
   const now = new Map(thinkingStateFiles(c, true).files.map(f => [f.name.slice(f.name.indexOf('/') + 1), f.text]));
   const keep = {}, nodes = {}, other = {};
   // the session the conversation was read from is its own, also when a copy gets a new session id; a manifest the demo wrote
   // says nothing the demo won't write again
   const read = files.find(f => f.name.startsWith(r.dir) && /^sessions\/[0-9]{8}-[0-9a-z]{6}\.jsonl$/.test(f.name.slice(r.dir.length)));
   const session = read ? read.name.slice(r.dir.length) : `sessions/${c.sessionId}.jsonl`, demoMade = /^mindbough-demo\//.test(String(objOf(r.fm.meta.generated) ? r.fm.meta.generated.by : ''));
-  let room = 4e6; const fits = (...t) => (room -= t.reduce((n, x) => n + x.length, 0)) >= 0;
+  // what another tool wrote is kept within a bound: a file that doesn't fit is left out alone, never the files after it; the session
+  // has its own bound, the reader's
+  let room = 3e7; const fits = (...t) => { const n = t.reduce((k, x) => k + x.length, 0); if (n > room) return false; room -= n; return true; };
   for (const f of files) {
     if (!f.name.startsWith(r.dir)) continue;
     const p = f.name.slice(r.dir.length), was = now.get(p);
@@ -4482,8 +4495,8 @@ function keepOf(r, files, c) {
       // (a copy has a session of its own: there, the lines of kinds the demo doesn't read)
       const ids = new Set(was === undefined ? [] : was.split('\n').map(lineId)), other = e => !['message', 'branch', 'call'].includes(e.kind) && !(e.kind === 'tool' && e.tool === 'web_search');
       const lines = f.text.split('\n').filter(l => { const id = lineId(l); if (typeof id !== 'string' || !id) return false; if (was !== undefined) return !ids.has(id); try { return other(JSON.parse(l)); } catch (x) { return false; } });
-      if (lines.length && fits(...lines)) keep.lines = lines;
-      if (was !== undefined && fits(f.text, was)) keep.session = { text: f.text, was };
+      if (lines.length) keep.lines = lines;
+      if (was !== undefined) keep.session = { text: f.text, was };
       continue;
     }
     const pair = was !== undefined && fits(f.text, was) ? { text: f.text, was } : null;
@@ -4494,6 +4507,10 @@ function keepOf(r, files, c) {
   if (!read && now.has(session) && fits(now.get(session))) keep.session = { text: '', was: now.get(session) }; // it came with none: none while nothing is said here
   if (Object.keys(nodes).length) keep.nodes = nodes;
   if (Object.keys(other).length) keep.files = other;
+  // its files the demo doesn't read, a PDF, a memory item's file, .gitattributes, as their bytes (base64 in the stored record)
+  const bin = {};
+  for (const f of bins) { if (!f.name.startsWith(r.dir)) continue; const b64 = bytesB64(f.bytes); if (fits(b64)) bin[f.name.slice(r.dir.length)] = b64; }
+  if (Object.keys(bin).length) keep.bin = bin;
   return Object.keys(keep).length ? keep : null;
 }
 // A session line's entry id, '' for the header, null for a line that isn't an entry
@@ -4563,11 +4580,15 @@ function bundleFilesOf(c, quiet, mine, all) {
     const renamedCard = nd && title !== nd.title, cardRevs = renamedCard && nd.by ? [{ title: whole(String(nd.title).slice(0, 120)), generated: { by: nd.by, ...(nd.at ? { at: nd.at } : {}) } }] : [];
     const revs = nd ? cardRevs : [...titles.map(x => ({ title: whole(String(x.title).slice(0, 120)), generated: { by: x.by || 'human:me', at: iso(x.at) } })), ...firstLines]
       .sort((x, y) => (x.generated.at < y.generated.at ? 1 : x.generated.at > y.generated.at ? -1 : 0)).slice(0, 10);
+    // a Decision's card is its node: unflag it and the node is parked, flag it again and it is accepted, reword it and the node says
+    // so (spec §7.1); a card you didn't touch writes its node as it came
+    const cardDec = nd && nd.type === 'Decision' ? own : null, cardFlag = cardDec ? (cardDec.flagged ? (nd.status === 'parked' ? 'accepted' : nd.status) : nd.status === 'accepted' ? 'parked' : nd.status) : null;
+    const cardWords = cardDec && cardDec.decision && cardDec.decision.summary && cardDec.decision.summary !== asRead(nd.description || nd.title) ? cardDec.decision.summary : '';
     const wordedAt = Math.max((isRoot ? c.namedAt || c.created : b.namedAt || b.created) || 0, firstLines.length ? lead.editedAt || lead.ts || 0 : 0);
     nodes.push({ id, type: nd ? nd.type : isRoot && c.rootType ? c.rootType : 'Thought', title: whole((title || id).slice(0, 120)),
       ...(nd ? (renamedCard ? { generated: { by: nameByOf(b), at: iso(b.namedAt || b.created) } } : {}) : { generated: { by: titleBy, at: iso(wordedAt) } }), ...(revs.length ? { revisions: revs } : {}),
-      description: nd ? nd.description || nd.title : eo ? `Edited version of: ${snippetOf(eo.text, 200)}` : desc0,
-      status: nd ? (b.parentId && statusOf(b) !== (cardStatus || 'open') ? statusOf(b) : nd.status) : b.parentId ? statusOf(b) : 'open', links: nd ? nd.links : null, parent: b.parentId ? byBranch[b.parentId] : null, sources: [{ resource: b.parentId ? `/${session}#br${b.id}` : b.msgIds[0] ? `/${session}#${b.msgIds[0]}` : `/${session}`, title: 'Where this branch starts in the session' }],
+      description: nd ? cardWords || nd.description || nd.title : eo ? `Edited version of: ${snippetOf(eo.text, 200)}` : desc0,
+      status: nd ? (b.parentId && statusOf(b) !== (cardStatus || 'open') ? statusOf(b) : cardFlag || nd.status) : b.parentId ? statusOf(b) : 'open', links: nd ? nd.links : null, parent: b.parentId ? byBranch[b.parentId] : null, sources: [{ resource: b.parentId ? `/${session}#br${b.id}` : b.msgIds[0] ? `/${session}#${b.msgIds[0]}` : `/${session}`, title: 'Where this branch starts in the session' }],
       body: msgs.length ? `## Conversation\n\n${transcript(b.msgIds)}` : '' });
     // a flag is an open Decision, a summary accepts it, and an unflagged one keeps its summary as a parked Decision (spec §7.1)
     for (const m of msgs.filter(x => x !== own && (x.flagged || (x.decision && x.decision.summary)))) {
@@ -4677,7 +4698,7 @@ function bundleFilesOf(c, quiet, mine, all) {
     return { id: iid, title: itemTitle(x, text), description: text, at: iso(x.at), sources, thinking: memThinking(x), ...(x.by ? { by: x.by } : {}), fact: x };
   }).sort((a, b) => (a.id < b.id ? -1 : 1));
   const kids = {}; nodes.forEach(n => { if (n.parent) (kids[n.parent] = kids[n.parent] || []).push(n); });
-  const tree = [], walked = new Set(); const walk = (n, d) => { if (walked.has(n.id)) return; walked.add(n.id); tree.push(`${'  '.repeat(d)}* [${n.title.replace(/[[\]]/g, '')}](${n.id}.md) - ${n.type} · ${n.status}: ${n.description}`); (kids[n.id] || []).forEach(k => walk(k, d + 1)); };
+  const tree = [], walked = new Set(); const walk = (n, d) => { if (walked.has(n.id)) return; walked.add(n.id); tree.push(`${'  '.repeat(d)}* [${n.title.replace(/[[\]]/g, '')}](${n.id}.md) - ${n.type} · ${n.status}: ${n.description}`); (kids[n.id] || []).slice().sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0)).forEach(k => walk(k, d + 1)); }; // siblings in id order, as mb.py writes them (spec §5.2)
   walk(root, 0);
   const about = root.description && !/^An? (empty )?branch\.$/.test(root.description) ? root.description : 'A conversation in the Mindbough demo.'; // what it is about: its question
   const files = [
@@ -4695,7 +4716,7 @@ function bundleFilesOf(c, quiet, mine, all) {
   if (c.keep && !mine) keepIn(c.keep, files, all); // the demo's own storage keeps its own files, and what was kept beside them (F-17)
   if (!mine) files.forEach(f => { if (/^sessions\/[^/]+\.jsonl$/.test(f.name)) f.text = privateOut(f.text); }); // last, so kept lines go through it too
   if (given && !quiet) save(); // the new ids are kept for the next export
-  return { folder, at, given, files: files.map(f => ({ name: `${folder}/${f.name}`, text: f.text })) };
+  return { folder, at, given, files: files.map(f => ({ ...f, name: `${folder}/${f.name}` })) };
 }
 // What was kept of another tool's Thinking State goes back into its files
 function keepIn(k, files, all) {
@@ -4710,13 +4731,15 @@ function keepIn(k, files, all) {
   for (const [name, text] of Object.entries(k.files || {})) {
     const item = name.match(/^memory\/([0-9]{8}-[0-9a-z]{6})\.md$/);
     if (item && home.has(item[1])) continue; // the fact is in home/memory: one copy
-    if (!at.has(name)) { files.push({ name, text }); continue; }
+    // a file the demo doesn't write goes where it would be: a memory item after the other memory files, in order
+    if (!at.has(name)) { let mi = -1; if (item) files.forEach((f, i) => { if (/^memory\//.test(f.name)) mi = i; }); if (mi >= 0) files.splice(mi + 1, 0, { name, text }); else files.push({ name, text }); at.clear(); files.forEach((f, i) => at.set(f.name, i)); continue; }
     const mine = files[at.get(name)];
     if (name === '.gitignore') { mine.text = text; continue; } // what its author ignores is theirs to say
     // a fact of this conversation that you kept as it came keeps its file, tags and author too
     const a = item && frontmatter(text), b = item && frontmatter(mine.text);
     if (a && b && a.meta.description === b.meta.description) mine.text = text;
   }
+  for (const [name, b64] of Object.entries(objOf(k.bin) ? k.bin : {})) { const data = typeof b64 === 'string' && b64Bytes(b64); if (data && !at.has(name)) files.push({ name, data }); }
   // the indexes say what the files now say: each node's line, the manifest's description, how many memory items
   const fmOf = name => { const f = files.find(x => x.name === name); return f ? frontmatter(f.text) : null; };
   const tree = files.find(f => f.name === 'nodes/index.md');
@@ -4765,7 +4788,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       return mine && !b.omitted && b.text ? { ...out, ...refs, text: b.text } : { ...out, ...refs, omitted: true };
     }
     if (b.kind === 'decisions') { // the decisions sent, by their messages: a summary edited since still names its Decision (spec §10.4)
-      const ids = Array.isArray(b.ids) ? b.ids.map(id => c.messages[id] && c.messages[id].nodeId).filter(Boolean)
+      const ids = Array.isArray(b.ids) ? b.ids.map(id => c.messages[id] && (c.messages[id].nodeId || (c.messages[id].node && c.messages[id].node.id))).filter(Boolean)
         : Array.isArray(b.nodes) ? b.nodes.filter(id => TS_ID.test(id))
         : (b.text || '').split('\n').filter(l => l.startsWith('- ')).map(l => decisionOf.get(l.slice(2))).filter(Boolean);
       return { ...out, ...(ids.length ? { nodes: [...new Set(ids)] } : {}), ...(b.text ? { text: b.text } : {}) };
@@ -4889,29 +4912,46 @@ const wroteOf = n => { const g = n.meta.generated, by = g && typeof g === 'objec
 // a value from a file that the demo only writes back and never shows: a plain JSON copy, or null when it is too big
 const jsonOf = (v, max) => { try { const t = JSON.stringify(v); return t && t.length <= max ? JSON.parse(t) : null; } catch (e) { return null; } };
 // Reads the text files of a .zip (stored or deflated entries) with the browser's own inflater
+// What a zip may hold, by what its entries hold once inflated (a zip may claim a small size and hold a bomb): a text file 5 MB, a
+// session 100 MB, an image 20 MB, another file 20 MB, 5,000 images, and 300 MB in all. What goes past them is named in the toast
+const UNZIP = { text: 5e6, session: 1e8, image: 2e7, file: 2e7, images: 5000, total: 3e8 };
+async function inflated(data, method, max) {
+  if (method === 0) return data.length <= max ? data : null;
+  if (method !== 8) return null;
+  const rd = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader(), parts = [];
+  let n = 0;
+  for (;;) { const { value, done } = await rd.read(); if (done) break; n += value.length; if (n > max) { rd.cancel().catch(() => {}); return null; } parts.push(value); }
+  const out = new Uint8Array(n); let o = 0; for (const x of parts) { out.set(x, o); o += x.length; }
+  return out;
+}
 async function unzipText(buf) {
-  const u8 = new Uint8Array(buf), dv = new DataView(buf), dec = new TextDecoder(), out = [], images = [];
-  let eocd = -1;
+  const u8 = new Uint8Array(buf), dv = new DataView(buf), dec = new TextDecoder(), out = [], images = [], bins = [], skipped = [];
+  let eocd = -1, total = 0;
   for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
   if (eocd < 0) throw new Error('This is not a readable .zip file');
   const count = dv.getUint16(eocd + 10, true);
   let p = dv.getUint32(eocd + 16, true);
-  for (let n = 0; n < Math.min(count, 5000); n++) {
+  for (let n = 0; n < Math.min(count, 20000); n++) {
     if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('This .zip file is damaged');
-    const method = dv.getUint16(p + 10, true), size = dv.getUint32(p + 20, true), full = dv.getUint32(p + 24, true), off = dv.getUint32(p + 42, true);
+    const method = dv.getUint16(p + 10, true), size = dv.getUint32(p + 20, true), off = dv.getUint32(p + 42, true);
     const nlen = dv.getUint16(p + 28, true), name = dec.decode(u8.subarray(p + 46, p + 46 + nlen));
     p += 46 + nlen + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
-    // only Markdown, sessions and the images attached to messages matter; skip folders, macOS resource forks and anything suspiciously large
-    const pic = /(^|\/)sessions\/files\/[0-9a-f]{64}\.[a-z0-9]{1,5}$/.test(name);
-    if ((!pic && !/\.md$|(^|\/)sessions\/[^/]+\.jsonl$|(^|\/)\.gitignore$/i.test(name)) || /(^|\/)(__MACOSX\/|\._)/.test(name) || full > (pic ? 2e7 : 5e6) || (pic && images.length >= 500)) continue;
+    if (name.endsWith('/') || /(^|\/)(__MACOSX\/|\._|\.DS_Store$)/.test(name)) continue; // folders and macOS's own files
+    // a name that climbs out of its folder, or starts at a root, is no file of a bundle: it would land elsewhere when unzipped
+    if (name.split(/[\\/]/).includes('..') || /\\|^\/|^[A-Za-z]:/.test(name)) { skipped.push(`${name} (outside its folder)`); continue; }
+    const pic = /(^|\/)sessions\/files\/[0-9a-f]{64}\.[a-z0-9]{1,5}$/.test(name), text = /\.md$|(^|\/)sessions\/[^/]+\.jsonl$|(^|\/)\.gitignore$/i.test(name);
+    const max = pic ? UNZIP.image : /\.jsonl$/.test(name) ? UNZIP.session : text ? UNZIP.text : UNZIP.file;
+    if (pic && images.length >= UNZIP.images) { skipped.push(`${name} (over ${UNZIP.images} images)`); continue; }
     const start = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true), data = u8.subarray(start, start + size);
-    let bytes = null;
-    if (method === 0) bytes = data;
-    else if (method === 8) bytes = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
-    if (bytes && pic) images.push({ name, bytes: bytes.slice() });
-    else if (bytes) out.push({ name, text: dec.decode(bytes) });
+    const bytes = await inflated(data, method, Math.min(max, UNZIP.total - total));
+    if (!bytes) { skipped.push(`${name} (${method === 0 || method === 8 ? 'too large' : 'compressed in a way this browser can’t read'})`); continue; }
+    total += bytes.length;
+    if (pic) images.push({ name, bytes: bytes.slice() });
+    else if (text) out.push({ name, text: dec.decode(bytes) });
+    else bins.push({ name, bytes: bytes.slice() }); // another tool's file the demo doesn't read: kept as its bytes (F-26)
   }
-  out.images = images; // the bytes, beside the text files
+  if (count > 20000) skipped.push(`${count - 20000} more files`);
+  out.images = images; out.bins = bins; out.skipped = skipped; // beside the text files
   return out;
 }
 // YAML is needed only for Thinking States, so the reader is loaded (pinned by its hash) on the first zip import
@@ -5061,16 +5101,21 @@ function frontmatter(text) {
 const needsYaml = text => { const m = text.match(FM_RE); if (!m) return false; try { ymlRead(m[1]); return false; } catch (e) { return true; } };
 if (BUILD.startsWith('__')) window.__mbTest = { ymlRead, yq, nodeDoc, nativeRecord: () => nativeRecord(), db: () => JSON.parse(JSON.stringify(db)) }; // local builds only: the e2e tests reach the pure functions
 async function openThinkingStates(buf) { // a .zip, or the files a shared page holds
-  const files = Array.isArray(buf) ? buf.filter(f => f && typeof f.name === 'string' && typeof f.text === 'string').slice(0, 5000) : await unzipText(buf);
+  const files = Array.isArray(buf) ? buf.filter(f => f && typeof f.name === 'string' && typeof f.text === 'string').slice(0, 20000) : await unzipText(buf);
+  // another tool's files the demo doesn't read, as bytes: from a zip, or from a shared page in base64 (its images aside)
+  const bins = Array.isArray(buf) ? buf.filter(f => f && typeof f.name === 'string' && typeof f.b64 === 'string' && !/(^|\/)sessions\/files\//.test(f.name)).map(f => ({ name: f.name, bytes: b64Bytes(f.b64) })).filter(f => f.bytes) : files.bins || [];
   let noYaml = null; // offline, the YAML reader can't load: say so rather than "no Thinking State"
   if (!window.jsyaml && files.some(f => /\.md$/.test(f.name) && needsYaml(f.text))) await loadYaml().catch(err => { noYaml = err; });
   const convos = files.filter(f => /(^|\/)README\.md$/.test(f.name)).map(f => ({ dir: f.name.slice(0, -'README.md'.length), fm: frontmatter(f.text) }))
     .filter(r => r.fm && r.fm.meta.type === 'Thinking State' && r.fm.meta.thinking && r.fm.meta.thinking.root)
-    .map(r => { const c = bundleToConvo(r, files); if (c) c.from = { r, files }; return c; }).filter(Boolean);
+    // a bundle whose session was too large to read doesn't open as cards, as if it had none: it is named in the toast instead
+    .filter(r => !(files.skipped || []).some(x => x.startsWith(`${r.dir}sessions/`) && / \(too large\)$/.test(x) && /\.jsonl /.test(x)))
+    .map(r => { const c = bundleToConvo(r, files); if (c) c.from = { r, files, bins }; return c; }).filter(Boolean);
   convos.home = homeFacts(files);
   // the images: a zip's files, or a shared page's, in base64
   convos.images = await verifiedImages(Array.isArray(buf) ? buf.filter(f => f && typeof f.name === 'string' && typeof f.b64 === 'string').slice(0, 500).map(f => ({ name: f.name, bytes: b64Bytes(f.b64) })).filter(f => f.bytes) : files.images || []);
   convos.unread = files.filter(f => /\.md$/.test(f.name) && FM_RE.test(f.text) && !frontmatter(f.text)).map(f => f.name); // named in the toast
+  convos.skipped = files.skipped || [];
   if (!convos.length && !convos.home.length && noYaml) throw noYaml;
   return convos;
 }
@@ -5299,9 +5344,16 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     const node = nodes.get(nid), t = th(node), type = nodeType(node.meta.type), status = TS_STATUSES.includes(t.status) ? t.status : 'open';
     const host = above(nid).find(x => cardAt.has(x) || (withEntries.has(x) && convo.branches[bidOf(x)]));
     const parent = host ? cardAt.get(host) || bidOf(host) : convo.root, ids = convo.branches[parent].msgIds, bid = freshBid('b' + nid), mid = 'm' + nid;
+    // a card is a view of its node (2026-10-03): a Decision another tool added is in force as the file says, as in a bundle without a
+    // session (bundleToConvo), and its status is its branch's, so what is under a dropped node leaves the prompts (spec §7.1, §13)
+    const desc = String(node.meta.description || ''), det = detailsIn(node.body), accepted = type === 'Decision' && status === 'accepted', parked = type === 'Decision' && status === 'parked';
+    const history = (Array.isArray(t.revisions) ? t.revisions : []).filter(r => isObj(r) && r.description).slice(0, 10).map(r => ({ summary: asRead(r.description), ...(detailsIn(r.body).length ? { details: detailsIn(r.body) } : {}), at: time(isObj(r.generated) ? r.generated.at : null, now) }));
     convo.messages[mid] = { id: mid, role: 'user', text: [`**${type} · ${status}** — ${String(node.meta.title || nid)}`, node.meta.description ? `_${node.meta.description}_` : '', node.body].filter(Boolean).join('\n\n'), branchId: bid, ts: now,
-      node: { id: nid, type, status, title: String(node.meta.title || nid), description: String(node.meta.description || ''), ...wroteOf(node), links: Object.fromEntries(TS_LINKS.filter(k => Array.isArray(t[k])).map(k => [k, t[k].map(String).filter(x => TS_ID.test(x))])) } };
-    convo.branches[bid] = { id: bid, parentId: parent, forkMsgId: ids.length ? ids[ids.length - 1] : null, msgIds: [mid], name: String(node.meta.title || nid).slice(0, 60), created: now, ...(['rejected', 'superseded', 'parked'].includes(status) ? { collapsed: true } : {}) };
+      node: { id: nid, type, status, title: String(node.meta.title || nid), description: desc, ...wroteOf(node), links: Object.fromEntries(TS_LINKS.filter(k => Array.isArray(t[k])).map(k => [k, t[k].map(String).filter(x => TS_ID.test(x))])) },
+      ...(accepted || (type === 'Decision' && status === 'open') ? { flagged: true } : {}),
+      ...(accepted || parked ? { decision: { summary: asRead(desc || node.meta.title || nid), ...(det.length ? { details: det } : {}), at: now, ...(history.length ? { history } : {}) } } : {}) };
+    convo.branches[bid] = { id: bid, parentId: parent, forkMsgId: ids.length ? ids[ids.length - 1] : null, msgIds: [mid], name: whole(String(node.meta.title || nid).slice(0, 60)), created: now, ...(['rejected', 'superseded', 'parked'].includes(status) ? { collapsed: true } : {}),
+      ...(['accepted', 'parked', 'rejected', 'superseded'].includes(status) ? { status: status === 'superseded' ? 'rejected' : status } : {}) };
     cardAt.set(nid, bid);
   }
   return convo;
@@ -5374,6 +5426,7 @@ async function exportReadOnly(id) {
   // its Thinking State as Export all writes it: none of your facts, no memory text, another tool's files as they were (F-14, F-23),
   // and its images in base64 (F-36)
   const { folder, at: made, files } = thinkingStateFiles(c, false, false, true);
+  for (const f of files) if (f.data) { f.b64 = await b64Of(f.data); delete f.data; } // another tool's files as their bytes
   for (const f of await imageFiles(c, folder)) files.push({ name: f.name, b64: await b64Of(f.data) });
   const json = JSON.stringify({ title: c.title, folder, at: made, files }).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   const S = 'scr' + 'ipt';
@@ -5588,11 +5641,13 @@ function adoptConvo(src) {
   db.order.unshift(c.id);
   return c.id;
 }
-function finishImport(added, failed, sources, facts = 0, left = 0, again = 0, unread = []) {
+function finishImport(added, failed, sources, facts = 0, left = 0, again = 0, unread = [], skipped = []) {
   const odd = unread.length ? `. Couldn’t read ${unread.length === 1 ? unread[0].split('/').slice(-2).join('/') : `${unread.length} files, such as ${unread[0].split('/').slice(-2).join('/')}`}: kept as ${unread.length === 1 ? 'it is' : 'they are'}, not shown` : '';
   // without IndexedDB this browser can't keep images: an import that brings some says so (F-17, F-36)
   const pics = storage !== 'IndexedDB' && added.some(id => db.convos[id] && Object.values(db.convos[id].messages).some(m => imgsOf(m).length));
-  const odd2 = odd + (pics ? '. Its images are shown now, but this browser doesn’t keep them: they go after a reload' : '');
+  // what the zip held that wasn't imported is named, never dropped without a word (F-13, F-26)
+  const odd2 = odd + (skipped.length ? `. Not imported: ${skipped.slice(0, 2).join(', ')}${skipped.length > 2 ? ` and ${skipped.length - 2} more` : ''}` : '')
+    + (pics ? '. Its images are shown now, but this browser doesn’t keep them: they go after a reload' : '');
   if (added.length && again === added.length && !facts) { // everything was here already, unchanged
     db.order = added.concat(db.order.filter(id => !added.includes(id))); db.current = added[0];
     save(); renderAll(false); $('#sidebar').classList.remove('open');
@@ -5660,31 +5715,31 @@ async function importZip(buf, { memory = true, reuse = false } = {}) {
     }
   } else left = n;
   // what the demo doesn't write the same of each Thinking State opened, with its facts now yours or not
-  for (const [from, id] of opened) { try { const k = keepOf(from.r, from.files, db.convos[id]); if (k) db.convos[id].keep = k; } catch (err) { console.error(err); } }
+  for (const [from, id] of opened) { try { const k = keepOf(from.r, from.files, db.convos[id], from.bins); if (k) db.convos[id].keep = k; } catch (err) { console.error(err); } }
   // a memory item that is now one of your facts is yours: kept as its file, it would come back after you forget it
   for (const id of added) { const k = db.convos[id] && db.convos[id].keep; if (k && k.files) for (const p of Object.keys(k.files)) { const m = p.match(/^memory\/([0-9]{8}-[0-9a-z]{6})\.md$/); if (m && db.memory.some(x => x.itemId === m[1])) delete k.files[p]; } }
-  return { added, failed, facts, left, again, unread: convos.unread || [] };
+  return { added, failed, facts, left, again, unread: convos.unread || [], skipped: convos.skipped || [] };
 }
 $('#importFile').addEventListener('change', async e => {
   const files = [...e.target.files]; e.target.value = ''; const was = db.convos[db.current];
-  let added = [], failed = 0, facts = 0, left = 0, again = 0, unread = [];
+  let added = [], failed = 0, facts = 0, left = 0, again = 0, unread = [], skipped = [];
   for (const f of files) {
     try {
       const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
       if (head[0] === 0x50 && head[1] === 0x4b && head[2] === 3 && head[3] === 4) { // "PK\3\4": a zip, so Thinking States
         const r = await importZip(await f.arrayBuffer());
-        added = added.concat(r.added); failed += r.failed; facts += r.facts; left += r.left; again += r.again; unread = unread.concat(r.unread);
+        added = added.concat(r.added); failed += r.failed; facts += r.facts; left += r.left; again += r.again; unread = unread.concat(r.unread); skipped = skipped.concat(r.skipped || []);
         continue;
       }
       const list = parseImport(await f.text());
-      if (list.files) { const r = await importZip(list.files); added = added.concat(r.added); failed += r.failed; facts += r.facts; left += r.left; again += r.again; unread = unread.concat(r.unread); continue; }
+      if (list.files) { const r = await importZip(list.files); added = added.concat(r.added); failed += r.failed; facts += r.facts; left += r.left; again += r.again; unread = unread.concat(r.unread); skipped = skipped.concat(r.skipped || []); continue; }
       list.forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; }); facts += mergeMemory(list.memory);
     }
     catch (err) { failed++; toast(err.message || 'Import failed'); }
   }
   // an empty conversation you were in (a New conversation never written in) gives way to what you imported, as it does for a sample
   if (added.length && was && db.convos[was.id] && !added.includes(was.id) && was.title === NEW_TITLE && !Object.keys(was.messages).length && Object.keys(was.branches).length === 1 && !typedIn(was.id)) { delete db.convos[was.id]; db.order = db.order.filter(id => id !== was.id); }
-  finishImport(added, failed, files.length, facts, left, again, unread);
+  finishImport(added, failed, files.length, facts, left, again, unread, skipped);
 });
 // The samples (F-18): Thinking States recorded in the demo with answers written for them (the models' replies are scripted, and
 // token counts estimated from their length), published next to the app and opened like any other, so everything they hold
