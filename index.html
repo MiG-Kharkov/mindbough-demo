@@ -648,7 +648,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.11.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 0315e95'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 8689bff'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1560,6 +1560,9 @@ $('#canvas').addEventListener('click', async e => {
     return;
   }
   if (act === 'flag') {
+    // a choice replaced by a later one at its fork can't come back by a flag, or two choices would be in force: one per fork (F-28)
+    const by = !m.flagged && m.decision && m.decision.replacedBy && c.messages[m.decision.replacedBy];
+    if (by && by.flagged) { toast(`Replaced by “${snippetOf(by.decision.summary, 60)}”: choose it again in Compare`); return; }
     m.flagged = !m.flagged;
     // a flag makes the message a decision; its summary, a sentence and its details, is what later prompts carry (unflag keeps the text)
     if (m.flagged) { if (!m.decision) m.decision = { summary: '', at: Date.now() }; delete m.decision.replacedBy; if (!m.decision.summary) summarize(c, m); }
@@ -2371,8 +2374,12 @@ function compareKids(c, m) {
 // follow-up, not an alternative), else every branch that continues from it (F-28)
 function forkAlts(c, m) { const kids = compareKids(c, m); return kids.some(k => k.option) ? kids.filter(k => k.option) : kids; }
 // …and those the choice made at the fork was made among: a branch opened after it is not one of them
+// …and those the choice made at the fork was made among. A choice records them (over, chosenAt), so a branch opened after it, or
+// an option added later, is never one of them; a choice of 0.11 or earlier, made without that record, keeps the rule it had
 function choiceAlts(c, m) {
-  const cmp = m.compare, at = choiceAt(c, m);
+  const cmp = m.compare;
+  if (cmp && cmp.chosen && Array.isArray(cmp.over)) { const set = new Set([cmp.chosen, ...cmp.over]); return compareKids(c, m).filter(k => set.has(k.id)); }
+  const at = choiceAt(c, m);
   return forkAlts(c, m).filter(k => !at || k.id === cmp.chosen || (k.created || 0) <= at);
 }
 // when the choice at a fork was made: the first wording of its decision ("Chose …"), which edits keep in its history
@@ -2411,13 +2418,14 @@ function renderCompare() {
   const c = db.convos[cmpView.cid], m = c && c.messages[cmpView.mid];
   if (!m) return '';
   const kids = forkAlts(c, m), cmp = m.compare || {}, hasKey = !!keyInput.value.trim();
-  const byId = Object.fromEntries(kids.map(b => [b.id, b]));
+  // a saved comparison shows every branch it compared; Choose is only on the alternatives
+  const byId = Object.fromEntries(compareKids(c, m).map(b => [b.id, b])), alts = new Set(kids.map(b => b.id));
   const cols = (cmp.cols || []).filter(x => byId[x.bid]);
   const done = !!cmp.at && cols.length > 1, alt = !cmp.relation || cmp.relation === 'alternatives';
   const table = done && alt && cmp.criteria && cmp.criteria.length > 0;
   // in the table head, Chosen ✓ on the button says it: the tag only where there is no button
   const tags = (bid, head) => `${table && cmp.pick && cmp.pick.bid === bid ? '<span class="cmp-tag">Suggested</span>' : ''}${choiceStands(c, m, bid) && (RO || !head) ? '<span class="cmp-tag on">Chosen</span>' : ''}`;
-  const choose = bid => RO ? '' : choiceStands(c, m, bid) ? '<button class="btn" disabled>Chosen ✓</button>' : `<button class="btn" data-cmp="choose" data-bid="${bid}">Choose</button>`;
+  const choose = bid => RO || !alts.has(bid) ? '' : choiceStands(c, m, bid) ? '<button class="btn" disabled>Chosen ✓</button>' : `<button class="btn" data-cmp="choose" data-bid="${bid}">Choose</button>`;
   const colOf = bid => cols.find(x => x.bid === bid);
   let html = `<p class="pv-note">Branches that continue from “${esc(snippetOf(m.text, 90))}”</p>`;
   if (done && cmp.question) html += `<p class="cmp-q"><b>Deciding:</b> ${esc(cmp.question)}</p>`;
@@ -2458,7 +2466,7 @@ function compareClick(e) {
   if (b.dataset.cmp === 'ai') compareWithAI(c, m);
   if (b.dataset.cmp === 'choose') chooseBranch(c, m, b.dataset.bid);
 }
-const CMP_KEYS = ['at', 'model', 'question', 'relation', 'relationWhy', 'criteria', 'cols', 'pick', 'next', 'focus', 'request', 'chosen', 'call', 'nodeId', 'before'];
+const CMP_KEYS = ['at', 'model', 'question', 'relation', 'relationWhy', 'criteria', 'cols', 'pick', 'next', 'focus', 'request', 'chosen', 'over', 'chosenAt', 'call', 'nodeId', 'before'];
 // A comparison's finding in a line: its suggestion, or how the branches relate (spec §14.3)
 // a comparison replaced by Refresh, as it is kept: everything but its prompt, its own earlier ones and the choice made after it
 const earlierCmp = k => { const { request, before, chosen, focus, ...rest } = k; return rest; };
@@ -2496,6 +2504,7 @@ const COMPARE_TASK = 'A user explored branches of a conversation, and now wants 
 async function compareWithAI(c, m) {
   const v = cmpView, kids = forkAlts(c, m);
   if (kids.length < 2 || v.loading) return;
+  if (kids.some(b => streamIn(c, b.id))) { toast('Wait for the options’ answers to finish'); return; } // a comparison of half an answer
   const focus = clean(v.focus != null ? v.focus : (m.compare && m.compare.focus) || '', 300);
   const blocks = compareBlocks(c, m, kids, focus);
   const prompt = `${COMPARE_TASK}\n\n${blocks.map(x => x.kind === 'branch' ? x.text : `## ${x.label}\n${x.text}`).join('\n\n')}`;
@@ -2554,6 +2563,7 @@ const choiceStands = (c, m, bid) => !!m.compare && m.compare.chosen === bid && !
 function chooseBranch(c, m, bid) {
   const win = c.branches[bid]; if (!win) return;
   if (choiceStands(c, m, bid)) { toast(`“${branchName(win, c)}” is already chosen`); return; } // choosing it again would only make the same decision twice
+  if (forkAlts(c, m).some(b => streamIn(c, b.id))) { toast('Wait for the options’ answers to finish'); return; }
   const others = forkAlts(c, m).filter(b => b.id !== bid);
   // the choice goes on the branch's last answer, also one excluded from history, not on the message that opened the branch
   const msgs = win.msgIds.map(id => c.messages[id]).filter(x => x && !x.error && x.text), target = [...msgs].reverse().find(x => x.role === 'model') || msgs[msgs.length - 1];
@@ -2569,14 +2579,15 @@ function chooseBranch(c, m, bid) {
   const earlier = Object.values(c.messages).filter(x => x !== target && x.flagged && x.decision && x.decision.choice === m.id); // a choice made before at this fork
   // what Undo puts back, by ids: another tab's save may replace these objects meanwhile
   const undo = { flagged: !!target.flagged, decision: target.decision ? JSON.parse(JSON.stringify(target.decision)) : null, folds: others.concat(win).map(b => [b.id, !!b.collapsed]), chosen: cmp.chosen,
-    status: others.concat(win).map(b => [b.id, b.status]), earlier: earlier.map(x => [x.id, !!x.flagged]), focus: c.focus };
+    status: others.concat(win).map(b => [b.id, b.status, b.statusAt]), earlier: earlier.map(x => [x.id, !!x.flagged]), focus: c.focus, over: cmp.over, chosenAt: cmp.chosenAt };
   earlier.forEach(x => { x.flagged = false; x.decision.replacedBy = target.id; }); // choosing again supersedes the earlier choice (spec W2)
   target.flagged = true;
   setDecision(target, clean(`Chose ${branchName(win, c)}${over}${why ? `: ${/[.!?…]$/.test(why.trim()) ? why.trim() : why.trim() + '.'}` : '.'}`, 300));
   target.decision.choice = m.id; // the choice at this fork (spec §14.4)
   others.forEach(b => { b.collapsed = true; if (!cmp.relation || cmp.relation === 'alternatives') { b.status = 'rejected'; b.statusAt = Date.now(); } });
   win.collapsed = false; win.status = 'accepted'; win.statusAt = Date.now();
-  m.compare = { ...cmp, chosen: bid };
+  m.compare = { ...cmp, chosen: bid, over: others.map(b => b.id), chosenAt: Date.now() }; // what it chose over, and when (F-28)
+  const made = target.decision.summary; // Undo refuses once this wording was edited
   c.updated = Date.now(); save();
   cmpView = null; closeSheet();
   renderCanvas(); renderSidebar(); renderDecCount();
@@ -2584,12 +2595,13 @@ function chooseBranch(c, m, bid) {
   toast(`Chose ${branchName(win, c)} · the others are folded`, { label: 'Undo', fn: () => {
     const lc = db.convos[c.id], lt = lc && lc.messages[target.id], lm = lc && lc.messages[m.id];
     if (!lt || !lm) return;
+    if (!lt.decision || lt.decision.summary !== made) { toast('Can’t undo: the choice’s decision was edited since'); return; }
     lt.flagged = undo.flagged;
-    if (undo.decision) lt.decision = undo.decision; else delete lt.decision;
+    if (undo.decision) { lt.decision = undo.decision; delete lt.decision.pending; } else delete lt.decision; // never a "Writing…" put back
     undo.folds.forEach(([id, was]) => { const b = lc.branches[id]; if (b) b.collapsed = was; });
-    undo.status.forEach(([id, was]) => { const b = lc.branches[id]; if (!b) return; if (was) b.status = was; else delete b.status; });
+    undo.status.forEach(([id, was, at]) => { const b = lc.branches[id]; if (!b) return; if (was) b.status = was; else delete b.status; if (at) b.statusAt = at; else delete b.statusAt; });
     undo.earlier.forEach(([id, was]) => { const x = lc.messages[id]; if (!x || !x.decision) return; x.flagged = was; x.decision.choice = m.id; delete x.decision.replacedBy; });
-    if (lm.compare) { if (undo.chosen) lm.compare.chosen = undo.chosen; else delete lm.compare.chosen; }
+    if (lm.compare) { for (const k of ['chosen', 'over', 'chosenAt']) { if (undo[k] !== undefined) lm.compare[k] = undo[k]; else delete lm.compare[k]; } }
     if (lc.branches[undo.focus]) lc.focus = undo.focus; // back where you were, not in a branch folded and rejected again
     lc.updated = Date.now(); save();
     renderCanvas(); renderSidebar(); renderDecCount(); if (cur() === lc) focusBranch(lc.focus, true, 'none'); toast('Choice undone');
@@ -4107,6 +4119,7 @@ const WHATS_NEW = [
     'Your own data as written and whole: a decision keeps its Markdown and all its details after an update, and no longer reads as changed; every refreshed comparison stays; a memory draft never reaches a shared page, also from an older export.',
     'Fixed: with the question excluded, no path answers it again; an unused Branch out is never saved; Undo of a delete works when what you deleted was streaming; a double tap on Send no longer stops its answer.',
     'Two tabs answering one conversation keep both answers; a tab opened while another streams shows that answer as being answered there.',
+    'A choice records what it was made among, so a branch or an option added later is never "Not chosen"; Compare and Choose wait for the options\' answers.',
     'Each text shows once among an answer\'s versions, a restored one as Current; an open edit keeps its text when you leave its conversation and come back.',
   ] },
   { version: '0.11.0', items: ['Easier on a phone: every button you tap is at least 40 px, the Back pill and toasts move above the message box as it grows, a decision gets the whole width, and a new comparison opens at its table head.',
@@ -4586,9 +4599,12 @@ function bundleFilesOf(c, quiet, mine, all) {
     const dm = chosen && opts.some(k => k.id === chosen) && !droppedAt(c, chosen) ? Object.values(c.messages).find(x => x.flagged && x.decision && x.decision.choice === m.id && byBranch[x.branchId] && (x.branchId === chosen || isUnder(c, x.branchId, chosen))) : null;
     const alt = !m.compare || !m.compare.relation || m.compare.relation === 'alternatives';
     const name = bid => c.branches[bid] ? branchName(c.branches[bid], c) : 'a branch';
+    const qOpen = `A choice point: ${opts.length} option${opts.length === 1 ? '' : 's'} explored from here.`;
+    const qGen = { by: cmp && cmp.question ? `mindbough-demo/${cmp.model || 'unknown'}` : 'human:me', at: iso(cmp ? cmp.at : Math.min(...opts.map(k => k.created))) };
     nodes.push({ id: qid, type: 'Question', title: whole(((cmp && cmp.question) || sentenceOf(q ? q.text : m.text, 120) || 'A choice').slice(0, 120)),
-      description: dm ? `Answered: ${dm.decision.summary}` : `A choice point: ${opts.length} option${opts.length === 1 ? '' : 's'} explored from here.`, status: dm ? 'accepted' : 'open', parent: byBranch[b.id],
-      generated: { by: cmp && cmp.question ? `mindbough-demo/${cmp.model || 'unknown'}` : 'human:me', at: iso(cmp ? cmp.at : Math.min(...opts.map(k => k.created))) },
+      description: dm ? `Answered: ${dm.decision.summary}` : qOpen, status: dm ? 'accepted' : 'open', parent: byBranch[b.id],
+      // answered, it is your choice that words it, and the choice point it was stays in its revisions, as mb.py decide writes it (P4)
+      generated: dm ? { by: 'human:me', at: iso((cmp && cmp.chosenAt) || dm.decision.at) } : qGen, ...(dm ? { revisions: [{ description: qOpen, generated: qGen }] } : {}),
       sources: [{ resource: `/${session}#${m.id}`, title: 'Where the options start' }], ext: { pattern: 'choice' }, body: '' });
     for (const k of opts) {
       const n = nodeOf(byBranch[k.id]);
@@ -5508,7 +5524,7 @@ function adoptConvo(src) {
       criteria: (Array.isArray(k.criteria) ? k.criteria : []).map(y => typeof y === 'string' ? { name: y, why: '' } : y).filter(isObj).slice(0, 5).map(y => ({ name: str(y.name, 60), why: str(y.why, 140) })).filter(y => y.name), cols,
       ...(isObj(k.pick) && bid.has(k.pick.bid) ? { pick: { bid: bid.get(k.pick.bid), why: str(k.pick.why, 240) } } : {}), ...(k.next ? { next: str(k.next, 300) } : {}), ...(k.focus ? { focus: str(k.focus, 300) } : {}),
       request: { chars: count(isObj(k.request) ? k.request.chars : 0), blocks },
-      ...(bid.has(k.chosen) ? { chosen: bid.get(k.chosen) } : {}), ...(typeof k.call === 'string' ? { call: k.call } : {}), ...(tsIdOk(k.nodeId) ? { nodeId: k.nodeId } : {}),
+      ...(bid.has(k.chosen) ? { chosen: bid.get(k.chosen) } : {}), ...(bid.has(k.chosen) && Array.isArray(k.over) ? { over: k.over.filter(x => bid.has(x)).map(x => bid.get(x)), chosenAt: time(k.chosenAt) } : {}), ...(typeof k.call === 'string' ? { call: k.call } : {}), ...(tsIdOk(k.nodeId) ? { nodeId: k.nodeId } : {}),
       ...(Array.isArray(k.before) ? { before: k.before.filter(x => isObj(x) && tsIdOk(x.nodeId)).slice(0, 500).map(x => { const full = Array.isArray(x.cols) ? cmpOf({ ...x, before: null, chosen: null, request: null }) : null;
         return { ...(full ? earlierCmp(full) : {}), nodeId: x.nodeId, at: time(x.at), model: str(x.model, 100), text: str(x.text, 300) }; }) } : {}) };
   };
