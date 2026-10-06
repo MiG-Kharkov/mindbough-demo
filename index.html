@@ -658,9 +658,9 @@ const whole = t => t.replace(/[\uD800-\uDBFF]$/, '');
 const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return whole(cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.12.0';
+const APP_VERSION = '0.13.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 7b98ced'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main ffb8e65'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1588,7 +1588,7 @@ $('#canvas').addEventListener('click', async e => {
   if (act === 'hide') { messageMore(c, m, 'hide'); return; }
   if (act === 'remember') { rememberFrom(c, m); return; }
   if (act === 'compare') { openCompare(c, m); return; }
-  if (act === 'reask') { reask(c, m, [...modelSel.options].some(o => o.value === m.model) ? m.model : modelSel.value || db.model); return; }
+  if (act === 'reask') { reask(c, m, modelList().includes(m.model) ? m.model : fixedModel()); return; }
   if (act === 'regen-menu') { openModelMenu(btn, c, m, 'regen'); return; }
   if (act === 'settings') { openSettings(); return; }
   if (act === 'edit-cancel') { stopEdit(); return; }
@@ -1667,8 +1667,8 @@ function openModelMenu(anchor, c, m, mode = 'regen') {
   const menu = $('#modelMenu');
   if (menuFor && menuFor.mid === m.id && menuFor.mode === mode && menu.classList.contains('show')) { closeModelMenu(); return; }
   menuFor = { cid: c.id, mid: m.id, mode };
-  const opts = [...modelSel.options].map(o => o.value);
-  const top = mode === 'regen' ? m.model : (modelSel.value || db.model);
+  const opts = modelList();
+  const top = mode === 'regen' ? m.model : fixedModel();
   const tag = mode === 'regen' ? 'same' : 'current';
   const others = opts.filter(x => x !== top);
   menu.innerHTML = (mode === 'branch'
@@ -1776,9 +1776,9 @@ function messageMore(c, m, act) {
   if (act === 'prompt') { openPromptView(c, m); return; }
   if (RO) return;
   if (act === 'options') openOptions(c, m);
-  else if (act === 'regenhere') regenerateInPlace(c, m, m.model || modelSel.value || db.model); // in its place, also in the middle of a chain (F-35)
+  else if (act === 'regenhere') regenerateInPlace(c, m, m.model || fixedModel()); // in its place, also in the middle of a chain (F-35)
   else if (act === 'keep') { m.keptAt = Date.now(); c.updated = Date.now(); save(); refreshReask(); toast(m.role === 'model' ? 'Kept as valid' : 'Kept as it is'); }
-  else if (act === 'newbranch') { const ids = pathIds(c, m.id), q = c.messages[ids[ids.length - 2]]; if (q) answerInNewBranch(c, q, m.model || modelSel.value || db.model, m.id); }
+  else if (act === 'newbranch') { const ids = pathIds(c, m.id), q = c.messages[ids[ids.length - 2]]; if (q) answerInNewBranch(c, q, m.model || fixedModel(), m.id); }
   else if (act === 'delfrom') { const b = branchOf(c, m.id); if (b) removeMessages(c, new Set(b.msgIds.slice(b.msgIds.indexOf(m.id))), 'Deleted from here on'); }
   else if (act === 'regen') { const at = document.querySelector(`.msg[data-mid="${m.id}"] [data-act="more"]`); if (at) openModelMenu(at, c, m, 'regen'); }
   else if (act === 'edit') startEdit(c, m);
@@ -1884,7 +1884,7 @@ function regenerateInPlace(c, m, model) {
   b.collapsed = false;
   save(); renderCanvas();
   if (c.focus !== b.id) focusBranch(b.id, true, 'none'); else layout();
-  streamInto(c, m, req, keyInput.value.trim(), modelSel.value || db.model, backup);
+  streamInto(c, m, req, keyInput.value.trim(), fixedModel(), backup);
 }
 // Decisions that came after an answer was written, from its request record (F-20): not its own, nor those downstream of it
 function laterDecisions(c, m) {
@@ -2121,11 +2121,11 @@ document.addEventListener('keydown', e => {
 }, true);
 // Helper calls use the cheapest model the key can reach (a lite model, then a flash one), not the one picked for chatting
 function cheapModel() {
-  const list = [...modelSel.options].map(o => o.value);
+  const list = modelList();
   const ver = n => parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [0, 0])[1]);
   const stable = list.filter(n => !/preview|exp|tts|image|audio|live|embed/i.test(n));
   const best = re => (stable.length ? stable : list).filter(n => re.test(n)).sort((a, b) => ver(b) - ver(a))[0];
-  return best(/flash-lite/) || best(/flash/) || modelSel.value || db.model;
+  return best(/flash-lite/) || best(/flash/) || fixedModel();
 }
 // Helper tasks run on the model picked in Settings (F-30), else on the cheapest one; null = turned off
 const HELPER_TASKS = [
@@ -2138,7 +2138,7 @@ const HELPER_TASKS = [
 function helperModel(task) {
   const v = db.helpers[task];
   if (v === 'off') return HELPER_TASKS.find(t => t.id === task).off ? null : cheapModel();
-  return v && [...modelSel.options].some(o => o.value === v) ? v : cheapModel();
+  return v && modelList().includes(v) ? v : cheapModel();
 }
 // Each helper call is kept on its conversation (F-30), and becomes a call entry of its session (spec §10.3, §14.8):
 // the task, the model, the prompt template it used, its tokens and a short text of what came back
@@ -2163,7 +2163,7 @@ function fillHelperUse() {
 }
 function fillHelpers() {
   fillHelperUse();
-  const list = [...modelSel.options].map(o => o.value);
+  const list = modelList();
   $('#helperModels').innerHTML = HELPER_TASKS.map(t => {
     const v = db.helpers[t.id] || '';
     const opts = [['', modelsKnown ? `Automatic · ${cheapModel()}` : 'Automatic (a light model)'], ...(t.off ? [['off', t.off]] : []), ...list.map(n => [n, n])];
@@ -2319,7 +2319,7 @@ function renderOptions() {
 }
 const createLabel = n => n ? `Create ${n} branch${n === 1 ? '' : 'es'}` : 'Create branches';
 const costLine = n => !opt.answer ? 'The branches are created with their first message; you answer them later.'
-  : n ? `${n} request${n === 1 ? '' : 's'} with ${modelSel.value || db.model}, all at the same time.` : 'Tick an option: each is answered with ' + (modelSel.value || db.model) + ', all at the same time.';
+  : n ? `${n} request${n === 1 ? '' : 's'} with ${fixedModel()}, all at the same time.` : 'Tick an option: each is answered with ' + fixedModel() + ', all at the same time.';
 function renderOptionsIfOpen() { if (sheetView && sheetView.options) $('#sheetDyn').innerHTML = renderOptions(); }
 function updateOptionsCount() {
   const n = optionsReady().length, btn = $('#sheetDyn [data-op="create"]'), cost = $('#opCost');
@@ -2941,14 +2941,36 @@ function pickBest(list) {
   const flash = pool.filter(n => /flash/.test(n) && !/lite/.test(n));
   return (flash.length ? flash : pool).sort((a, b) => ver(b) - ver(a))[0];
 }
-const shortModel = n => String(n || '').replace(/^gemini-/, '');
-function setModel(n) { db.model = n; save(); fillModels([...modelSel.options].map(o => o.value)); }
+const shortModel = n => n === AUTO ? 'Auto' : String(n || '').replace(/^gemini-/, '');
+// Auto (#12): the picker's first option, which lets rules pick the model of each request you send; everywhere it doesn't decide
+// (a regeneration keeps its answer's model, the sheets that name a model) the balanced model stands in
+const AUTO = 'auto';
+const modelList = () => [...modelSel.options].map(o => o.value).filter(v => v !== AUTO);
+const fixedModel = () => db.model === AUTO ? pickBest(modelList()) || DEFAULT_MODELS[0] : (modelSel.value || db.model);
+// The rules, in this order, each said in words the request keeps (spec §10.4 route): the effort of the line you write in
+// (a node's thinking.effort), images, a long message or code, a short follow-up, else the balanced model
+function routeFor(c, bid, text, images) {
+  const list = modelList(), ver = n => parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [0, 0])[1]);
+  const stable = list.filter(n => !/preview|exp/i.test(n)), pool = stable.length ? stable : list;
+  const best = re => pool.filter(n => re.test(n)).sort((a, b) => ver(b) - ver(a))[0];
+  const balanced = pickBest(list) || DEFAULT_MODELS[0], fast = best(/flash-lite/) || balanced, frontier = best(/pro/) || balanced;
+  const tier = { low: ['fast', fast], medium: ['balanced', balanced], high: ['frontier', frontier] };
+  const card = historyFor(c, bid).filter(m => m.node && ['low', 'medium', 'high'].includes(m.node.effort)).pop();
+  if (card) { const [name, model] = tier[card.node.effort]; return { rule: `branch effort ${card.node.effort} → ${name}`, model, effort: card.node.effort }; }
+  const t = String(text || ''), earlier = historyFor(c, bid).filter(m => m.role === 'user' && m.text !== text).length;
+  if (images && images.length) return { rule: 'images → balanced', model: balanced };
+  if (t.length > 1500 || /```/.test(t)) return { rule: 'long message or code → frontier', model: frontier };
+  if (t.length < 160 && earlier) return { rule: 'short follow-up → fast', model: fast };
+  return { rule: 'default → balanced', model: balanced };
+}
+function setModel(n) { db.model = n; save(); fillModels(modelList()); }
 let modelsKnown = false; // the key's own list of models has arrived
 function fillModels(list, fromApi) {
   if (fromApi && list.length) modelsKnown = true;
-  if (fromApi && list.length && !list.includes(db.model)) { db.model = pickBest(list); save(); }
-  const set = [...new Set([db.model, ...list].filter(Boolean))];
-  modelSel.innerHTML = set.map(n => `<option value="${esc(n)}" title="${esc(n)}">${esc(shortModel(n))}</option>`).join('');
+  if (fromApi && list.length && db.model !== AUTO && !list.includes(db.model)) { db.model = pickBest(list); save(); }
+  const set = [...new Set([db.model, ...list].filter(x => x && x !== AUTO))];
+  modelSel.innerHTML = `<option value="${AUTO}" title="Auto: rules pick the model of each request, and its prompt view says which and why">Auto</option>`
+    + set.map(n => `<option value="${esc(n)}" title="${esc(n)}">${esc(shortModel(n))}</option>`).join('');
   modelSel.value = db.model; modelSel.title = db.model;
   fitModelSel();
   fillHelpers();
@@ -3082,7 +3104,7 @@ function takeFrom(next) {
   if (!db.helpers || typeof db.helpers !== 'object') db.helpers = {};
   if (!db.convos[db.current]) db.current = db.order[0] || null;
   keyInput.value = db.key || '';
-  fillModels([...modelSel.options].map(o => o.value));
+  fillModels(modelList());
   editing = null;
   const mine = reapplyMemOps();
   if (db.current) renderAll(false); else newConvo();
@@ -3179,13 +3201,15 @@ async function sendToBranch(c, bid, text, modelOverride, stay, images) {
     if (c.title === NEW_TITLE && text) c.title = firstWords(text, 48);
   }
   c.updated = Date.now();
-  const picked = modelSel.value || db.model;
-  let model = modelOverride || picked;
+  // Auto: the rules pick this request's model, and its record says by which rule (#12, spec §10.4)
+  const route = !modelOverride && db.model === AUTO ? routeFor(c, bid, text, images) : null;
+  const picked = route ? AUTO : (modelSel.value || db.model);
+  let model = modelOverride || (route ? route.model : picked);
 
   const req = buildRequest(c, historyFor(c, bid), b.msgIds.length === 0 ? b.regenOf : null);
   const end = req.turns[req.turns.length - 1];
   if (!end || end.role !== 'user') { save(); renderCanvas(); toast('Nothing to answer: the question is excluded from history. Include it again first.'); return; }
-  const am = { id: uid(), role: 'model', text: '', branchId: bid, ts: Date.now(), streaming: true, model, request: requestRecord(req, model) };
+  const am = { id: uid(), role: 'model', text: '', branchId: bid, ts: Date.now(), streaming: true, model, request: requestRecord(req, model, route) };
   c.messages[am.id] = am; b.msgIds.push(am.id);
   save(); renderSidebar(); renderCanvas(); if (stay) focusBranch(c.focus, false, 'none'); else focusBranch(bid, true); // stay: answering in the background
   return streamInto(c, am, req, key, picked, null);
@@ -3494,8 +3518,11 @@ function buildRequest(c, msgs, skip) {
   return { turns, blocks, body, fill, chars: blocks.reduce((n, b) => n + b.chars, 0) };
 }
 // What an answer keeps: system blocks verbatim (they change over time), conversation blocks as message ids (no copies)
-function requestRecord(req, model) {
-  return { model, at: Date.now(), chars: req.chars, blocks: req.blocks.map(b => b.text != null
+// a route as the spec has it: the rule and the model, text, and the effort that decided it, if any; anything else is no route
+const routeOk = r => !!(r && typeof r === 'object' && typeof r.rule === 'string' && r.rule.trim() && typeof r.model === 'string' && r.model.trim() && (r.effort === undefined || ['low', 'medium', 'high'].includes(r.effort)));
+const routeOf = r => routeOk(r) ? { rule: r.rule.replace(/\s+/g, ' ').trim().slice(0, 200), model: r.model.trim().slice(0, 100), ...(r.effort ? { effort: r.effort } : {}) } : null;
+function requestRecord(req, model, route) {
+  return { model, ...(route ? { route } : {}), at: Date.now(), chars: req.chars, blocks: req.blocks.map(b => b.text != null
     ? { kind: b.kind, label: b.label, chars: b.chars, text: b.text, ...(b.items ? { items: b.items } : {}), ...(b.ids ? { ids: b.ids } : {}) }
     : { kind: b.kind, label: b.label, chars: b.chars, ids: b.ids, ...(b.sigs ? { sigs: b.sigs } : {}), ...(b.files ? { files: b.files, tokens: b.tokens | 0 } : {}) }) };
 }
@@ -3715,7 +3742,8 @@ function previewPrompt(backTo) {
   const c = cur(); if (!c || !hasDraft()) return;
   const draft = input.value.trim();
   const msgs = historyFor(c, c.focus).concat(draft || draftImgs.length ? [{ id: '__draft', role: 'user', text: draft, images: draftImgs }] : []);
-  const rec = requestRecord(buildRequest(c, msgs), modelSel.value || db.model);
+  const route = db.model === AUTO ? routeFor(c, c.focus, draft, draftImgs) : null; // what Auto would pick, and why
+  const rec = requestRecord(buildRequest(c, msgs), route ? route.model : (modelSel.value || db.model), route);
   showPrompt({ c, rec, title: 'How the next prompt is built', preview: true, path: historyFor(c, c.focus), ...(typeof backTo === 'function' ? { backTo } : {}), lookup: id => id === '__draft' ? { id, role: 'user', text: draft, images: draftImgs } : c.messages[id],
     note: 'What your next message would send: the whole path of this branch so far, and what you have typed.' });
 }
@@ -3783,6 +3811,7 @@ function pvRender(pv) {
     const when = new Date(r.at).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
     return `${pv.note ? `<p class="pv-note">${esc(pv.note)}</p>` : ''}
       <p class="pv-meta"><span><b>${esc(r.model || 'unknown model')}</b>${pv.preview ? '' : ` · ${esc(when)}`}</span><span>${fmtChars(total)}</span>${tokens}</p>
+      ${r.route && r.route.rule ? `<p class="pv-note pv-route"><b>Auto</b> picked it: ${esc(r.route.rule)}${pv.preview ? '' : '. The request keeps the rule.'}</p>` : ''}
       <div class="pbar" role="list">${sized.map(([b, i]) => `<button class="pbar-seg k-${b.kind}" style="flex-grow:${Math.max(b.kind === 'attachments' ? (b.tokens | 0) * 4 : b.chars, 1)}" data-block="${i}" title="${esc(b.label)} · ${b.kind === 'attachments' ? `≈ ${tok(b.tokens)} tokens` : fmtChars(b.chars)}" aria-label="${esc(b.label)}"></button>`).join('')}</div>
       <div>${sized.map(([b, i]) => `<button class="pb-row" data-block="${i}"><span class="pb-dot k-${b.kind}"></span><span class="pb-main"><span class="pb-name">${esc(b.label)}</span>${BLOCK_WHY[b.kind] ? `<span class="pb-why">${pv.preview && b.kind === 'message' ? 'What you have typed' : BLOCK_WHY[b.kind]}</span>` : ''}</span><span class="pb-size">${b.kind === 'attachments' ? `≈ ${tok(b.tokens)} tokens` : `${fmtChars(b.chars)} · ${Math.round(b.chars * 100 / total)}%`}</span>${ICON.chevRight}</button>`).join('')}</div>
       ${(() => { const ns = notSent(pv); return ns.length ? `<div class="pv-search pv-not"><b>Not in this prompt</b><ul>${ns.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="set-hint">Each branch sends only its own path, so the other lines of thinking don’t mix in.</p></div>` : ''; })()}
@@ -4127,9 +4156,10 @@ const HELP = [
     <li>The <b>eye</b> under a message excludes it from history: the model doesn't see it, on this branch and the ones that continue from it. Tap it again to include it. A flagged message keeps its decision in the prompts: only its text leaves the history.</li>
     <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. Prompt views show each message as the model saw it, with ✎ on what changed since. <b>Prompt</b> above the message box previews your next prompt, once you have written it: it has the whole path so far, while an answer's prompt has the turns before its question.</li>
     <li>An answer written before later decisions says so: <b>Re-ask</b> writes it again with them. One written before an edit above says that on its ✎ line, with the decisions since, and its <b>⋯</b> regenerates it. Re-asking in the middle of a chain opens a new branch, which says what it asks again, and the old answer says where it was asked.</li></ul>` },
-  { id: 'models', title: 'Models and web search', cards: ['F-30', 'F-33'], body: `
+  { id: 'models', title: 'Models and web search', cards: ['F-30', 'F-33', 'F-37'], body: `
     <p class="help-why">A cheap model for small jobs, and the tokens in view.</p>
     <ul><li>Pick the model for your next request above the message box. Each answer shows the model that wrote it, and its prompt view the tokens.</li>
+    <li><b>Auto</b>, first in the model picker, lets rules pick the model of each request you send: the effort of the line you write in, if its node has one, images, a long message or code (the frontier model), a short follow-up (a fast one), else the balanced one. Each answer's prompt view says which rule picked its model, and the Thinking State keeps it.</li>
     <li>Settings → <b>Models for helper tasks</b>: the model for decisions, names, options, comparisons and memory drafts. <b>Automatic</b> takes a light model, the newest Flash-Lite your key can reach; decisions, names and memory drafts can be turned off. It also sums this conversation's helper calls, and an answer's prompt view lists the ones made on it.</li>
     <li><b>Web</b> (the globe next to the model picker) is on from the start: the model may search the web with Google Search, inside the Gemini API, when a message needs fresh facts. The answer lists its sources, with Google's Search Suggestions under them, as the Gemini API terms ask (shown, never exported), and the prompt view says whether it searched. Turn it off for private topics, or to avoid search costs.</li></ul>` },
   { id: 'data', title: 'Your data and the format', cards: ['F-13', 'F-14', 'F-17', 'F-25', 'F-26'], body: `
@@ -4146,6 +4176,9 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
+  { version: '0.13.0', items: [
+    '<b>Auto</b> in the model picker: rules pick the model of each request, from fast to frontier, and the prompt view and the Thinking State say which rule picked it.',
+  ] },
   { version: '0.12.0', items: [
     'Your own data as written and whole: a decision keeps its Markdown and all its details after an update, and no longer reads as changed; every refreshed comparison stays; a memory draft never reaches a shared page, also from an older export.',
     'Fixed: with the question excluded, no path answers it again; an unused Branch out is never saved; Undo of a delete works when what you deleted was streaming; a double tap on Send no longer stops its answer.',
@@ -4853,7 +4886,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
       lines.push({ id: brId, kind: 'branch', node, after: fork, by: b.by || (card ? 'process:mindbough-demo' : 'human:me'), at: iso(b.created), ...(Object.keys(own).length ? { ext: { 'mindbough-demo': own } } : {}) });
       after = brId;
     }
-    const reqOf = r => ({ at: iso(r.at), chars: r.chars | 0, blocks: (r.blocks || []).map(x => block(x, r.at)) });
+    const reqOf = r => ({ at: iso(r.at), chars: r.chars | 0, ...(routeOk(r.route) ? { route: r.route } : {}), blocks: (r.blocks || []).map(x => block(x, r.at)) }); // how Auto picked it (spec §10.4)
     const useOf = r => r.usage ? { usage: { input: r.usage.prompt | 0, output: r.usage.answer | 0, ...(r.usage.thoughts ? { reasoning: r.usage.thoughts | 0 } : {}) } } : {};
     const srcOf = x => (x && x.sources || []).map(y => ({ resource: y.uri, title: y.title }));
     b.msgIds.map(id => c.messages[id]).filter(Boolean).forEach((m, i) => {
@@ -5260,7 +5293,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
       const recBack = (x, mdl, ts) => {
         const rq = x.request, blocks = (Array.isArray(rq.blocks) ? rq.blocks : []).filter(isObj).map(blockBack);
         if (Array.isArray(rq.tools) && rq.tools.includes('web_search')) blocks.push({ kind: 'tools', label: 'Tools · web search', chars: 0, text: WEB_NOTE });
-        const r = { model: mdl || '', at: time(rq.at, ts), chars: Math.max(0, rq.chars | 0), blocks };
+        const r = { model: mdl || '', ...(routeOf(rq.route) ? { route: routeOf(rq.route) } : {}), at: time(rq.at, ts), chars: Math.max(0, rq.chars | 0), blocks };
         const xt = isObj(x.ext) && isObj(x.ext['mindbough-demo']) ? x.ext['mindbough-demo'].toolTokens | 0 : 0;
         if (isObj(x.usage)) r.usage = { prompt: x.usage.input | 0, answer: x.usage.output | 0, thoughts: x.usage.reasoning | 0, ...(xt > 0 ? { tools: xt } : {}) };
         return r;
@@ -5389,7 +5422,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     const desc = String(node.meta.description || ''), det = detailsIn(node.body), accepted = type === 'Decision' && status === 'accepted', parked = type === 'Decision' && status === 'parked';
     const history = (Array.isArray(t.revisions) ? t.revisions : []).filter(r => isObj(r) && r.description).slice(0, 10).map(r => ({ summary: asRead(r.description), ...(detailsIn(r.body).length ? { details: detailsIn(r.body) } : {}), at: time(isObj(r.generated) ? r.generated.at : null, now) }));
     convo.messages[mid] = { id: mid, role: 'user', text: [`**${type} · ${status}** — ${String(node.meta.title || nid)}`, node.meta.description ? `_${node.meta.description}_` : '', node.body].filter(Boolean).join('\n\n'), branchId: bid, ts: now,
-      node: { id: nid, type, status, title: String(node.meta.title || nid), description: desc, ...wroteOf(node), links: Object.fromEntries(TS_LINKS.filter(k => Array.isArray(t[k])).map(k => [k, t[k].map(String).filter(x => TS_ID.test(x))])) },
+      node: { id: nid, type, status, title: String(node.meta.title || nid), description: desc, ...wroteOf(node), ...(['low', 'medium', 'high'].includes(t.effort) ? { effort: t.effort } : {}), links: Object.fromEntries(TS_LINKS.filter(k => Array.isArray(t[k])).map(k => [k, t[k].map(String).filter(x => TS_ID.test(x))])) },
       ...(accepted || (type === 'Decision' && status === 'open') ? { flagged: true } : {}),
       ...(accepted || parked ? { decision: { summary: asRead(desc || node.meta.title || nid), ...(det.length ? { details: det } : {}), at: now, ...(history.length ? { history } : {}) } } : {}) };
     convo.branches[bid] = { id: bid, parentId: parent, forkMsgId: ids.length ? ids[ids.length - 1] : null, msgIds: [mid], name: whole(String(node.meta.title || nid).slice(0, 60)), created: now, ...(['rejected', 'superseded', 'parked'].includes(status) ? { collapsed: true } : {}),
@@ -5443,7 +5476,7 @@ function bundleToConvo(r, files, own) {
     });
     const det = detailsIn(node.body);
     const decision = (accepted || parked) ? { decision: { summary: asRead(desc || title(node)), ...(det.length ? { details: det } : {}), at: now, ...(history.length ? { history } : {}) } } : {};
-    convo.messages[mid] = { id: mid, role: 'user', text, branchId: bid, ts: now, node: { id: node.id, type, status, title: title(node), description: desc, links, ...wroteOf(node) },
+    convo.messages[mid] = { id: mid, role: 'user', text, branchId: bid, ts: now, node: { id: node.id, type, status, title: title(node), description: desc, links, ...wroteOf(node), ...(['low', 'medium', 'high'].includes(t.effort) ? { effort: t.effort } : {}) },
       ...(accepted || (type === 'Decision' && status === 'open') ? { flagged: true } : {}), ...decision }; // an open Decision is a flag waiting for its summary (spec §7.1)
     convo.branches[bid] = { id: bid, parentId: parentBranch, forkMsgId: parentMsg, msgIds: [mid], name: title(node).slice(0, 60), created: now,
       ...(['rejected', 'superseded', 'parked'].includes(status) ? { collapsed: true } : {}),
@@ -5570,7 +5603,7 @@ function adoptConvo(src) {
         cardIds.add(x.node.id);
         const links = {};
         for (const k of TS_LINKS) if (isObj(x.node.links) && Array.isArray(x.node.links[k])) links[k] = x.node.links[k].filter(v => typeof v === 'string' && TS_ID.test(v)).slice(0, 50);
-        nm.node = { id: x.node.id, type: nodeType(x.node.type), status: TS_STATUSES.includes(x.node.status) ? x.node.status : 'open', title: str(x.node.title, 200), description: str(x.node.description, 500), links, ...(actorOk(x.node.by) ? { by: x.node.by, ...(typeof x.node.at === 'string' && Number.isFinite(Date.parse(x.node.at)) ? { at: x.node.at } : {}) } : {}) };
+        nm.node = { id: x.node.id, type: nodeType(x.node.type), status: TS_STATUSES.includes(x.node.status) ? x.node.status : 'open', title: str(x.node.title, 200), description: str(x.node.description, 500), links, ...(['low', 'medium', 'high'].includes(x.node.effort) ? { effort: x.node.effort } : {}), ...(actorOk(x.node.by) ? { by: x.node.by, ...(typeof x.node.at === 'string' && Number.isFinite(Date.parse(x.node.at)) ? { at: x.node.at } : {}) } : {}) };
       }
       if (isObj(x.decision)) {
         const version = h => { const det = readDetails(h.details); return { summary: asRead(str(h.summary, READ_MAX)), ...(det.length ? { details: det } : {}), at: time(h.at), ...(h.model ? { model: str(h.model, 100) } : {}), ...(typeof h.sig === 'string' && /^[0-9a-z]{1,8}:\d{1,7}$/.test(h.sig) ? { sig: h.sig } : {}) }; };
@@ -5650,7 +5683,7 @@ function adoptConvo(src) {
       if (b.kind === 'attachments') { out.files = (Array.isArray(b.files) ? b.files : []).filter(x => typeof x === 'string' && SHA_HEX.test(x)).slice(0, 64); out.tokens = count(b.tokens); }
       return out;
     });
-    const rec = { model: str(r.model, 100), at: time(r.at), chars: count(r.chars), blocks };
+    const rec = { model: str(r.model, 100), ...(routeOf(r.route) ? { route: routeOf(r.route) } : {}), at: time(r.at), chars: count(r.chars), blocks };
     if (isObj(r.usage)) rec.usage = { prompt: count(r.usage.prompt), answer: count(r.usage.answer), thoughts: count(r.usage.thoughts), ...(count(r.usage.tools) ? { tools: count(r.usage.tools) } : {}) };
     return rec;
   };
