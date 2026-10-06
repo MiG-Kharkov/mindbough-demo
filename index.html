@@ -547,6 +547,11 @@ button.model-chip svg.i{width:11px;height:11px}
   .dp-actions .btn,.dec-stale .linkbtn,.decision .edit-actions .btn,.pv-actions .btn{min-height:40px}
   #promptPreview,#webSearch,#model{min-height:40px}
   #model{font-family:inherit}}
+.mem-use{display:flex;align-items:center;gap:6px;min-height:40px;padding:0 8px 0 2px;font-size:13px;color:var(--muted);cursor:pointer}
+.mem-use input{width:18px;height:18px;margin:0}
+.dp-card.mem.row{display:flex;align-items:stretch}
+.dp-card.mem.row .mem-row{flex:1;min-width:0}
+.dp-card.mem.row.off .dp-text{text-decoration:line-through;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -648,7 +653,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.11.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 0efb407'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 40521d6'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2482,7 +2487,7 @@ function compareBlocks(c, m, kids, focus, cols, at) {
   const under = x => { let bb = c.branches[x.branchId]; while (bb) { if (kidIds.has(bb.id)) return true; bb = c.branches[bb.parentId]; } return false; };
   const path = b ? historyFor(c, b.id, m.id).filter(x => !x.hidden && !x.error && (x.text || imgsOf(x).length)).slice(-6) : [];
   const said = x => `${x.role === 'user' ? 'User' : 'Assistant'}: ${withMarks(x).slice(0, x.id === m.id ? 3000 : 1500)}`;
-  const decisions = decisionsIn(c).filter(x => !under(x) && !(at && (x.decision.at || 0) > at && pathIds(c, x.id).includes(m.id))), memory = db.memory.filter(x => x.text);
+  const decisions = decisionsIn(c).filter(x => !under(x) && !(at && (x.decision.at || 0) > at && pathIds(c, x.id).includes(m.id))), memory = db.memory.filter(x => x.text && !x.off);
   const blocks = [{ kind: 'fork', label: 'Conversation up to the fork', text: path.map(said).join('\n\n') }];
   if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions in force:\n' + decisions.map(x => decisionLine(x.decision)).join('\n') });
   if (memory.length) blocks.push({ kind: 'memory', label: `Memory · ${memory.length}`, text: 'About the user and their work:\n' + memory.map(x => `- ${x.text}`).join('\n') });
@@ -3429,7 +3434,7 @@ function groundIn(c) { return Object.values(c.messages).filter(m => m.node && ['
 // { kind, label, text } blocks sent as the system instruction, in this order
 function systemBlocks(c, skip) {
   const blocks = [];
-  const memory = db.memory.filter(x => x.text);
+  const memory = db.memory.filter(x => x.text && !x.off); // a fact you switched off is kept, and in no request (#146)
   if (memory.length) blocks.push({ kind: 'memory', label: `Memory · ${memory.length}`, text: 'Things to remember about the user and their work (shared by all conversations):\n' + memory.map(x => `- ${x.text}`).join('\n'), items: memory.map(itemIdOf) });
   // an answer written again gets neither its own decision nor those made further down its branch: they grew from what is replaced
   const decisions = decisionsIn(c).filter(m => !skip || (m.id !== skip && !pathIds(c, m.id).includes(skip)));
@@ -3885,19 +3890,19 @@ const factSource = x => { const c = x.src && db.convos[x.src.cid]; return !!(c &
 const factMatches = (x, q) => !q || x.text.toLowerCase().includes(q);
 function renderMemoryPanel() {
   if (db.memory.length <= MEM_SEARCH_FROM) memQuery = ''; // no search box, so no filter left over from one
-  const n = db.memory.length, chars = db.memory.reduce((k, x) => k + (x.text ? x.text.length + 3 : 0), 0), q = memQuery.trim().toLowerCase();
+  const n = db.memory.length, on = db.memory.filter(x => !x.off).length, chars = db.memory.reduce((k, x) => k + (x.text && !x.off ? x.text.length + 3 : 0), 0), q = memQuery.trim().toLowerCase();
   // a shared page carries no memory: whoever shared it keeps their facts
   if (RO) return `<p class="pv-note">Memory is about the person who writes: their role, their preferences and the answers they want. A shared page carries none of it: the facts of whoever shared it stay with them.</p>`;
   const note = `<p class="pv-note">Memory is about you: your role, your preferences and the answers you want. It is shared by all conversations, so every request carries it.</p>`;
   const tools = RO || memEdit || memDraft ? '' : `<div class="mem-tools"><button class="btn primary" data-mem="add">+ Add a fact</button>${n > MEM_SEARCH_FROM ? `<input class="mem-search" type="search" data-mem-search placeholder="Search memory" aria-label="Search memory" value="${esc(memQuery)}">` : ''}</div>`;
-  const sum = n ? `<p class="mem-sum">${n} fact${n === 1 ? '' : 's'} in every request · about ${Math.max(1, Math.round(chars / 4)).toLocaleString('en-US')} tokens</p>` : '';
+  const sum = n ? `<p class="mem-sum">${on === n ? `${n} fact${n === 1 ? '' : 's'}` : `${on} of ${n} facts`} in every request · about ${Math.max(on ? 1 : 0, Math.round(chars / 4)).toLocaleString('en-US')} tokens</p>` : '';
   const editor = (x, draft) => `<article class="dp-card mem" data-id="${x.id}"><textarea class="dp-area" rows="2" maxlength="300" aria-label="Fact" placeholder="${x.pending ? 'Writing a draft from this message…' : 'What should every conversation know about you? Your role, or how you want answers'}">${esc(x.text)}</textarea>
       <div class="dp-meta">${draft ? `${x.src ? `${x.drafted ? `Drafted by ${esc(x.by.replace(/^mindbough-demo\//, ''))} from` : 'From'} “${esc(x.hint || '')}”. ` : ''}${x.none ? 'Nothing in it about you to remember: write your own, or Cancel.' : x.drafted ? 'Edit it, then Save: it goes into every request.' : 'Not saved yet: Save adds it to every request.'}` : `${esc(factFrom(x))}${x.by ? ` · by ${esc(x.by.replace(/^mindbough-demo\//, ''))}` : ''} · ${esc(shortDate(x.at))}${(x.history || []).length ? ` · reworded ${x.history.length} time${x.history.length === 1 ? '' : 's'}` : ''}`}</div>
       <div class="dp-actions">${draft ? '' : `<button class="btn danger" data-mem="delete">Delete</button>${factSource(x) ? '<button class="btn" data-mem="goto">Go to source</button>' : ''}`}<button class="btn" data-mem="cancel">Cancel</button><button class="btn primary" data-mem="save"${x.text.trim() ? '' : ' disabled'}>Save</button></div></article>`;
   const draft = memDraft ? editor(memDraft, true) : '';
   if (!n) return note + tools + draft + (memDraft ? '' : `<p class="pv-empty">Nothing yet. Add who you are, your role or how you like answers, or use <b>Remember</b> under a message.</p>`);
   const rows = db.memory.map(x => memEdit === x.id ? editor(x, false)
-    : `<article class="dp-card mem row" data-id="${x.id}"${factSource(x) ? ' data-source' : ''}${factMatches(x, q) ? '' : ' hidden'}><button class="mem-row" type="button" data-mem="edit" aria-label="Edit this fact"><span class="dp-text">${esc(x.text)}</span><span class="dp-meta">${esc(factFrom(x))}${x.by ? ` · by ${esc(x.by.replace(/^mindbough-demo\//, ''))}` : ''} · ${esc(shortDate(x.at))}${(x.history || []).length ? ` · reworded ${x.history.length} time${x.history.length === 1 ? '' : 's'}` : ''}</span></button></article>`).join('');
+    : `<article class="dp-card mem row${x.off ? ' off' : ''}" data-id="${x.id}"${factSource(x) ? ' data-source' : ''}${factMatches(x, q) ? '' : ' hidden'}><label class="mem-use" title="Use: every request carries this fact. Untick it to keep the fact out of prompts"><input type="checkbox" data-mem="use"${x.off ? '' : ' checked'}><span>Use</span></label><button class="mem-row" type="button" data-mem="edit" aria-label="Edit this fact"><span class="dp-text">${esc(x.text)}</span>${x.off ? '<span class="dp-meta">not in prompts</span>' : ''}<span class="dp-meta">${esc(factFrom(x))}${x.by ? ` · by ${esc(x.by.replace(/^mindbough-demo\//, ''))}` : ''} · ${esc(shortDate(x.at))}${(x.history || []).length ? ` · reworded ${x.history.length} time${x.history.length === 1 ? '' : 's'}` : ''}</span></button></article>`).join('');
   const none = `<p class="pv-empty" data-mem-none${db.memory.some(x => factMatches(x, q)) ? ' hidden' : ''}>No fact matches.</p>`;
   return note + tools + draft + sum + rows + none;
 }
@@ -4000,6 +4005,8 @@ function contextPanelClick(e) {
   const drop = id => { db.memory = db.memory.filter(y => y.id !== id); };
   switch (mb.dataset.mem) {
     case 'add': memDraft = { id: uid(), text: '', at: Date.now() }; memEdit = null; break;
+    // Use, per fact (#146, reported by Liubomyr Ivanitskyi): unticked, the fact stays, and no request carries it (spec §9.2 thinking.off)
+    case 'use': if (!x) break; if (x.off) delete x.off; else x.off = true; save(); toast(x.off ? 'Kept, and out of every prompt' : 'In every prompt again'); break;
     case 'edit': memDraft = null; memEdit = x.id; break;
     case 'cancel': if (x === memDraft) memDraft = null; memEdit = null; break;
     case 'save': { const text = card.querySelector('.dp-area').value.replace(/\s+/g, ' ').trim().slice(0, 300);
@@ -4098,7 +4105,7 @@ const HELP = [
     <p class="help-why">Say it once: every request carries it.</p>
     <ul><li>The <b>flag</b> under a message makes it a decision: one sentence, what was decided and why, and under it the details it rests on (conditions, numbers, trade-offs), read from the whole message. Every prompt of the conversation carries them. Tap the Decision box to edit them, a detail per line, or <b>Write for me</b>. When the message changes (a regeneration, an edit, a Restore), a decision the helper wrote is written again; yours says it was written for an earlier version, with <b>Update</b> and <b>Keep</b>.</li>
     <li><b>⚑</b> in the top bar opens this conversation's decisions, with history and restore, and below them those not in force (unflagged, or replaced by a later choice); the bookmark next to it opens your memory. <b>Go to</b> jumps to a message, and <b>← Back</b> above the composer returns to where you were.</li>
-    <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) opens one the model for memory drafts writes from that message: what in it holds for you everywhere, for you to edit, and saved only when you tap <b>Save</b>. Without a key, or with memory drafts off, it starts empty. Tap a fact to edit or delete it; with many facts, search them.</li>
+    <li><b>Memory</b> is about you: your role, your preferences and the answers you want. It goes into every request of every conversation, and the Memory tab says how many tokens it adds. Untick <b>Use</b> on a fact to keep it out of every prompt without deleting it. <b>+ Add a fact</b> writes one; <b>Remember</b> (the bookmark under a message) opens one the model for memory drafts writes from that message: what in it holds for you everywhere, for you to edit, and saved only when you tap <b>Save</b>. Without a key, or with memory drafts off, it starts empty. Tap a fact to edit or delete it; with many facts, search them.</li>
     <li>The <b>eye</b> under a message excludes it from history: the model doesn't see it, on this branch and the ones that continue from it. Tap it again to include it. A flagged message keeps its decision in the prompts: only its text leaves the history.</li>
     <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. Prompt views show each message as the model saw it, with ✎ on what changed since. <b>Prompt</b> above the message box previews your next prompt, once you have written it: it has the whole path so far, while an answer's prompt has the turns before its question.</li>
     <li>An answer written before later decisions says so: <b>Re-ask</b> writes it again with them. One written before an edit above says that on its ✎ line, with the decisions since, and its <b>⋯</b> regenerates it. Re-asking in the middle of a chain opens a new branch, which says what it asks again, and the old answer says where it was asked.</li></ul>` },
@@ -4125,6 +4132,7 @@ const WHATS_NEW = [
     'Your own data as written and whole: a decision keeps its Markdown and all its details after an update, and no longer reads as changed; every refreshed comparison stays; a memory draft never reaches a shared page, also from an older export.',
     'Fixed: with the question excluded, no path answers it again; an unused Branch out is never saved; Undo of a delete works when what you deleted was streaming; a double tap on Send no longer stops its answer.',
     'Two tabs answering one conversation keep both answers; a tab opened while another streams shows that answer as being answered there.',
+    'Memory: each fact has Use; untick it and the fact stays, out of every prompt. Another tool\'s project memory stays in its bundle when you add it to yours.',
     'An agent\'s decisions in an opened Thinking State are in force, and every file of it comes back as it was, binary files too; hostile zips are bounded by what they hold.',
     'A choice records what it was made among, so a branch or an option added later is never "Not chosen"; Compare and Choose wait for the options\' answers.',
     'Each text shows once among an answer\'s versions, a restored one as Current; an open edit keeps its text when you leave its conversation and come back.',
@@ -4301,9 +4309,9 @@ async function exportAllStates() {
       source: m && c.tsId && c.sessionId ? { resource: `mindbough://${c.tsId}/sessions/${c.sessionId}.jsonl#${m.id}`, title: c.title } : null });
   }
   items.sort((a, b) => (a.id < b.id ? -1 : 1));
-  files.push({ name: 'home/memory/index.md', text: '# Memory\n\n' + (items.length ? items.map(x => `* [${x.title}](${x.id}.md) - ${x.description}${itemPinned(x.fact) ? ' · pinned' : ''}`).join('\n') : '_Nothing remembered yet._') + '\n' });
+  files.push({ name: 'home/memory/index.md', text: '# Memory\n\n' + (items.length ? items.map(x => `* [${x.title}](${x.id}.md) - ${x.description}${itemPinned(x.fact) ? ' · pinned' : ''}${x.fact.off ? ' · off' : ''}`).join('\n') : '_Nothing remembered yet._') + '\n' });
   items.forEach(x => files.push({ name: `home/memory/${x.id}.md`, text: itemDoc(x.fact, ['---', 'type: Memory', `title: ${yq(x.title)}`, `description: ${yq(x.description)}`, `generated: { by: ${yq(x.by || 'human:me')}, at: ${yq(x.at)} }`,
-    ...(x.source ? ['sources:', `  - { resource: ${yq(x.source.resource)}, title: ${yq(x.source.title)} }`] : []), ...x.thinking, '---', ''].join('\n')) }));
+    ...(x.source ? ['sources:', `  - { resource: ${yq(x.source.resource)}, title: ${yq(x.source.title)} }`] : []), ...x.thinking, '---', ''].join('\n'), 'home') }));
   save(); // ids given on the way are kept
   download(`mindbough-${stamp()}.zip`, zipFiles(files, latest || Date.now()), 'application/zip');
   toast(`Exported ${ids.length} conversation${ids.length === 1 ? '' : 's'}${items.length ? ` and ${items.length} fact${items.length === 1 ? '' : 's'} of memory` : ''} (.zip)`);
@@ -4322,8 +4330,8 @@ function homeFacts(files) {
     const at = Date.parse(fm.meta.generated && fm.meta.generated.at);
     const history = memHistoryOf(fm);
     const by = fm.meta.generated && fm.meta.generated.by; // a helper's words stay the helper's (P3)
-    out.push({ text: String(fm.meta.description).replace(/\s+/g, ' ').trim().slice(0, 300), at: Number.isFinite(at) ? at : Date.now(), itemId: m[2], ...(history.length ? { history } : {}), ...(actorOk(by) && by !== 'human:me' ? { by } : {}),
-      ...(f.text.length <= ITEM_MAX ? { file: f.text } : {}),
+    out.push({ text: asRead(fm.meta.description), ...(objOf(fm.meta.thinking) && fm.meta.thinking.off === true ? { off: true } : {}), at: Number.isFinite(at) ? at : Date.now(), itemId: m[2], ...(history.length ? { history } : {}), ...(actorOk(by) && by !== 'human:me' ? { by } : {}),
+      ...(f.text.length <= ITEM_MAX ? { file: f.text, fileAt: 'home' } : {}),
       ...(src ? { bundle: String(src.resource).slice(12, 27), mid: String(src.resource).split('#')[1], ...(typeof src.title === 'string' && src.title ? { from: src.title.slice(0, 200) } : {}) } : {}) });
   }
   return out;
@@ -4362,17 +4370,23 @@ const cutText = (x, max) => { if (x.length <= max) return x; const s = whole(x.s
 const sentenceOf = (t, max) => cutText(firstSentence(plain(t || '')), max);
 // A memory item's earlier wordings, newest first, as thinking.revisions lines of its document (spec §9.2, W11)
 const memRevisions = x => (Array.isArray(x.history) ? x.history : []).filter(h => h && h.text).slice(0, 10).map(h => { const t = h.text.replace(/\s+/g, ' ').trim(); return `    - { title: ${yq(shortTitle(t))}, description: ${yq(t)}, generated: { by: ${yq(h.by || 'human:me')}, at: ${yq(isoOf(h.at))} } }`; });
-const memThinking = x => { const r = memRevisions(x); return r.length ? ['thinking:', '  revisions:', ...r] : []; };
+// "off" is quoted: a YAML 1.1 reader takes a bare off for false
+const memThinking = x => { const r = memRevisions(x); return r.length || x.off ? ['thinking:', ...(x.off ? ['  "off": true'] : []), ...(r.length ? ['  revisions:', ...r] : [])] : []; };
 // A memory item another tool wrote, kept with the fact it became (W6): while the fact says what the item says, the item is written
 // back as it was read; once reworded, as the demo writes it, with the item's other fields (tags, a link, a pin) and its body
-const ITEM_MAX = 20000; // a memory item's file kept with its fact, up to this size
+const ITEM_MAX = 1e6; // a memory item's file kept with its fact, a long document too, up to this size
 const keptItem = x => { if (typeof x.file !== 'string') return null; const fm = frontmatter(x.file);
-  return fm && fm.meta.description != null && String(fm.meta.description).replace(/\s+/g, ' ').trim() === x.text.replace(/\s+/g, ' ').trim() ? fm : null; };
-function itemDoc(x, demo) {
+  return fm && fm.meta.description != null && String(fm.meta.description).replace(/\s+/g, ' ').trim() === x.text.replace(/\s+/g, ' ').trim()
+    && !!(objOf(fm.meta.thinking) && fm.meta.thinking.off === true) === !!x.off ? fm : null; }; // switched since: written again
+// `where` is the place being written, a bundle or the home: an item comes back byte for byte only where it was read (fileAt), since
+// its references are of that place; elsewhere it keeps its fields, with the references of the place it is written in
+function itemDoc(x, demo, where = 'bundle') {
   if (typeof x.file !== 'string') return demo;
-  if (keptItem(x)) return x.file;
+  const here = (x.fileAt || 'bundle') === where;
+  if (here && keptItem(x)) return x.file;
   const o = frontmatter(x.file), n = frontmatter(demo); if (!o || !n) return demo;
   const meta = { ...o.meta, ...n.meta };
+  if (!here) { if (n.meta.sources) meta.sources = n.meta.sources; else delete meta.sources; }
   if (objOf(o.meta.thinking) && objOf(n.meta.thinking)) meta.thinking = { ...o.meta.thinking, ...n.meta.thinking };
   return metaDoc(meta, o.body);
 }
@@ -4490,7 +4504,7 @@ function keepOf(r, files, c, bins = []) {
   for (const f of files) {
     if (!f.name.startsWith(r.dir)) continue;
     const p = f.name.slice(r.dir.length), was = now.get(p);
-    if (was === f.text || p === 'index.md' || p === 'nodes/index.md' || (p === 'README.md' && demoMade)) continue; // written the same, or the demo's own
+    if (was === f.text || p === 'index.md' || p === 'nodes/index.md' || ((p === 'README.md' || p === 'memory/index.md') && demoMade)) continue; // written the same, or the demo's own (an Export all writes its memory index without the facts)
     if (p === session) { // the lines the demo doesn't write are written back after its own; the others as read while unchanged (S6)
       // (a copy has a session of its own: there, the lines of kinds the demo doesn't read)
       const ids = new Set(was === undefined ? [] : was.split('\n').map(lineId)), other = e => !['message', 'branch', 'call'].includes(e.kind) && !(e.kind === 'tool' && e.tool === 'web_search');
@@ -4705,7 +4719,7 @@ function bundleFilesOf(c, quiet, mine, all) {
     { name: 'README.md', text: `---\ntype: Thinking State\ntitle: ${yq(c.title)}\ndescription: ${yq(about)}\nthinking:\n  profile: "${FORMAT_PROFILE}"\n  id: ${c.tsId}\n  root: ${root.id}\ngenerated: { by: ${yq('mindbough-demo/' + APP_VERSION)}, at: ${yq(at)} }\n---\n\n# ${c.title}\n\nA Thinking State exported from the Mindbough demo on ${at.slice(0, 10)}. Start at the [thought tree](nodes/index.md): every branch of the conversation is a node, and every flagged message a decision.\n\nThe raw conversation is in \`${session}\`, which is git-ignored by default because conversations can hold private data.\n\nTo continue with an agent: \`python3 skills/mindbough/scripts/mb.py context ${folder} root\`.\n` },
     { name: 'index.md', text: `---\nokf_version: "0.2"\n---\n\n# Thinking State\n\n* [${c.title.replace(/[[\]]/g, '')}](README.md) - ${about.replace(/\s+/g, ' ')}\n* [Thought tree](nodes/index.md) - ${nodes.length} node${nodes.length === 1 ? '' : 's'}\n* [Memory](memory/index.md) - ${items.length} item${items.length === 1 ? '' : 's'}\n* [Log](log.md) - how the thinking changed, newest first\n` },
     { name: 'nodes/index.md', text: `# Thought tree\n\n${tree.join('\n')}\n` },
-    { name: 'memory/index.md', text: '# Memory\n\n' + (items.length ? items.map(x => `* [${x.title}](${x.id}.md) - ${x.description}${itemPinned(x.fact) ? ' · pinned' : ''}`).join('\n') : '_Nothing remembered yet: `mb.py remember <dir> "…" --by <actor>` adds an item._') + '\n' },
+    { name: 'memory/index.md', text: '# Memory\n\n' + (items.length ? items.map(x => `* [${x.title}](${x.id}.md) - ${x.description}${itemPinned(x.fact) ? ' · pinned' : ''}${x.fact.off ? ' · off' : ''}`).join('\n') : '_Nothing remembered yet: `mb.py remember <dir> "…" --by <actor>` adds an item._') + '\n' },
     ...items.map(x => ({ name: `memory/${x.id}.md`, text: itemDoc(x.fact, ['---', 'type: Memory', `title: ${yq(x.title)}`, `description: ${yq(x.description)}`, `generated: { by: ${yq(x.by || 'human:me')}, at: ${yq(x.at)} }`,
       ...(x.sources.length ? ['sources:', ...x.sources.map(y => `  - { resource: ${yq(y.resource)}, title: ${yq(y.title)} }`)] : []), ...x.thinking, '---', ''].join('\n')) })),
     { name: 'log.md', text: logOf(c, nodes, byBranch, iso) },
@@ -4731,8 +4745,15 @@ function keepIn(k, files, all) {
   for (const [name, text] of Object.entries(k.files || {})) {
     const item = name.match(/^memory\/([0-9]{8}-[0-9a-z]{6})\.md$/);
     if (item && home.has(item[1])) continue; // the fact is in home/memory: one copy
+    let text2 = text;
+    if (item && Array.isArray(k.adopted) && k.adopted.includes(item[1])) { // the bundle's copy of one of your facts
+      const fact = db.memory.find(x => x.itemId === item[1]); if (!fact) continue; // forgotten: gone from here too
+      const fm = frontmatter(text);
+      if (fm && !keptItem({ ...fact, file: text })) { const t = { ...(objOf(fm.meta.thinking) ? fm.meta.thinking : {}) }; if (fact.off) t.off = true; else delete t.off;
+        text2 = metaDoc({ ...fm.meta, title: shortTitle(fact.text), description: fact.text, ...(Object.keys(t).length ? { thinking: t } : {}) }, fm.body); } // reworded or switched here
+    }
     // a file the demo doesn't write goes where it would be: a memory item after the other memory files, in order
-    if (!at.has(name)) { let mi = -1; if (item) files.forEach((f, i) => { if (/^memory\//.test(f.name)) mi = i; }); if (mi >= 0) files.splice(mi + 1, 0, { name, text }); else files.push({ name, text }); at.clear(); files.forEach((f, i) => at.set(f.name, i)); continue; }
+    if (!at.has(name)) { let mi = -1; if (item) files.forEach((f, i) => { if (/^memory\//.test(f.name)) mi = i; }); if (mi >= 0) files.splice(mi + 1, 0, { name, text: text2 }); else files.push({ name, text: text2 }); at.clear(); files.forEach((f, i) => at.set(f.name, i)); continue; }
     const mine = files[at.get(name)];
     if (name === '.gitignore') { mine.text = text; continue; } // what its author ignores is theirs to say
     // a fact of this conversation that you kept as it came keeps its file, tags and author too
@@ -5334,7 +5355,7 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     const mid = src && toMsg.get(src.split('#')[1]);
     const history = memHistoryOf(fm);
     const by = isObj(fm.meta.generated) ? fm.meta.generated.by : null;
-    convo.facts.push({ text: String(fm.meta.description).slice(0, 300), at: time(isObj(fm.meta.generated) ? fm.meta.generated.at : null, now), itemId: rel.slice(7, -3), ...(mid ? { mid } : {}), ...(history.length ? { history } : {}), ...(actorOk(by) && by !== 'human:me' ? { by } : {}),
+    convo.facts.push({ text: asRead(fm.meta.description), ...(objOf(fm.meta.thinking) && fm.meta.thinking.off === true ? { off: true } : {}), at: time(isObj(fm.meta.generated) ? fm.meta.generated.at : null, now), itemId: rel.slice(7, -3), ...(mid ? { mid } : {}), ...(history.length ? { history } : {}), ...(actorOk(by) && by !== 'human:me' ? { by } : {}),
       ...(f.text.length <= ITEM_MAX ? { file: f.text } : {}) });
   }
   // nodes the session doesn't cover stay cards, parents first, each under the nearest node above it that has a branch, a card's
@@ -5416,6 +5437,9 @@ function bundleToConvo(r, files, own) {
 }
 async function exportThinkingState(id) {
   const c = db.convos[id]; if (!c) return;
+  // the facts remembered in this conversation go with it: say so first (Igor, 2026-10-06)
+  const facts = db.memory.filter(x => x.text && x.src && x.src.cid === id);
+  if (facts.length && !confirm(`This zip holds ${facts.length === 1 ? 'a fact of your memory' : `${facts.length} facts of your memory`}, remembered in this conversation: “${snippetOf(facts[0].text, 80)}”. They go with the export.\n\nExport it?`)) return;
   const { folder, at, files } = thinkingStateFiles(c);
   files.push(...await imageFiles(c, folder));
   download(`${folder}-thinking-state.zip`, zipFiles(files, Date.parse(at)), 'application/zip');
@@ -5708,16 +5732,18 @@ async function importZip(buf, { memory = true, reuse = false } = {}) {
   const ask = home.length ? `This file holds ${what}, as an Export all does.\n\nRestore ${them} to your memory? Memory goes into every request of every conversation, so add only facts that are yours.\n\nOK adds ${them}. Cancel imports the conversations without ${them}.`
     : `This Thinking State brings ${what}\n\nAdd ${them} to your memory? Memory is about you, and every request of every conversation carries it.\n\nOK adds ${them}. Cancel imports the conversation without ${them}.`;
   if (n && confirm(ask)) {
-    for (const { f, id } of fresh) { db.memory.push({ id: uid(), text: f.text, at: f.at, ...(f.mid ? { src: { cid: id, mid: f.mid } } : {}), from: db.convos[id].title, ...(TS_ID.test(f.itemId) && !db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}), ...(f.history ? { history: f.history } : {}), ...(f.by ? { by: f.by } : {}), ...(f.file ? { file: f.file } : {}) }); facts++; }
+    for (const { f, id } of fresh) { db.memory.push({ id: uid(), text: f.text, at: f.at, ...(f.off ? { off: true } : {}), ...(f.mid ? { src: { cid: id, mid: f.mid } } : {}), from: db.convos[id].title, ...(TS_ID.test(f.itemId) && !db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}), ...(f.history ? { history: f.history } : {}), ...(f.by ? { by: f.by } : {}), ...(f.file ? { file: f.file } : {}) }); facts++; }
     for (const f of home) {
       const c = f.bundle && Object.values(db.convos).find(x => x.tsId === f.bundle && Object.prototype.hasOwnProperty.call(x.messages, f.mid));
-      db.memory.push({ id: uid(), text: f.text, at: f.at, ...(!db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}), ...(c ? { src: { cid: c.id, mid: f.mid }, from: c.title } : f.from ? { from: f.from } : {}), ...(f.history ? { history: f.history } : {}), ...(f.by ? { by: f.by } : {}), ...(f.file ? { file: f.file } : {}) }); facts++;
+      db.memory.push({ id: uid(), text: f.text, at: f.at, ...(f.off ? { off: true } : {}), ...(!db.memory.some(y => y.itemId === f.itemId) ? { itemId: f.itemId } : {}), ...(c ? { src: { cid: c.id, mid: f.mid }, from: c.title } : f.from ? { from: f.from } : {}), ...(f.history ? { history: f.history } : {}), ...(f.by ? { by: f.by } : {}), ...(f.file ? { file: f.file, ...(f.fileAt ? { fileAt: f.fileAt } : {}) } : {}) }); facts++;
     }
   } else left = n;
   // what the demo doesn't write the same of each Thinking State opened, with its facts now yours or not
   for (const [from, id] of opened) { try { const k = keepOf(from.r, from.files, db.convos[id], from.bins); if (k) db.convos[id].keep = k; } catch (err) { console.error(err); } }
   // a memory item that is now one of your facts is yours: kept as its file, it would come back after you forget it
-  for (const id of added) { const k = db.convos[id] && db.convos[id].keep; if (k && k.files) for (const p of Object.keys(k.files)) { const m = p.match(/^memory\/([0-9]{8}-[0-9a-z]{6})\.md$/); if (m && db.memory.some(x => x.itemId === m[1])) delete k.files[p]; } }
+  // a memory item that is now one of your facts stays in its bundle too, as the bundle's copy (spec §9.1), while the fact is there:
+  // forget it, and it goes from the bundle as well
+  for (const id of added) { const k = db.convos[id] && db.convos[id].keep; if (k && k.files) for (const p of Object.keys(k.files)) { const m = p.match(/^memory\/([0-9]{8}-[0-9a-z]{6})\.md$/); if (m && db.memory.some(x => x.itemId === m[1]) && !(k.adopted || []).includes(m[1])) k.adopted = (k.adopted || []).concat(m[1]); } }
   return { added, failed, facts, left, again, unread: convos.unread || [], skipped: convos.skipped || [] };
 }
 $('#importFile').addEventListener('change', async e => {
