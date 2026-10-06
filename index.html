@@ -174,6 +174,14 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relati
 .set-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);align-items:center;gap:4px 12px;padding:5px 0;font-size:14px}
 .set-row select{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);padding:6px 8px;font:inherit;font-size:13px}
 @media (max-width:560px){.set-row{grid-template-columns:1fr;padding:4px 0 8px}}
+.hp{padding:6px 0 8px;border-bottom:1px solid var(--line)}
+.hp:last-child{border-bottom:0}
+.hp-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;font-size:14px}
+.hp-top>span:first-child{flex:1 1 auto;min-width:0}
+.hp-id{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.hp-mine{font-size:12px;font-weight:600;color:var(--accent)}
+.hp-btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.hp-area{min-height:200px;font-size:13px;margin-top:6px}
 #settingsView>.set-h:first-of-type{margin-top:4px}
 .set-hint{font-size:13px;color:var(--muted);margin:8px 0}
 .set-hint.warn{color:var(--ink);background:var(--flag-soft);padding:8px 12px;border-radius:10px;margin-top:0}
@@ -634,6 +642,9 @@ button.model-chip svg.i{width:11px;height:11px}
         <div id="helperModels"></div>
         <p class="set-hint" id="helperUse" hidden></p>
         <p class="set-hint">Automatic uses a light model: the newest Flash-Lite your key can reach. You pick the model for chatting above the message box.</p>
+        <h3 class="set-h">Instructions for helper tasks</h3>
+        <div id="helperPrompts"></div>
+        <p class="set-hint">Each helper call names the instructions it used, such as <code>summary@2</code>. Yours keep the name with a version of your own, and Export all saves the five in <code>home/prompts/</code>.</p>
         <h3 class="set-h">Your data</h3>
         <p class="set-hint" id="storageInfo"></p>
       </div>
@@ -659,9 +670,9 @@ const whole = t => t.replace(/[\uD800-\uDBFF]$/, '');
 const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return whole(cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.14.0';
+const APP_VERSION = '0.15.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main a49e82a'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 7fdf1f1'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -796,12 +807,14 @@ const NATIVE = stored.v2 && (!stored.v1 || (typeof stored.v1.rev === 'number' &&
 if (NATIVE) {
   const st = NATIVE.settings || {}, ws = NATIVE.workspace || {};
   db = { convos: {}, order: Array.isArray(ws.order) ? ws.order.slice() : [], current: ws.current || null, key: st.key || '', model: st.model || '',
-    helpers: st.helpers || {}, ...(st.webOff ? { webOff: true } : {}), memory: Array.isArray(NATIVE.memory) ? NATIVE.memory : [], rev: NATIVE.rev | 0 };
+    helpers: st.helpers || {}, ...(st.webOff ? { webOff: true } : {}), memory: Array.isArray(NATIVE.memory) ? NATIVE.memory : [], prompts: NATIVE.prompts, rev: NATIVE.rev | 0 };
 }
 if (!db || !db.convos) db = { convos: {}, order: [], current: null, key: '', model: DEFAULT_MODELS[0] };
 if (!db.model) db.model = DEFAULT_MODELS[0];
 if (!Array.isArray(db.memory)) db.memory = []; // facts shared by all conversations: [{ id, text, at, src?: { cid, mid }, from? }]
 if (!db.helpers || typeof db.helpers !== 'object') db.helpers = {}; // the model per helper task (F-30): { summary?, name?, options?, compare? }
+// your instructions for helper tasks (F-38): { summary?: { text?, version, at?, by? } }; without text, the number stays taken
+if (!db.prompts || typeof db.prompts !== 'object' || Array.isArray(db.prompts)) db.prompts = {};
 // Web search is on unless you turned it off (F-33): the model decides itself when it needs to search. Only "off" is stored,
 // so the off-by-default of earlier versions doesn't count as a choice
 db.web = !db.webOff;
@@ -875,7 +888,7 @@ function nativeRecord() {
   for (const [cid, rec] of Object.entries(unreadable)) if (!bundles[cid]) bundles[cid] = rec;
   for (const cid of bundleCache.keys()) if (!db.convos[cid]) bundleCache.delete(cid);
   return { v: 2, app: APP_VERSION, rev: db.rev | 0, savedAt: Date.now(), settings: { key: db.key || '', model: db.model || '', helpers: db.helpers || {}, web: !!db.web, ...(db.webOff ? { webOff: true } : {}) },
-    workspace: { order: db.order, current: db.current }, view, memory: db.memory || [], bundles };
+    workspace: { order: db.order, current: db.current }, view, memory: db.memory || [], prompts: db.prompts || {}, bundles };
 }
 let idsGiven = false;
 function writeNative(now) {
@@ -2174,14 +2187,57 @@ function helperModel(task) {
   if (v === 'off') return HELPER_TASKS.find(t => t.id === task).off ? null : cheapModel();
   return v && modelList().includes(v) ? v : cheapModel();
 }
+// The instructions of each helper task (F-38, spec §14.8): a Prompt document, its task alone. The helper gets them, then what it
+// works on under the demo's headings, and replies in the demo's shape. Yours, written in Settings, keep the task's name with a
+// version of your own (summary@2.1, then 2.2), never one of these
+const PROMPTS = {
+  summary: { version: 2, description: 'How a flagged message becomes a decision\'s sentence and its details.',
+    text: 'Write the decision or key point of the message below, which the user flagged in their conversation. Every later prompt of the conversation, in every branch, carries what you write, often without the message, so it must keep what was decided and what it rests on. Read the whole message: its conclusion is often at the end.\n'
+    + '- decision: one sentence, at most 30 words: what was decided or recommended, and the main reason. When the message weighs options, name the one it recommends, or the one the user chose, not the list.\n'
+    + '- details: 2 to 5 short points, at most 25 words each, fewer for a short message: the specifics the decision rests on, such as conditions, numbers, names, limits, trade-offs and next steps. Take them from the message only, and leave out general advice and background.\n'
+    + 'Write in the language of the message.' },
+  name: { version: 2, description: 'A short title for a conversation or a branch, from its first answer.',
+    text: 'Give the conversation, or the branch of it, named below a short title of 2 to 6 words, in the language of the conversation, like a heading. No quotes and no final period.' },
+  options: { version: 2, description: 'The distinct options in an answer, or directions for a question, for Branch into options.',
+    text: 'List the distinct options or directions worth exploring separately, 2 to 6 of them. Given a question and its answer, take them from the answer; if it has no distinct options, propose the most useful different directions to explore next. Given a question alone, the user wants to brainstorm it: propose genuinely different directions or answers. For each option give a title of at most 6 words, and "why": one short sentence on what makes it different from the others. Use the language of the conversation.' },
+  compare: { version: 2, description: 'How the branches relate, and for alternatives a table by criteria with a suggested pick.',
+    text: 'A user explored branches of a conversation, and now wants to compare them. Work in two steps.\n'
+    + '1. Say what the user is deciding at the point where the branches start ("question"), and how the branches relate ("relation"):\n'
+    + '   - alternatives: they answer the same question in different ways, so one of them can be chosen;\n'
+    + '   - complementary: they cover different parts of the problem and can be combined;\n'
+    + '   - sequential: one is a later step of another;\n'
+    + '   - unrelated: they explore different questions.\n'
+    + '   Give the reason in one sentence ("relation_why").\n'
+    + '2. If they are alternatives: pick 3 to 5 criteria that matter for this question, drawn from the user’s goal, constraints, decisions and memory below, not generic ones, each with a short reason why it matters here. For each option, write one short cell per criterion (at most 12 words, in the order of the criteria) and a one-sentence summary. Suggest a pick with one sentence on why; if it depends, say on what.\n'
+    + '   Otherwise: leave the criteria empty and set the pick to option 0. For each option, write a one-sentence summary of what it contributes, and say in "next" what to do with them (for example, combine them, or do one first).\n'
+    + 'If the user asks to compare by something, follow that. Refer to options by their number. Use the language of the conversation, and base everything on the texts below.' },
+  memory: { version: 1, description: 'One lasting fact about you, drafted from a message for your memory.',
+    text: 'Draft one fact for the user\'s memory from the conversation message below. Memory goes into every future conversation with this user, so the fact must stay true and useful outside this conversation: who the user is, their role and work, their projects and setup, their constraints, and their preferences, including how they want answers. Leave out the details of this one topic, and anything the message doesn\'t say. Write one or two short sentences in the first person ("I …"), at most 40 words, in the language of the message. If there is nothing lasting about the user, reply with an empty fact.' },
+};
+// calls made before 0.15.0 didn't keep their template: they used these
+const PROMPT_IDS_014 = { summary: 'summary@2', name: 'name@1', options: 'options@1', compare: 'compare@2', memory: 'memory@1' };
+const PROMPT_MAX = 20000; // the instructions of one task, yours or a file's
+const ownPrompt = task => { const o = db.prompts && db.prompts[task]; return o && typeof o.text === 'string' && o.text.trim() ? o : null; };
+// the instructions in force for a task: { id: '<name>@<version>', text, mine }
+function promptFor(task) {
+  const o = ownPrompt(task), d = PROMPTS[task];
+  return o ? { id: `${task}@${o.version}`, text: o.text.trim(), mine: true } : { id: `${task}@${d.version}`, text: d.text, mine: false };
+}
+// the next version of yours: after the built-in it starts from, and after the last one you had, also after Use the built-in
+function nextPromptVersion(task) {
+  const base = String(PROMPTS[task].version), last = String((db.prompts && db.prompts[task] && db.prompts[task].version) || '');
+  const n = last.startsWith(base + '.') && /^\d+$/.test(last.slice(base.length + 1)) ? +last.slice(base.length + 1) : 0;
+  return `${base}.${n + 1}`;
+}
+// the template a call used: as it recorded it, as its session line said, or as calls before 0.15.0 did
+const callPrompt = x => typeof x.prompt === 'string' ? x.prompt : x.request ? (typeof x.request.prompt === 'string' ? x.request.prompt : '') : PROMPT_IDS_014[x.task] || '';
 // Each helper call is kept on its conversation (F-30), and becomes a call entry of its session (spec §10.3, §14.8):
 // the task, the model, the prompt template it used, its tokens and a short text of what came back
-const PROMPT_IDS = { summary: 'summary@2', name: 'name@1', options: 'options@1', compare: 'compare@2', memory: 'memory@1' };
 const usageOf = j => j && j.usageMetadata ? { prompt: j.usageMetadata.promptTokenCount | 0, answer: j.usageMetadata.candidatesTokenCount | 0, thoughts: j.usageMetadata.thoughtsTokenCount | 0 } : null;
-function recordCall(c, { task, model, prompt, mid, usage, output, error }) {
+function recordCall(c, { task, model, prompt, tpl, mid, usage, output, error }) {
   if (!c || db.convos[c.id] !== c) return null;
   const id = 'c' + uid();
-  c.calls = (c.calls || []).concat({ id, task, at: Date.now(), model, chars: prompt.length, ...(mid ? { mid } : {}), ...(usage ? { usage } : {}),
+  c.calls = (c.calls || []).concat({ id, task, at: Date.now(), model, chars: prompt.length, ...(tpl ? { prompt: tpl } : {}), ...(mid ? { mid } : {}), ...(usage ? { usage } : {}),
     ...(output ? { output: clean(output, 300) } : {}), ...(error ? { error: clean(error, 200) } : {}) }); // every one: a call entry stays in its session (S6)
   return id;
 }
@@ -2205,6 +2261,48 @@ function fillHelpers() {
     return `<label class="set-row"><span>${t.label}</span><select data-helper="${t.id}">${opts.map(([val, text]) => `<option value="${esc(val)}"${val === v ? ' selected' : ''}>${esc(text)}</option>`).join('')}</select></label>`;
   }).join('');
 }
+// Instructions for helper tasks (F-38): the template in force for each, and yours to write. A text goes into the box as its value,
+// never as HTML: one from a file may be anyone's
+let hpEdit = null; // the task whose instructions are open
+const cleanPromptText = v => String(v == null ? '' : v).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, PROMPT_MAX);
+function fillPrompts() {
+  const box = $('#helperPrompts'); if (!box) return;
+  box.innerHTML = HELPER_TASKS.map(t => {
+    const p = promptFor(t.id), open = hpEdit === t.id, built = `${t.id}@${PROMPTS[t.id].version}`;
+    return `<div class="hp" data-hp="${t.id}"><div class="hp-top"><span>${esc(t.label)}</span><code class="hp-id">${esc(p.id)}</code>${p.mine ? '<span class="hp-mine">yours</span>' : ''}</div>`
+      + (open ? `<textarea class="dp-area hp-area" aria-label="Instructions for ${esc(t.label.toLowerCase())}" spellcheck="false"></textarea>`
+        + '<p class="set-hint">The helper gets these, then what it works on under the demo’s headings, and replies in the shape the demo asks for.</p>'
+        + `<div class="hp-btns"><button class="btn primary" data-hp-act="save">Save as ${esc(t.id)}@${esc(nextPromptVersion(t.id))}</button><button class="btn" data-hp-act="cancel">Cancel</button></div>`
+        : `<div class="hp-btns"><button class="btn" data-hp-act="edit">${p.mine ? 'Edit yours' : 'See and edit'}</button>${p.mine ? `<button class="btn" data-hp-act="reset">Use the built-in ${esc(built)}</button>` : ''}</div>`)
+      + '</div>';
+  }).join('');
+  const a = hpEdit && box.querySelector(`[data-hp="${hpEdit}"] .hp-area`);
+  if (a) a.value = promptFor(hpEdit).text;
+}
+function useBuiltIn(task) {
+  if (db.prompts[task]) db.prompts[task] = { version: db.prompts[task].version }; // its number stays taken
+  hpEdit = null; save(); fillPrompts();
+}
+$('#helperPrompts').addEventListener('click', e => {
+  const b = e.target.closest('[data-hp-act]'); if (!b) return;
+  const task = b.closest('[data-hp]').dataset.hp, act = b.dataset.hpAct, t = HELPER_TASKS.find(x => x.id === task), built = `${task}@${PROMPTS[task].version}`;
+  if (act === 'edit') { hpEdit = task; fillPrompts(); const a = $('#helperPrompts .hp-area'); if (a) a.focus(); return; }
+  if (act === 'cancel') { hpEdit = null; fillPrompts(); return; }
+  if (act === 'reset') {
+    const p = promptFor(task); if (!p.mine) return;
+    if (!confirm(`Use the built-in instructions for ${t.label.toLowerCase()}, ${built}?\n\nYours, ${p.id}, go. Export all keeps a copy.`)) return;
+    useBuiltIn(task); toast(`${t.label}: back to ${built}`); return;
+  }
+  if (act !== 'save') return;
+  const a = b.closest('[data-hp]').querySelector('.hp-area'), text = cleanPromptText(a && a.value);
+  if (!text) { toast('Instructions can’t be empty. Cancel keeps the ones in force.'); if (a) a.focus(); return; }
+  if (text === promptFor(task).text) { hpEdit = null; fillPrompts(); return; } // nothing changed
+  if (text === PROMPTS[task].text) { useBuiltIn(task); toast(`${t.label}: the built-in words, so ${built}`); return; }
+  const version = nextPromptVersion(task);
+  db.prompts[task] = { text, version, at: Date.now() };
+  hpEdit = null; save(); fillPrompts();
+  toast(`Saved as ${task}@${version}: the next calls for ${t.label.toLowerCase()} follow it`);
+});
 $('#helperModels').addEventListener('change', e => {
   const task = e.target.dataset.helper; if (!task) return;
   if (e.target.value) db.helpers[task] = e.target.value; else delete db.helpers[task];
@@ -2222,11 +2320,8 @@ async function summarize(c, m, force) {
   const q = m.role === 'model' ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
   // the decision goes into every later prompt of the conversation, often without its message: so it keeps what was decided and
   // the specifics it rests on, read from the whole message (a long one's conclusion is often at its end)
-  const prompt = 'Write the decision or key point of the message below, which the user flagged in their conversation. Every later prompt of the conversation, in every branch, carries what you write, often without the message, so it must keep what was decided and what it rests on. Read the whole message: its conclusion is often at the end.\n'
-    + '- decision: one sentence, at most 30 words: what was decided or recommended, and the main reason. When the message weighs options, name the one it recommends, or the one the user chose, not the list.\n'
-    + '- details: 2 to 5 short points, at most 25 words each, fewer for a short message: the specifics the decision rests on, such as conditions, numbers, names, limits, trade-offs and next steps. Take them from the message only, and leave out general advice and background.\n'
-    + 'Write in the language of the message.\n\n'
-    + (q ? `Question it answers:\n${withMarks(q).slice(0, 8000)}\n\n` : '') + `Message:\n${withMarks(m).slice(0, 40000)}`;
+  const tpl = promptFor('summary');
+  const prompt = `${tpl.text}\n\n` + (q ? `Question it answers:\n${withMarks(q).slice(0, 8000)}\n\n` : '') + `Message:\n${withMarks(m).slice(0, 40000)}`;
   const sig = sigOf(m.text || ''); // the text being summarized, even if it changes while the helper writes
   const live = () => { const lc = db.convos[c.id]; return [lc || c, (lc && lc.messages[m.id]) || m]; };
   m.decision.pending = true; inflight++; holdConvo(c.id);
@@ -2250,11 +2345,11 @@ async function summarize(c, m, force) {
     // the conversation may have been replaced meanwhile (an Undo, another tab): write into the one shown now
     const [lc, lm] = live();
     const why = cutWhy(finishOf(j));
-    recordCall(lc, { task: 'summary', model, prompt, mid: m.id, usage: usageOf(j), output: text, ...(why ? { error: why } : text ? {} : { error: 'empty reply' }) });
+    recordCall(lc, { task: 'summary', model, prompt, tpl: tpl.id, mid: m.id, usage: usageOf(j), output: text, ...(why ? { error: why } : text ? {} : { error: 'empty reply' }) });
     if (!text || why) throw new Error('empty');
     if (lm.flagged && lm.decision && (force || !lm.decision.summary)) setDecision(lm, text, model, sig, details); // unflagged meanwhile: no decision
   } catch (err) {
-    if (!/^empty$/.test(err.message)) recordCall(live()[0], { task: 'summary', model, prompt, mid: m.id, error: err.message });
+    if (!/^empty$/.test(err.message)) recordCall(live()[0], { task: 'summary', model, prompt, tpl: tpl.id, mid: m.id, error: err.message });
     toast('Couldn’t write the decision. Write it yourself in the Decision box.');
   }
   finally {
@@ -2295,10 +2390,10 @@ async function helperJSON(prompt, schema, task, at) {
     if (!found) throw new Error('the reply had no JSON');
     const data = JSON.parse(found[0]);
     let output = ''; try { output = at && at.output ? String(at.output(data) || '') : ''; } catch (e) {}
-    const call = at ? recordCall(db.convos[at.c.id] || at.c, { task, model, prompt, mid: at.mid, usage, output }) : null; // the live conversation
+    const call = at ? recordCall(db.convos[at.c.id] || at.c, { task, model, prompt, tpl: at.tpl, mid: at.mid, usage, output }) : null; // the live conversation
     return { data, model, call };
   } catch (err) {
-    if (at) recordCall(db.convos[at.c.id] || at.c, { task, model, prompt, mid: at.mid, usage, error: err.message });
+    if (at) recordCall(db.convos[at.c.id] || at.c, { task, model, prompt, tpl: at.tpl, mid: at.mid, usage, error: err.message });
     throw err;
   } finally { inflight--; setTimeout(settled); }
 }
@@ -2317,15 +2412,13 @@ async function findOptions() {
   const c = db.convos[opt.cid], m = c && c.messages[opt.mid], b = m && branchOf(c, m.id);
   if (!b) return;
   const q = m.role === 'model' ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
-  const ask = 'For each option give a title of at most 6 words, and "why": one short sentence on what makes it different from the others. Use the language of the conversation.';
-  const prompt = m.role === 'model'
-    ? `Below are a question and an answer. List the distinct options or directions in the answer that are worth exploring separately, 2 to 6 of them. If the answer has no distinct options, propose the most useful different directions to explore next. ${ask}\n\nQuestion:\n${withMarks(q).slice(0, 2000)}\n\nAnswer:\n${(m.text || '').slice(0, 8000)}`
-    : `The user wants to brainstorm the question below. Propose 2 to 6 genuinely different directions or answers worth exploring separately. ${ask}\n\nQuestion:\n${withMarks(m).slice(0, 4000)}`;
+  const tpl = promptFor('options');
+  const prompt = m.role === 'model' ? `${tpl.text}\n\nQuestion:\n${withMarks(q).slice(0, 2000)}\n\nAnswer:\n${(m.text || '').slice(0, 8000)}` : `${tpl.text}\n\nQuestion:\n${withMarks(m).slice(0, 4000)}`;
   const schema = { type: 'OBJECT', required: ['options'], properties: { options: { type: 'ARRAY', items: { type: 'OBJECT', required: ['title', 'why'], properties: { title: { type: 'STRING' }, why: { type: 'STRING' } } } } } };
   const mine = opt;
   mine.loading = true; mine.error = ''; renderOptionsIfOpen();
   try {
-    const { data, model, call } = await helperJSON(prompt, schema, 'options', { c, mid: m.id, output: d => (d.options || []).map(o => o && o.title).filter(Boolean).join('; ') });
+    const { data, model, call } = await helperJSON(prompt, schema, 'options', { c, mid: m.id, tpl: tpl.id, output: d => (d.options || []).map(o => o && o.title).filter(Boolean).join('; ') });
     mine.call = call; mine.model = model;
     const found = (Array.isArray(data.options) ? data.options : []).map(o => ({ title: clean(o && o.title, 80), why: clean(o && o.why, 200), on: true })).filter(o => o.title).slice(0, 6);
     mine.items = found.concat(mine.items.filter(x => x.manual && x.title.trim()));
@@ -2542,23 +2635,14 @@ function compareBlocks(c, m, kids, focus, cols, at) {
   blocks.forEach(x => { x.chars = x.text.length; });
   return blocks;
 }
-const COMPARE_TASK = 'A user explored branches of a conversation, and now wants to compare them. Work in two steps.\n'
-  + '1. Say what the user is deciding at the point where the branches start ("question"), and how the branches relate ("relation"):\n'
-  + '   - alternatives: they answer the same question in different ways, so one of them can be chosen;\n'
-  + '   - complementary: they cover different parts of the problem and can be combined;\n'
-  + '   - sequential: one is a later step of another;\n'
-  + '   - unrelated: they explore different questions.\n'
-  + '   Give the reason in one sentence ("relation_why").\n'
-  + '2. If they are alternatives: pick 3 to 5 criteria that matter for this question, drawn from the user’s goal, constraints, decisions and memory below, not generic ones, each with a short reason why it matters here. For each option, write one short cell per criterion (at most 12 words, in the order of the criteria) and a one-sentence summary. Suggest a pick with one sentence on why; if it depends, say on what.\n'
-  + '   Otherwise: leave the criteria empty and set the pick to option 0. For each option, write a one-sentence summary of what it contributes, and say in "next" what to do with them (for example, combine them, or do one first).\n'
-  + 'If the user asks to compare by something, follow that. Refer to options by their number. Use the language of the conversation, and base everything on the texts below.';
 async function compareWithAI(c, m) {
   const v = cmpView, kids = forkAlts(c, m);
   if (kids.length < 2 || v.loading) return;
   if (kids.some(b => streamIn(c, b.id))) { toast('Wait for the options’ answers to finish'); return; } // a comparison of half an answer
   const focus = clean(v.focus != null ? v.focus : (m.compare && m.compare.focus) || '', 300);
   const blocks = compareBlocks(c, m, kids, focus);
-  const prompt = `${COMPARE_TASK}\n\n${blocks.map(x => x.kind === 'branch' ? x.text : `## ${x.label}\n${x.text}`).join('\n\n')}`;
+  const tpl = promptFor('compare');
+  const prompt = `${tpl.text}\n\n${blocks.map(x => x.kind === 'branch' ? x.text : `## ${x.label}\n${x.text}`).join('\n\n')}`;
   const schema = { type: 'OBJECT', required: ['question', 'relation', 'relation_why', 'criteria', 'options', 'pick'], properties: {
     question: { type: 'STRING' }, relation: { type: 'STRING', enum: Object.keys(RELATIONS) }, relation_why: { type: 'STRING' },
     criteria: { type: 'ARRAY', items: { type: 'OBJECT', required: ['name', 'why'], properties: { name: { type: 'STRING' }, why: { type: 'STRING' } } } },
@@ -2567,7 +2651,7 @@ async function compareWithAI(c, m) {
     next: { type: 'STRING' } } };
   v.loading = true; v.error = ''; renderCompareIfOpen();
   try {
-    const { data, model, call } = await helperJSON(prompt, schema, 'compare', { c, mid: m.id, output: d => [d.question, d.relation].filter(Boolean).join(' · ') });
+    const { data, model, call } = await helperJSON(prompt, schema, 'compare', { c, mid: m.id, tpl: tpl.id, output: d => [d.question, d.relation].filter(Boolean).join(' · ') });
     const relation = Object.prototype.hasOwnProperty.call(RELATIONS, data.relation) ? data.relation : 'alternatives', alt = relation === 'alternatives';
     const criteria = alt ? (Array.isArray(data.criteria) ? data.criteria : []).map(x => ({ name: clean(x && (x.name || x), 60), why: clean(x && x.why, 140) })).filter(x => x.name).slice(0, 5) : [];
     if (alt && !criteria.length) throw new Error('no criteria in the reply');
@@ -2579,7 +2663,7 @@ async function compareWithAI(c, m) {
     });
     const pi = alt && data.pick ? +data.pick.option : 0;
     const pick = pi >= 1 && pi <= kids.length ? { bid: kids[pi - 1].id, why: clean(data.pick.why, 240) } : null;
-    const request = { chars: prompt.length, blocks: [{ kind: 'task', label: 'Task', text: COMPARE_TASK, chars: COMPARE_TASK.length }, ...blocks] };
+    const request = { chars: prompt.length, prompt: tpl.id, blocks: [{ kind: 'task', label: 'Task', text: tpl.text, chars: tpl.text.length }, ...blocks] };
     const at = Date.now();
     m.compare = { at, model, question: clean(data.question, 200), relation, relationWhy: clean(data.relation_why, 240), criteria, cols,
       ...(pick ? { pick } : {}), ...(!alt && data.next ? { next: clean(data.next, 300) } : {}), ...(focus ? { focus } : {}), request,
@@ -2752,10 +2836,10 @@ async function nameBranch(c, am) {
   if (!b || !b.parentId || b.name || !keyInput.value.trim() || !helperModel('name')) return;
   if (b.msgIds.map(id => c.messages[id]).find(x => x && x.role === 'model') !== am) return;
   const q = historyFor(c, b.id, am.id).reverse().find(x => x.role === 'user');
-  const prompt = 'Give this branch of a conversation a short title of 2 to 5 words, in the language of the conversation, like a heading. No quotes and no final period.'
-    + `\n\nQuestion:\n${withMarks(q).slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
+  const tpl = promptFor('name');
+  const prompt = `${tpl.text}\n\nTo name: one branch of the conversation\n\nQuestion:\n${withMarks(q).slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
   try {
-    const { data, model } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, output: d => d.title });
+    const { data, model } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, tpl: tpl.id, output: d => d.title });
     const name = clean(data && data.title, 60).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim();
     const lc = db.convos[c.id], lb = lc && lc.branches[b.id]; // the live ones: an Undo or another tab may have replaced them
     if (!name || !lb || lb.name) return;
@@ -2770,10 +2854,10 @@ async function nameConvo(c, am) {
   if (!b || b.parentId || c.named || !keyInput.value.trim() || !helperModel('name')) return;
   if (b.msgIds.map(id => c.messages[id]).find(x => x && x.role === 'model') !== am) return;
   const q = historyFor(c, b.id, am.id).reverse().find(x => x.role === 'user');
-  const prompt = 'Give this conversation a short title of 2 to 6 words, in the language of the conversation, like a heading. No quotes and no final period.'
-    + `\n\nQuestion:\n${withMarks(q).slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
+  const tpl = promptFor('name');
+  const prompt = `${tpl.text}\n\nTo name: the whole conversation\n\nQuestion:\n${withMarks(q).slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
   try {
-    const { data, model } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, output: d => d.title });
+    const { data, model } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, tpl: tpl.id, output: d => d.title });
     const name = clean(data && data.title, 80).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim();
     const lc = db.convos[c.id]; // the live one: an Undo or another tab may have replaced it
     if (!name || !lc || lc.named) return;
@@ -3076,7 +3160,9 @@ function mergeFrom(next) {
   const theirs = Array.isArray(next.memory) ? next.memory : [];
   db.memory = theirs.concat(db.memory.filter(f => factsHere.has(f.id) && !theirs.some(x => x.id === f.id)));
   const mine = reapplyMemOps();
-  for (const k of ['key', 'model', 'helpers', 'web', 'webOff']) { if (next[k] !== undefined) db[k] = next[k]; else delete db[k]; }
+  for (const k of ['key', 'model', 'helpers', 'web', 'webOff', 'prompts']) { if (next[k] !== undefined) db[k] = next[k]; else delete db[k]; }
+  if (!db.prompts || typeof db.prompts !== 'object') db.prompts = {};
+  if (!hpEdit) fillPrompts();
   db.rev = Math.max(db.rev | 0, next.rev | 0);
   if (!db.convos[db.current]) db.current = db.order[0] || null;
   renderSidebar(); if (db.current && !touched.has(db.current)) renderAll(false);
@@ -3137,8 +3223,10 @@ function takeFrom(next) {
   if (db.convos[here]) { db.current = here; if (focus && db.convos[here].branches[focus]) db.convos[here].focus = focus; }
   if (!Array.isArray(db.memory)) db.memory = [];
   if (!db.helpers || typeof db.helpers !== 'object') db.helpers = {};
+  if (!db.prompts || typeof db.prompts !== 'object' || Array.isArray(db.prompts)) db.prompts = {};
   if (!db.convos[db.current]) db.current = db.order[0] || null;
   keyInput.value = db.key || '';
+  if (!hpEdit) fillPrompts();
   fillModels(modelList());
   editing = null;
   const mine = reapplyMemOps();
@@ -3738,6 +3826,7 @@ document.addEventListener('keydown', e => {
 const fmtMB = mb => mb < 0.1 ? mb.toFixed(2) : mb.toFixed(1);
 function openSettings(hint) {
   openSheet({ title: 'Settings', settings: true });
+  hpEdit = null; fillPrompts();
   const mb = savedChars / 1048576;
   $('#storageInfo').textContent = storage === 'IndexedDB'
     ? `Your data is saved only in this browser (IndexedDB), as Thinking State bundles: the same files an export holds. ${(nativeChars || savedChars) + imageBytes() ? `About ${fmtMB(((nativeChars || savedChars) + imageBytes()) / 1048576)} MB${imageBytes() ? ', images included' : ''}.` : 'Nothing saved yet.'}`
@@ -3856,7 +3945,7 @@ function pvRender(pv) {
         : 'The model didn’t search for this answer: it decides itself when it needs fresh facts.'}</p></div>` : ''}
       ${pv.search ? `<div class="pv-search pv-web"><b>The model searched the web</b><p class="set-hint">What it found was added inside the Gemini API, so it isn’t one of the blocks above${u && u.tools ? `: ${tok(u.tools)} tokens` : ''}.</p>${(pv.search.queries || []).length ? `<ul>${pv.search.queries.map(q => `<li>“${esc(q)}”</li>`).join('')}</ul>` : ''}
         ${(pv.search.sources || []).length ? `<p class="pv-meta" style="margin-top:8px"><span>${pv.search.sources.length} source${pv.search.sources.length === 1 ? '' : 's'}</span></p><ul>${pv.search.sources.map(x => `<li><a href="${esc(x.uri)}" target="_blank" rel="noopener noreferrer">${esc(x.title)}</a></li>`).join('')}</ul>` : ''}</div>` : ''}
-      ${(pv.calls || []).length ? `<div class="pv-search pv-calls"><b>Helper calls on this answer</b><ul>${pv.calls.map(x => `<li>${esc((HELPER_TASKS.find(t => t.id === x.task) || { label: x.task }).label)} · <b>${esc(x.model || 'unknown model')}</b> · ${x.usage ? `${tok(x.usage.prompt)} in · ${tok(x.usage.answer + x.usage.thoughts)} out` : 'no token counts'}${x.error ? ` · failed: ${esc(x.error)}` : ''}</li>`).join('')}</ul>
+      ${(pv.calls || []).length ? `<div class="pv-search pv-calls"><b>Helper calls on this answer</b><ul>${pv.calls.map(x => `<li>${esc((HELPER_TASKS.find(t => t.id === x.task) || { label: x.task }).label)}${callPrompt(x) ? ` · <code>${esc(callPrompt(x))}</code>` : ''} · <b>${esc(x.model || 'unknown model')}</b> · ${x.usage ? `${tok(x.usage.prompt)} in · ${tok(x.usage.answer + x.usage.thoughts)} out` : 'no token counts'}${x.error ? ` · failed: ${esc(x.error)}` : ''}</li>`).join('')}</ul>
         <p class="pv-meta" style="margin-top:8px"><span>${pv.calls.length} call${pv.calls.length === 1 ? '' : 's'} · ${callsLine(pv.calls)}</span></p></div>` : ''}
       <div class="pv-actions"><button class="btn" data-copy>Copy the whole prompt</button></div>`;
   }
@@ -4058,12 +4147,13 @@ async function draftFact(c, m, draft) {
   const b = branchOf(c, m.id);
   const q = m.role === 'model' && b ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
   const known = db.memory.filter(x => x.text).map(x => `- ${x.text}`).join('\n');
-  const prompt = 'Draft one fact for the user\'s memory from the conversation message below. Memory goes into every future conversation with this user, so the fact must stay true and useful outside this conversation: who the user is, their role and work, their projects and setup, their constraints, and their preferences, including how they want answers. Leave out the details of this one topic, and anything the message doesn\'t say. Write one or two short sentences in the first person ("I …"), at most 40 words, in the language of the message. If there is nothing lasting about the user, reply with an empty fact.'
+  const tpl = promptFor('memory');
+  const prompt = tpl.text
     + (known ? `\n\nAlready in memory (don't repeat these):\n${known.slice(0, 3000)}` : '')
     + (q ? `\n\nThe user's question:\n${withMarks(q).slice(0, 4000)}` : '') + `\n\nMessage (${m.role === 'user' ? 'by the user' : 'by the assistant'}):\n${withMarks(m).slice(0, 20000)}`;
   let text = '', model = '';
   try {
-    const r = await helperJSON(prompt, { type: 'OBJECT', required: ['fact'], properties: { fact: { type: 'STRING' } } }, 'memory', { c, mid: m.id, output: d => d.fact });
+    const r = await helperJSON(prompt, { type: 'OBJECT', required: ['fact'], properties: { fact: { type: 'STRING' } } }, 'memory', { c, mid: m.id, tpl: tpl.id, output: d => d.fact });
     text = clean(r.data && r.data.fact, 300); model = r.model;
   } catch (e) { toast('Couldn’t draft the fact: write it yourself'); }
   if (memDraft !== draft) return; // closed, or another draft opened meanwhile
@@ -4192,11 +4282,12 @@ const HELP = [
     <li>The <b>eye</b> under a message excludes it from history: the model doesn't see it, on this branch and the ones that continue from it. Tap it again to include it. A flagged message keeps its decision in the prompts: only its text leaves the history.</li>
     <li><b>⋯ → How the prompt was built</b> under an answer shows its prompt: the demo's fixed instructions (the harness), your memory, the decisions in force, this branch's path and your message, each with a line on what it is. <b>Not in this prompt</b> counts what it left out. Prompt views show each message as the model saw it, with ✎ on what changed since. <b>Prompt</b> above the message box previews your next prompt, once you have written it: it has the whole path so far, while an answer's prompt has the turns before its question.</li>
     <li>An answer written before later decisions says so: <b>Re-ask</b> writes it again with them. One written before an edit above says that on its ✎ line, with the decisions since, and its <b>⋯</b> regenerates it. Re-asking in the middle of a chain opens a new branch, which says what it asks again, and the old answer says where it was asked.</li></ul>` },
-  { id: 'models', title: 'Models and web search', cards: ['F-30', 'F-33', 'F-37'], body: `
+  { id: 'models', title: 'Models and web search', cards: ['F-30', 'F-33', 'F-37', 'F-38'], body: `
     <p class="help-why">A cheap model for small jobs, and the tokens in view.</p>
     <ul><li>Pick the model for your next request above the message box. Each answer shows the model that wrote it, and its prompt view the tokens.</li>
     <li><b>Auto</b>, first in the model picker, lets rules pick the model of each request you send: the effort of the line you write in, if its node has one, images, a long message or code (the frontier model), a short follow-up (a fast one), else the balanced one. Each answer's prompt view says which rule picked its model, and the Thinking State keeps it.</li>
     <li>Settings → <b>Models for helper tasks</b>: the model for decisions, names, options, comparisons and memory drafts. <b>Automatic</b> takes a light model, the newest Flash-Lite your key can reach; decisions, names and memory drafts can be turned off. It also sums this conversation's helper calls, and an answer's prompt view lists the ones made on it.</li>
+    <li>Settings → <b>Instructions for helper tasks</b>: what each helper is told, such as <code>summary@2</code> for decisions. <b>See and edit</b>, then save, and they are yours, as <code>summary@2.1</code>: every later call follows them and names them, in its prompt view and in the Thinking State. <b>Use the built-in</b> brings the demo's back. Export all saves them in <code>home/prompts/</code>, and an import asks before it uses them.</li>
     <li><b>Web</b> (the globe next to the model picker) is on from the start: the model may search the web with Google Search, inside the Gemini API, when a message needs fresh facts. The answer lists its sources, with Google's Search Suggestions under them, as the Gemini API terms ask (shown, never exported), and the prompt view says whether it searched. Turn it off for private topics, or to avoid search costs.</li></ul>` },
   { id: 'data', title: 'Your data and the format', cards: ['F-13', 'F-14', 'F-17', 'F-25', 'F-26'], body: `
     <p class="help-why">Yours: open files that any tool can read.</p>
@@ -4212,6 +4303,9 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
+  { version: '0.15.0', items: [
+    'What each helper model is told is yours to read and change: Settings → Instructions for helper tasks. Every helper call names the instructions it used, such as summary@2.1, and Export all saves them.',
+  ] },
   { version: '0.14.0', items: [
     'Fixed: Edit opens your message in a box again, and your messages show as you typed them. A slow CDN no longer blanks the app, and a long Thinking State opens in a second.',
     'Another tool\'s Thinking State keeps its nodes\' own text when you exclude or edit there, and a fact it words otherwise is offered as a rewording.',
@@ -4379,7 +4473,7 @@ const omitMemory = r => { if (r && Array.isArray(r.blocks)) r.blocks.forEach(b =
 // (home/memory/, spec §9), each fact citing where it was remembered, across bundles (§8.3)
 async function exportAllStates() {
   const ids = db.order.filter(id => db.convos[id] && Object.keys(db.convos[id].messages).length); // an empty conversation holds nothing
-  if (!ids.length && !db.memory.length) { toast('Nothing to export'); return; }
+  if (!ids.length && !db.memory.length && !HELPER_TASKS.some(t => ownPrompt(t.id))) { toast('Nothing to export'); return; }
   const files = [], used = new Set(['home']);
   let latest = 0;
   for (const id of ids) {
@@ -4403,11 +4497,18 @@ async function exportAllStates() {
   }
   items.sort((a, b) => (a.id < b.id ? -1 : 1));
   files.push({ name: 'home/memory/index.md', text: '# Memory\n\n' + (items.length ? items.map(x => `* [${x.title}](${x.id}.md) - ${x.description}${itemPinned(x.fact) ? ' · pinned' : ''}${x.fact.off ? ' · off' : ''}`).join('\n') : '_Nothing remembered yet._') + '\n' });
+  // the instructions of the helper tasks (spec §14.8): yours, and the demo's own for the others, so every call's template is here
+  for (const t of HELPER_TASKS) {
+    const o = ownPrompt(t.id), v = o ? String(o.version) : PROMPTS[t.id].version;
+    files.push({ name: `home/prompts/${t.id}.md`, text: ['---', 'type: Prompt', `title: ${yq(t.label)}`, `description: ${yq(PROMPTS[t.id].description)}`, `version: ${typeof v === 'number' ? v : yq(v)}`,
+      `generated: { by: ${yq(o ? o.by || 'human:me' : `mindbough-demo/${APP_VERSION}`)}${o && o.at ? `, at: ${yq(isoOf(o.at))}` : ''} }`, '---', '', promptFor(t.id).text, ''].join('\n') });
+  }
   items.forEach(x => files.push({ name: `home/memory/${x.id}.md`, text: itemDoc(x.fact, ['---', 'type: Memory', `title: ${yq(x.title)}`, `description: ${yq(x.description)}`, `generated: { by: ${yq(x.by || 'human:me')}, at: ${yq(x.at)} }`,
     ...(x.source ? ['sources:', `  - { resource: ${yq(x.source.resource)}, title: ${yq(x.source.title)} }`] : []), ...x.thinking, '---', ''].join('\n'), 'home') }));
   save(); // ids given on the way are kept
   download(`mindbough-${stamp()}.zip`, zipFiles(files, latest || Date.now()), 'application/zip');
-  toast(`Exported ${ids.length} conversation${ids.length === 1 ? '' : 's'}${items.length ? ` and ${items.length} fact${items.length === 1 ? '' : 's'} of memory` : ''} (.zip)`);
+  const own = HELPER_TASKS.filter(t => ownPrompt(t.id)).length;
+  toast(`Exported ${ids.length} conversation${ids.length === 1 ? '' : 's'}${items.length ? `${own ? ',' : ' and'} ${items.length} fact${items.length === 1 ? '' : 's'} of memory` : ''}${own ? ` and your instructions for ${own} helper task${own === 1 ? '' : 's'}` : ''} (.zip)`);
 }
 // A memory item's earlier wordings (thinking.revisions), newest first, as the demo keeps them
 const memHistoryOf = fm => (fm.meta.thinking && typeof fm.meta.thinking === 'object' && Array.isArray(fm.meta.thinking.revisions) ? fm.meta.thinking.revisions : [])
@@ -4426,6 +4527,22 @@ function homeFacts(files) {
     out.push({ text: asRead(fm.meta.description), ...(objOf(fm.meta.thinking) && fm.meta.thinking.off === true ? { off: true } : {}), at: Number.isFinite(at) ? at : Date.now(), itemId: m[2], ...(history.length ? { history } : {}), ...(actorOk(by) && by !== 'human:me' ? { by } : {}),
       ...(f.text.length <= ITEM_MAX ? { file: f.text, fileAt: 'home' } : {}),
       ...(src ? { bundle: String(src.resource).slice(12, 27), mid: String(src.resource).split('#')[1], ...(typeof src.title === 'string' && src.title ? { from: src.title.slice(0, 200) } : {}) } : {}) });
+  }
+  return out;
+}
+// A person's instructions for helper tasks in a zip (home/prompts/<task>.md, spec §14.8). The demo's own, of any version, aren't
+// offered: the ones this version ships are in force. Nor are names that aren't a helper task here
+function homePrompts(files) {
+  const out = [];
+  for (const f of files) {
+    const m = f.name.match(/(^|\/)home\/prompts\/([a-z][a-z0-9-]*)\.md$/);
+    if (!m || !Object.prototype.hasOwnProperty.call(PROMPTS, m[2]) || out.some(x => x.task === m[2])) continue;
+    const fm = frontmatter(f.text); if (!fm || fm.meta.type !== 'Prompt') continue;
+    const gen = objOf(fm.meta.generated) ? fm.meta.generated : {}, by = gen.by;
+    if (typeof by === 'string' && by.startsWith('mindbough-demo/')) continue;
+    const v = fm.meta.version, version = typeof v === 'number' && Number.isFinite(v) ? String(v) : typeof v === 'string' ? v.trim() : '', text = cleanPromptText(fm.body), at = Date.parse(gen.at);
+    if (!text || !/^[0-9A-Za-z][0-9A-Za-z.+-]{0,19}$/.test(version)) continue;
+    out.push({ task: m[2], text, version, ...(Number.isFinite(at) ? { at } : {}), ...(actorOk(by) && by !== 'human:me' ? { by } : {}) });
   }
   return out;
 }
@@ -5014,7 +5131,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
   for (const x of (c.calls || []).slice().sort((a, b) => a.at - b.at)) {
     const m = x.mid && c.messages[x.mid], chars = x.chars | 0;
     lines.push({ id: x.id, kind: 'call', task: x.task, ...(m ? { node: byBranch[m.branchId] } : x.mid ? {} : { node: byBranch[c.root] }), by: `mindbough-demo/${x.model || 'unknown'}`, at: iso(x.at), // on a message deleted since: no node
-      request: x.request || { at: iso(x.at), chars, ...(Object.prototype.hasOwnProperty.call(PROMPT_IDS, x.task) ? { prompt: PROMPT_IDS[x.task] } : {}), blocks: [{ kind: 'prompt', chars }] }, // as read
+      request: x.request || { at: iso(x.at), chars, ...(callPrompt(x) ? { prompt: callPrompt(x) } : {}), blocks: [{ kind: 'prompt', chars }] }, // as read
       ...(x.usage ? { usage: { input: x.usage.prompt | 0, output: x.usage.answer | 0, ...(x.usage.thoughts ? { reasoning: x.usage.thoughts | 0 } : {}) } } : {}),
       // a memory draft is about you: like memory itself, its text stays out of exports and shared pages
       ...(x.output && (mine || x.task !== 'memory') ? { output: x.output } : {}), ...(x.error ? { error: x.error } : {}), ...(m ? { ext: { 'mindbough-demo': { message: m.id } } } : {}) });
@@ -5247,6 +5364,7 @@ async function openThinkingStates(buf) { // a .zip, or the files a shared page h
     .filter(r => !(files.skipped || []).some(x => x.startsWith(`${r.dir}sessions/`) && / \(too large\)$/.test(x) && /\.jsonl /.test(x)))
     .map(r => { const c = bundleToConvo(r, files); if (c) c.from = { r, files, bins }; return c; }).filter(Boolean);
   convos.home = homeFacts(files);
+  convos.prompts = homePrompts(files);
   // the images: a zip's files, or a shared page's, in base64
   convos.images = await verifiedImages(Array.isArray(buf) ? buf.filter(f => f && typeof f.name === 'string' && typeof f.b64 === 'string').slice(0, 500).map(f => ({ name: f.name, bytes: b64Bytes(f.b64) })).filter(f => f.bytes) : files.images || []);
   convos.unread = files.filter(f => /\.md$/.test(f.name) && FM_RE.test(f.text) && !frontmatter(f.text)).map(f => f.name); // named in the toast
@@ -5782,14 +5900,15 @@ function adoptConvo(src) {
   db.order.unshift(c.id);
   return c.id;
 }
-function finishImport(added, failed, sources, facts = 0, left = 0, again = 0, unread = [], skipped = []) {
+function finishImport(added, failed, sources, facts = 0, left = 0, again = 0, unread = [], skipped = [], tasks = 0) {
   const odd = unread.length ? `. Couldn’t read ${unread.length === 1 ? unread[0].split('/').slice(-2).join('/') : `${unread.length} files, such as ${unread[0].split('/').slice(-2).join('/')}`}: kept as ${unread.length === 1 ? 'it is' : 'they are'}, not shown` : '';
   // without IndexedDB this browser can't keep images: an import that brings some says so (F-17, F-36)
   const pics = storage !== 'IndexedDB' && added.some(id => db.convos[id] && Object.values(db.convos[id].messages).some(m => imgsOf(m).length));
   // what the zip held that wasn't imported is named, never dropped without a word (F-13, F-26)
   const odd2 = odd + (skipped.length ? `. Not imported: ${skipped.slice(0, 2).join(', ')}${skipped.length > 2 ? ` and ${skipped.length - 2} more` : ''}` : '')
-    + (pics ? '. Its images are shown now, but this browser doesn’t keep them: they go after a reload' : '');
-  if (added.length && again === added.length && !facts) { // everything was here already, unchanged
+    + (pics ? '. Its images are shown now, but this browser doesn’t keep them: they go after a reload' : '')
+    + (tasks ? `. Helper calls follow its instructions for ${tasks} task${tasks === 1 ? '' : 's'} now` : '');
+  if (added.length && again === added.length && !facts && !tasks) { // everything was here already, unchanged
     db.order = added.concat(db.order.filter(id => !added.includes(id))); db.current = added[0];
     save(); renderAll(false); $('#sidebar').classList.remove('open');
     toast(added.length === 1 ? `Already here, unchanged: opened “${db.convos[added[0]].title}”` : `All ${added.length} conversations are here already, unchanged`);
@@ -5802,7 +5921,7 @@ function finishImport(added, failed, sources, facts = 0, left = 0, again = 0, un
     $('#sidebar').classList.remove('open');
     const fresh = added.length - again, what = fresh ? `Imported ${fresh} conversation${fresh === 1 ? '' : 's'}` : `Already here: opened “${db.convos[added[0]].title}”`;
     toast(`${what}${facts ? `${fresh ? ' and' : ', and added'} ${facts} memory fact${facts === 1 ? '' : 's'}` : ''}${again && fresh ? ` (${again} already here)` : ''}${failed ? ` (${failed} skipped)` : ''}${left ? `; ${left} memory fact${left === 1 ? '' : 's'} left out` : ''}${odd2}`);
-  } else if (facts) { save(); renderAll(false); toast(`Imported ${facts} memory fact${facts === 1 ? '' : 's'}`); }
+  } else if (facts || tasks) { save(); renderAll(false); toast(facts ? `Imported ${facts} memory fact${facts === 1 ? '' : 's'}` : `Helper calls follow the file’s instructions for ${tasks} task${tasks === 1 ? '' : 's'} now`); }
   else if (failed && sources > 1) toast('Nothing could be imported');
 }
 $('#importBtn').onclick = () => $('#importFile').click();
@@ -5814,7 +5933,7 @@ async function importZip(buf, { memory = true, reuse = false } = {}) {
   let added = [], failed = 0, facts = 0, left = 0, again = 0;
   const fresh = [], opened = [], reworded = []; // reworded: a fact of yours that the files word otherwise (its item, by id) // facts of the conversations that memory doesn't have yet; the Thinking States opened
   const convos = await openThinkingStates(buf);
-  if (!convos.length && !(convos.home || []).length) throw new Error('No Thinking State in this zip: it needs a README.md with type: Thinking State');
+  if (!convos.length && !(convos.home || []).length && !(convos.prompts || []).length) throw new Error('No Thinking State in this zip: it needs a README.md with type: Thinking State');
   convos.forEach(c => {
     // the same Thinking State is here already: a sample opens again (reuse), and an unchanged copy isn't added twice
     const twin = TS_ID.test(String(c.tsId || '')) && Object.values(db.convos).find(o => o.tsId === c.tsId);
@@ -5861,34 +5980,46 @@ async function importZip(buf, { memory = true, reuse = false } = {}) {
   if (rw.length && confirm(`This file words ${rw.length === 1 ? 'a fact of yours' : `${rw.length} facts of yours`} differently:\n\n“${snippetOf(rw[0].known.text, 80)}”\n→ “${snippetOf(rw[0].f.text, 80)}”\n\nTake its wording? Yours goes to the fact's history.`)) {
     for (const { known, f } of rw) { known.history = [{ text: known.text, at: known.at || Date.now(), ...(known.by ? { by: known.by } : {}) }, ...(known.history || [])].slice(0, 10); known.text = f.text; known.at = Date.parse(f.at) || f.at || Date.now(); if (f.by) known.by = f.by; else delete known.by; if (f.file) known.file = f.file; memOp('add', known); facts++; }
   }
+  // instructions for helper tasks, as an Export all holds them (F-38): every later call for the task follows them, so they come only
+  // if you say so. A version you have with other words: the file's takes your next number
+  let tasks = 0;
+  const offers = (memory ? convos.prompts || [] : []).filter(x => x.text !== promptFor(x.task).text);
+  const named = offers.map(x => `${HELPER_TASKS.find(t => t.id === x.task).label} (${x.task}@${x.version})`).join(', ');
+  if (offers.length && confirm(`This file holds instructions for ${offers.length === 1 ? 'a helper task' : `${offers.length} helper tasks`}, as an Export all does: ${named}.\n\nUse ${offers.length === 1 ? 'them' : 'these'}? Every later call for ${offers.length === 1 ? 'that task' : 'those tasks'} follows them, instead of ${offers.map(x => promptFor(x.task).id).join(', ')}, and they go to the model with your messages.\n\nOK uses them. Cancel keeps yours.`)) {
+    for (const x of offers) {
+      const had = db.prompts[x.task];
+      db.prompts[x.task] = { text: x.text, version: had && String(had.version) === x.version ? nextPromptVersion(x.task) : x.version, at: x.at || Date.now(), ...(x.by ? { by: x.by } : {}) };
+    }
+    tasks = offers.length; fillPrompts();
+  }
   // what the demo doesn't write the same of each Thinking State opened, with its facts now yours or not
   for (const [from, id] of opened) { try { const k = keepOf(from.r, from.files, db.convos[id], from.bins); if (k) db.convos[id].keep = k; } catch (err) { console.error(err); } }
   // a memory item that is now one of your facts is yours: kept as its file, it would come back after you forget it
   // a memory item that is now one of your facts stays in its bundle too, as the bundle's copy (spec §9.1), while the fact is there:
   // forget it, and it goes from the bundle as well
   for (const id of added) { const k = db.convos[id] && db.convos[id].keep; if (k && k.files) for (const p of Object.keys(k.files)) { const m = p.match(/^memory\/([0-9]{8}-[0-9a-z]{6})\.md$/); if (m && db.memory.some(x => x.itemId === m[1]) && !(k.adopted || []).includes(m[1])) k.adopted = (k.adopted || []).concat(m[1]); } }
-  return { added, failed, facts, left, again, unread: convos.unread || [], skipped: convos.skipped || [] };
+  return { added, failed, facts, left, again, unread: convos.unread || [], skipped: convos.skipped || [], tasks };
 }
 $('#importFile').addEventListener('change', async e => {
   const files = [...e.target.files]; e.target.value = ''; const was = db.convos[db.current];
-  let added = [], failed = 0, facts = 0, left = 0, again = 0, unread = [], skipped = [];
+  let added = [], failed = 0, facts = 0, left = 0, again = 0, unread = [], skipped = [], tasks = 0;
   for (const f of files) {
     try {
       const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
       if (head[0] === 0x50 && head[1] === 0x4b && head[2] === 3 && head[3] === 4) { // "PK\3\4": a zip, so Thinking States
         const r = await importZip(await f.arrayBuffer());
-        added = added.concat(r.added); failed += r.failed; facts += r.facts; left += r.left; again += r.again; unread = unread.concat(r.unread); skipped = skipped.concat(r.skipped || []);
+        added = added.concat(r.added); failed += r.failed; facts += r.facts; left += r.left; again += r.again; unread = unread.concat(r.unread); skipped = skipped.concat(r.skipped || []); tasks += r.tasks || 0;
         continue;
       }
       const list = parseImport(await f.text());
-      if (list.files) { const r = await importZip(list.files); added = added.concat(r.added); failed += r.failed; facts += r.facts; left += r.left; again += r.again; unread = unread.concat(r.unread); skipped = skipped.concat(r.skipped || []); continue; }
+      if (list.files) { const r = await importZip(list.files); added = added.concat(r.added); failed += r.failed; facts += r.facts; left += r.left; again += r.again; unread = unread.concat(r.unread); skipped = skipped.concat(r.skipped || []); tasks += r.tasks || 0; continue; }
       list.forEach(c => { const id = adoptConvo(c); if (id) added.push(id); else failed++; }); facts += mergeMemory(list.memory);
     }
     catch (err) { failed++; toast(err.message || 'Import failed'); }
   }
   // an empty conversation you were in (a New conversation never written in) gives way to what you imported, as it does for a sample
   if (added.length && was && db.convos[was.id] && !added.includes(was.id) && was.title === NEW_TITLE && !Object.keys(was.messages).length && Object.keys(was.branches).length === 1 && !typedIn(was.id)) { delete db.convos[was.id]; db.order = db.order.filter(id => id !== was.id); }
-  finishImport(added, failed, files.length, facts, left, again, unread, skipped);
+  finishImport(added, failed, files.length, facts, left, again, unread, skipped, tasks);
 });
 // The samples (F-18): Thinking States recorded in the demo with answers written for them (the models' replies are scripted, and
 // token counts estimated from their length), published next to the app and opened like any other, so everything they hold
