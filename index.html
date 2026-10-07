@@ -672,7 +672,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
 const APP_VERSION = '0.16.1';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 4ac0016'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 56434f0'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1944,7 +1944,10 @@ function laterDecisions(c, m) {
   // by the decisions' messages (or nodes, from an opened Thinking State), else by their wording, for requests recorded before.
   // A decision it sent whose summary changed since counts too, marked changed: the answer had an earlier wording
   const named = d => rec && Array.isArray(rec.ids) ? rec.ids.includes(d.id) : rec && Array.isArray(rec.nodes) ? rec.nodes.includes(d.nodeId) : false;
-  return decisionsIn(c).filter(d => d !== m && !had.has(decisionLine(d.decision)) && !pathIds(c, d.id).includes(m.id)).map(d => named(d) ? Object.assign(Object.create(d), { changed: true }) : d);
+  // a request that names its decisions without their words (spec §10.4): one it named changed only if it was worded after the answer
+  const byRef = !!rec && !rec.text && ((Array.isArray(rec.ids) && rec.ids.length) || (Array.isArray(rec.nodes) && rec.nodes.length));
+  return decisionsIn(c).filter(d => d !== m && (byRef || !had.has(decisionLine(d.decision))) && !pathIds(c, d.id).includes(m.id))
+    .map(d => !named(d) ? d : byRef && !((d.decision.at || 0) > (m.ts || 0)) ? null : Object.assign(Object.create(d), { changed: true })).filter(Boolean);
 }
 // Your question at the end of a branch, with no answer after it: an option branch made unanswered, or its answer deleted (F-10)
 function waiting(c, m) { const b = c.branches[m.branchId]; return !!b && m.role === 'user' && b.msgIds[b.msgIds.length - 1] === m.id; }
@@ -3966,6 +3969,11 @@ function pvRender(pv) {
       + (items.length ? `<p class="pv-meta"><span>It used ${items.length} memory item${items.length === 1 ? '' : 's'}${known.length < items.length ? `, ${items.length - known.length} of them not in your memory` : ''}</span></p>${known.length ? `<ul class="pv-used">${known.map(x => `<li>${esc(x.text)}</li>`).join('')}</ul>` : ''}` : '')
       + (theirs.length ? `<p class="pv-meta"><span>From this Thinking State, not in your memory:</span></p><ul class="pv-used">${theirs.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : '');
   }
+  if (b.kind === 'decisions' && !b.text && Array.isArray(b.nodes) && b.nodes.length) { // named by reference (spec §10.4): as their nodes read now
+    const all = decisionsIn(pv.c || cur() || { messages: {} }), byNode = new Map(all.map(d => [d.nodeId, d]));
+    return '<p class="pv-note">This request names its decisions, not their words: they are shown as they read now.</p><ul class="pv-used">'
+      + b.nodes.map(id => byNode.has(id) ? `<li>${esc(decisionLine(byNode.get(id).decision))}</li>` : `<li><code>${esc(id)}</code>: no longer in force here</li>`).join('') + '</ul>';
+  }
   if (b.text != null) return `<pre class="pv-text">${esc(b.text)}</pre>`;
   if (b.kind === 'attachments') return imagesBlockHTML(pv, b);
   const turns = pvTurns(pv, b);
@@ -4310,6 +4318,9 @@ const HELP = [
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
+  { version: 'Unreleased', items: [
+    'Fixed: memory you switched off stays out of every prompt, a message you excluded stays out of its node, and imports keep what helper calls and comparisons were built from.',
+  ] },
   { version: '0.16.1', items: [
     'The samples are recorded again with this version, so what they hold is what the demo writes today.',
   ] },
@@ -4679,7 +4690,7 @@ function mergeDoc(k, now, own) {
       let v = !(key in n) ? (key in w ? undefined : o[key]) : (key in w) && same(w[key], n[key]) ? (key in o ? o[key] : undefined) : n[key];
       if (deep && (key in o) && (key in n) && !same(w[key], n[key])) { // a link or a wording added here joins the file's; another tool's ext stays
         if (TS_LINKS.includes(key) && Array.isArray(o[key]) && Array.isArray(n[key])) v = [...new Set([...o[key], ...n[key]])];
-        if (key === 'revisions' && Array.isArray(o[key]) && Array.isArray(n[key])) v = [...n[key], ...o[key].filter(x => !n[key].some(y => same(x, y)))].slice(0, 20);
+        if (key === 'revisions' && Array.isArray(o[key]) && Array.isArray(n[key])) v = [...n[key], ...o[key].filter(x => !n[key].some(y => same(x, y)))]; // all of them: another tool's history isn't cut (W6)
         if (key === 'ext' && objOf(o[key]) && objOf(n[key])) v = { ...o[key], ...n[key] };
       }
       if (v !== undefined) out[key] = v;
@@ -4814,7 +4825,8 @@ function bundleFilesOf(c, quiet, mine, all) {
     : m.role === 'user' ? (!m.edited && c.branches[m.branchId] && c.branches[m.branchId].option && c.branches[m.branchId].msgIds[0] === m.id ? '**You** (written by Mindbough):' : '**You:**')
     : m.edited ? `**You** (editing the answer of ${m.model ? `\`${m.model}\`` : 'Gemini'}):` : `**Gemini**${m.model ? ` (\`${m.model}\`)` : ''}:`;
   const said = m => { const t = (withMarks(m) || '').trim(); return !t && m.error ? `_No answer: ${m.error.replace(/\s+/g, ' ').trim()}_` : t + (t && m.cut ? `\n\n_(${m.cut.replace(/\.$/, '')})_` : ''); };
-  const transcript = ids => ids.map(id => c.messages[id]).filter(Boolean).map(m => (!mine && m.streaming && m.prev ? { ...m, ...m.prev } : m)).map(m => `${who(m)}${m.hidden ? ' _(excluded from history)_' : ''}\n\n${said(m)}`).join('\n\n');
+  // a message excluded from history stays out of its node too: an agent reading the node would get what you left out
+  const transcript = ids => ids.map(id => c.messages[id]).filter(m => m && !m.hidden).map(m => (!mine && m.streaming && m.prev ? { ...m, ...m.prev } : m)).map(m => `${who(m)}\n\n${said(m)}`).join('\n\n');
   for (const b of dfs(c)) {
     const msgs = b.msgIds.map(id => c.messages[id]).filter(Boolean);
     const first = msgs.find(m => m.role === 'user');
@@ -5664,7 +5676,7 @@ function bundleToConvo(r, files, own) {
   kids.forEach(list => list.sort((a, b) => (a.id < b.id ? -1 : 1)));
   // project memory: its items, one per memory/<id>.md (their index lines)
   const itemLines = files.filter(f => f.name.startsWith(r.dir + 'memory/') && /^memory\/[^/]+\.md$/.test(f.name.slice(r.dir.length)) && !/\/index\.md$/.test(f.name))
-    .sort((a, b) => (a.name < b.name ? -1 : 1)).map(f => frontmatter(f.text)).filter(x => x && x.meta.title)
+    .sort((a, b) => (a.name < b.name ? -1 : 1)).map(f => frontmatter(f.text)).filter(x => x && x.meta.title && !(objOf(x.meta.thinking) && x.meta.thinking.off === true)) // one switched off goes into no request (spec §9.2)
     .map(x => `- **${String(x.meta.title).replace(/\s+/g, ' ')}** — ${String(x.meta.description || '').replace(/\s+/g, ' ')}${x.meta.resource && /^https?:\/\//.test(String(x.meta.resource)) ? ` ([link](${x.meta.resource}))` : ''}`);
   const memory = itemLines.join('\n');
   const now = Date.now(), convo = { title: String(r.fm.meta.title || 'Thinking State'), created: now, updated: now, root: 'b' + rootId, focus: 'b' + rootId, branches: {}, messages: {} };
@@ -5862,7 +5874,7 @@ function adoptConvo(src) {
     return { at: time(k.at), model: str(k.model, 100), question: str(k.question, 200), relation: Object.prototype.hasOwnProperty.call(RELATIONS, k.relation) ? k.relation : 'alternatives', relationWhy: str(k.relationWhy, 240),
       criteria: (Array.isArray(k.criteria) ? k.criteria : []).map(y => typeof y === 'string' ? { name: y, why: '' } : y).filter(isObj).slice(0, 5).map(y => ({ name: str(y.name, 60), why: str(y.why, 140) })).filter(y => y.name), cols,
       ...(isObj(k.pick) && bid.has(k.pick.bid) ? { pick: { bid: bid.get(k.pick.bid), why: str(k.pick.why, 240) } } : {}), ...(k.next ? { next: str(k.next, 300) } : {}), ...(k.focus ? { focus: str(k.focus, 300) } : {}),
-      request: { chars: count(isObj(k.request) ? k.request.chars : 0), blocks },
+      request: { chars: count(isObj(k.request) ? k.request.chars : 0), ...(isObj(k.request) && typeof k.request.prompt === 'string' && /^[a-z][a-z0-9-]*@[0-9A-Za-z.+-]{1,20}$/.test(k.request.prompt) ? { prompt: k.request.prompt } : {}), blocks },
       ...(bid.has(k.chosen) ? { chosen: bid.get(k.chosen) } : {}), ...(bid.has(k.chosen) && Array.isArray(k.over) ? { over: k.over.filter(x => bid.has(x)).map(x => bid.get(x)), chosenAt: time(k.chosenAt) } : {}), ...(typeof k.call === 'string' ? { call: k.call } : {}), ...(tsIdOk(k.nodeId) ? { nodeId: k.nodeId } : {}),
       ...(Array.isArray(k.before) ? { before: k.before.filter(x => isObj(x) && tsIdOk(x.nodeId)).slice(0, 500).map(x => { const full = Array.isArray(x.cols) ? cmpOf({ ...x, before: null, chosen: null, request: null }) : null;
         return { ...(full ? earlierCmp(full) : {}), nodeId: x.nodeId, at: time(x.at), model: str(x.model, 100), text: str(x.text, 300) }; }) } : {}) };
@@ -5918,7 +5930,8 @@ function adoptConvo(src) {
   const srcCalls = (Array.isArray(src.calls) ? src.calls : []).filter(x => isObj(x) && typeof x.task === 'string').slice(-5000); // the app keeps every call; this only bounds a hostile file
   const calls = srcCalls.map(x => ({ id: keepId(x.id), task: str(x.task, 40), at: time(x.at), model: str(x.model, 100), chars: count(x.chars),
     ...(mid.has(x.mid) ? { mid: mid.get(x.mid) } : {}), ...(isObj(x.usage) ? { usage: { prompt: count(x.usage.prompt), answer: count(x.usage.answer), thoughts: count(x.usage.thoughts) } } : {}),
-    ...(x.output ? { output: str(x.output, 300) } : {}), ...(x.error ? { error: str(x.error, 200) } : {}), ...((r => r ? { request: r } : {})(isObj(x.request) ? jsonOf(x.request, 50000) : null)) })); // a request as read: only ever written back
+    ...(x.output ? { output: str(x.output, 300) } : {}), ...(x.error ? { error: str(x.error, 200) } : {}), ...(typeof x.after === 'string' && ENTRY_ID.test(x.after) ? { after: x.after } : {}), // the entry it served, as written
+    ...((r => r ? { request: r } : {})(isObj(x.request) ? jsonOf(x.request, 50000) : null)) })); // a request as read: only ever written back
   if (calls.length) c.calls = calls;
   const callId = new Map(srcCalls.map((x, i) => [x.id, calls[i].id]));
   Object.values(c.branches).forEach(b => { if (b.option && b.option.call) { if (callId.get(b.option.call)) b.option.call = callId.get(b.option.call); else delete b.option.call; } });
