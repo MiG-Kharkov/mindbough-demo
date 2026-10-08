@@ -670,9 +670,9 @@ const whole = t => t.replace(/[\uD800-\uDBFF]$/, '');
 const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return whole(cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.18.0';
+const APP_VERSION = '0.19.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 00dc7d8'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main c2e2044'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -2608,7 +2608,7 @@ function renderCompare() {
     html += `<div class="cmp-wrap"><table class="cmp"><thead><tr><th></th>${cols.map(x => `<th${pk(x)}><button class="cmp-go" data-cmp="goto" data-bid="${x.bid}">${esc(branchName(byId[x.bid], c))}</button>${tags(x.bid, true)}${RO ? '' : `<span class="cmp-choose">${choose(x.bid)}</span>`}</th>`).join('')}</tr></thead><tbody>
       ${cmp.criteria.map((cr, i) => `<tr><th>${esc(typeof cr === 'string' ? cr : cr.name)}${cr.why ? `<span class="cmp-why">${esc(cr.why)}</span>` : ''}</th>${cols.map(x => `<td${pk(x)}>${esc(x.cells[i] || '')}</td>`).join('')}</tr>`).join('')}
       <tr class="cmp-sum"><th>In short</th>${cols.map(x => `<td${pk(x)}>${esc(x.summary || '')}</td>`).join('')}</tr></tbody></table></div>
-      ${cmp.pick && byId[cmp.pick.bid] ? `<p class="cmp-pick"><b>${esc(cmp.model)} suggests ${esc(branchName(byId[cmp.pick.bid], c))}</b>${cmp.pick.why ? `: ${esc(cmp.pick.why)}` : ''}${/[.!?…]$/.test(cmp.pick.why || '') ? '' : '.'} It is only a suggestion: you choose.</p>` : ''}`;
+      ${cmp.pick && byId[cmp.pick.bid] ? `<p class="cmp-pick"><b>${esc(cmp.by || cmp.model)} suggests ${esc(branchName(byId[cmp.pick.bid], c))}</b>${cmp.pick.why ? `: ${esc(cmp.pick.why)}` : ''}${/[.!?…]$/.test(cmp.pick.why || '') ? '' : '.'} It is only a suggestion: you choose.</p>` : ''}`;
   } else {
     html += kids.map(b => {
       const n = b.msgIds.length, d = branchMsgs(c, b).filter(x => x.flagged).length, col = done && colOf(b.id), gist = col && col.summary ? col.summary : branchGist(c, b);
@@ -2619,8 +2619,8 @@ function renderCompare() {
     }).join('');
   }
   if (done && cmp.next) html += `<p class="cmp-pick"><b>Next:</b> ${esc(cmp.next)}</p>`;
-  if (done) html += `<p class="set-hint">Compared ${esc(shortDate(cmp.at))} by ${esc(cmp.model)}.</p>`;
-  if (done && cmp.request && Array.isArray(cmp.request.blocks)) html += `<details class="cmp-built"><summary>What the comparison was built from · ${esc(fmtChars(cmp.request.chars || 0))}</summary>
+  if (done) html += `<p class="set-hint">Compared ${esc(shortDate(cmp.at))} by ${esc(cmp.by || cmp.model)}.</p>`;
+  if (done && cmp.request && Array.isArray(cmp.request.blocks) && cmp.request.blocks.length) html += `<details class="cmp-built"><summary>What the comparison was built from · ${esc(fmtChars(cmp.request.chars || 0))}</summary>
     ${cmp.request.blocks.map(k => `<div>${esc(k.label)} · ${esc(fmtChars(k.chars || 0))}</div>${k.omitted ? '<p class="pv-empty">Memory is personal, so its text is left out of exported and shared copies.</p>' : `<pre>${esc(builtText(c, k))}</pre>`}`).join('')}</details>`;
   if (!RO && hasKey) html += `<input class="cmp-focus" data-cmp-focus maxlength="300" placeholder="Compare by… (optional)" value="${esc(cmpView.focus != null ? cmpView.focus : cmp.focus || '')}" aria-label="Compare by">`;
   if (cmpView.loading) html += `<p class="pv-empty">Comparing ${kids.length} branches…</p>`;
@@ -2727,7 +2727,7 @@ function notChosen(c, b) {
 }
 // The branch chosen at this fork whose choice still stands: its decision is flagged, and the branch isn't parked or rejected since
 const choiceStands = (c, m, bid) => !!m.compare && m.compare.chosen === bid && !droppedAt(c, bid)
-  && Object.values(c.messages).some(x => x.branchId === bid && x.flagged && x.decision && x.decision.choice === m.id);
+  && Object.values(c.messages).some(x => (x.branchId === bid || isUnder(c, x.branchId, bid)) && x.flagged && x.decision && x.decision.choice === m.id);
 // A choice holds while its option does (spec §14.4): parking or rejecting the option chosen, or a branch it is in, parks the choice,
 // which leaves the prompts like any decision unflagged; opening the option again brings it back (the spec leaves that to the tool)
 const optionOf = (c, x) => { let b = c.branches[x.branchId]; const seen = new Set(); while (b && !seen.has(b.id)) { seen.add(b.id); if (b.forkMsgId === x.decision.choice) return b; b = c.branches[b.parentId]; } return null; };
@@ -4403,12 +4403,16 @@ const HELP = [
     <li><b>Export all</b> saves one .zip: a Thinking State per conversation, and your memory as documents in <code>home/memory/</code>, each fact once.</li>
     <li>Images are files too: <code>sessions/files/</code>, each once, named by its hash, and the message names them. They are private with the session, and a shared page carries them inside it.</li>
     <li><b>⋯</b> → <b>Share as a read-only page</b> saves a read-only page of the conversation, with its decisions under ⚑ and a link to the demo. On that page, <b>Download Thinking State</b> gets the Thinking State it holds, the conversation as <b>Export all</b> writes it, without your facts, to import and continue.</li>
-    <li><b>Import</b> opens a Thinking State or an Export all (.zip), a shared page, or a .json from an earlier version. The demo's own Thinking States come back whole; one made by another tool opens as a tree of cards, each labelled with its node's type and author, to keep writing in, and its export keeps everything you didn't change there, byte for byte: authors, sources, tags, memory, log and session entries, in their order. Files the demo can't read are named, and kept as they are. Its own memory items are that conversation's project memory: its prompts carry them, a fact whole and a document by its title unless it is pinned or about the branch you are in, and no other conversation's. A Thinking State that brings memory facts you don't have asks before adding them, an Export all too, as a restore: memory goes into every request, and anyone can make such a zip.</li></ul>` },
+    <li><b>Import</b> opens a Thinking State or an Export all (.zip), a shared page, or a .json from an earlier version. The demo's own Thinking States come back whole; one made by another tool opens as a tree of cards, each labelled with its node's type and author, to keep writing in, and its export keeps everything you didn't change there, byte for byte: authors, sources, tags, memory, log and session entries, in their order. Files the demo can't read are named, and kept as they are. A choice point an agent wrote there, a question with its options and a comparison, works like yours: Compare shows the agent's table, and Choose writes the files as the agent's tool would, changing only what changed. Its own memory items are that conversation's project memory: its prompts carry them, a fact whole and a document by its title unless it is pinned or about the branch you are in, and no other conversation's. A Thinking State that brings memory facts you don't have asks before adding them, an Export all too, as a restore: memory goes into every request, and anyone can make such a zip.</li></ul>` },
   { id: 'help', title: 'About this help', cards: ['F-34'], body: `
     <p>This help changes with the app: every new feature adds itself here, and <b>What's new</b> lists what changed in this version, with earlier versions below it. Press <b>?</b> on a keyboard to open it.</p>` },
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
+  { version: '0.19.0', items: [
+    'A choice point an agent wrote with mb.py opens as a choice point: Compare shows the agent’s table and its suggestion, and Choose writes the agent’s files as mb.py would.',
+    'A file another tool wrote keeps its own lines when you change something there: only what changed is written again, so a Git diff shows just that.',
+  ] },
   { version: '0.18.0', items: [
     'A Thinking State another tool wrote brings its own memory: that conversation’s prompts carry it as project memory, documents by their titles unless they matter where you are, and no other conversation’s.',
     'A conversation’s name now comes with a sentence of what it is about, and its Thinking State is described by it.',
@@ -4778,6 +4782,39 @@ function metaDoc(meta, body) {
   }
   return out.concat('---', '', body || '').join('\n').trimEnd() + '\n';
 }
+// A file's frontmatter with only the keys whose values changed written again, the others as the file had them, its quoting, order and
+// comments included, as mb.py writes (W6): a Git diff then shows what changed. null when its frontmatter can't be split into keys
+function patchFront(text, was, meta) {
+  const head = String(text).match(/^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
+  if (!head) return null;
+  // in the style the demo writes its own nodes in: ids and plain words bare, other text quoted
+  const val = v => typeof v === 'string' ? (/^([0-9]{8}-[0-9a-z]{6}|[a-z][a-z-]*)$/.test(v) && !/^(true|false|null|yes|no|on|off|y|n)$/.test(v) ? v : yq(v)) : Array.isArray(v) ? `[${v.map(val).join(', ')}]` : yflow(v);
+  const list = (pad, k, v) => Array.isArray(v) && v.length && v.every(objOf) ? [`${pad}${yk(k)}:`, ...v.map(x => `${pad}  - ${yflow(x)}`)] : [`${pad}${yk(k)}: ${val(v)}`];
+  const render = k => k === 'thinking' && objOf(meta[k]) ? ['thinking:', ...Object.entries(meta[k]).flatMap(([tk, tv]) => list('  ', tk, tv))] : list('', k, meta[k]);
+  const keyOf = (l, pad) => { if (!l.startsWith(pad) || /\s/.test(l[pad.length] || ' ')) return null;
+    const k = l.slice(pad.length).match(/^([A-Za-z_][\w-]*|"(?:[^"\\]|\\.)*"|'[^']*'):(?=\s|$)/); if (!k) return null;
+    try { return k[1][0] === '"' ? JSON.parse(k[1]) : k[1][0] === "'" ? k[1].slice(1, -1) : k[1]; } catch (e) { return null; } };
+  const blocks = (lines, pad) => { const out = [], pre = []; for (const l of lines) { const k = keyOf(l, pad); if (k != null) out.push({ k, lines: [l] }); else if (out.length) out[out.length - 1].lines.push(l); else pre.push(l); } return { pre, out }; };
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const top = blocks(head[1].split(/\r?\n/), ''), out = [...top.pre], done = new Set();
+  if (top.out.some((b, i) => top.out.findIndex(x => x.k === b.k) !== i)) return null; // a key twice: not a file to patch
+  for (const b of top.out) {
+    if (!(b.k in meta)) continue; // a key the demo took out
+    done.add(b.k);
+    if (same(was[b.k], meta[b.k])) { out.push(...b.lines); continue; }
+    const sub = b.lines.slice(1), first = sub.find(l => l.trim()), pad = first ? first.match(/^\s*/)[0] : '';
+    if (b.k === 'thinking' && objOf(meta.thinking) && objOf(was.thinking) && pad && !/^\s*-/.test(first)) { // its keys one by one
+      const inner = blocks(sub, pad), seen = new Set(), wt = was.thinking;
+      out.push(b.lines[0], ...inner.pre);
+      for (const x of inner.out) { if (!(x.k in meta.thinking)) continue; seen.add(x.k); out.push(...(same(wt[x.k], meta.thinking[x.k]) ? x.lines : list(pad, x.k, meta.thinking[x.k]))); }
+      for (const [tk, tv] of Object.entries(meta.thinking)) if (!seen.has(tk)) out.push(...list(pad, tk, tv));
+      continue;
+    }
+    out.push(...render(b.k));
+  }
+  for (const k of Object.keys(meta)) if (!done.has(k)) out.push(...render(k));
+  return out.join('\n');
+}
 function mergeDoc(k, now, own) {
   // unchanged here: the file as it came; but a manifest of a copy ("… (imported)") has its own id and title, which the file as
   // it came doesn't say, so it is merged like a changed one
@@ -4817,7 +4854,8 @@ function mergeDoc(k, now, own) {
   // the fields the demo didn't change keep their file's own text, its quoting and its order: only the body changes then
   const head = String(k.text).match(/^---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n/);
   if (head && JSON.stringify(meta) === JSON.stringify(o.meta)) return body === o.body ? k.text : `${head[0]}\n${String(body).trim()}\n`;
-  return metaDoc(meta, body);
+  const fm = patchFront(k.text, o.meta, meta); // only the keys that changed, written again (W6)
+  return fm != null ? ['---', fm, '---', '', body || ''].join('\n').trimEnd() + '\n' : metaDoc(meta, body);
 }
 // A list (log.md, memory/index.md) the same way: its lines stay, the demo's new lines join their day, and those it stopped writing go
 function mergeLines(k, now) {
@@ -4966,7 +5004,8 @@ function bundleFilesOf(c, quiet, mine, all) {
       .sort((x, y) => (x.generated.at < y.generated.at ? 1 : x.generated.at > y.generated.at ? -1 : 0)).slice(0, 10);
     // a Decision's card is its node: unflag it and the node is parked, flag it again and it is accepted, reword it and the node says
     // so (spec §7.1); a card you didn't touch writes its node as it came
-    const cardDec = nd && nd.type === 'Decision' ? own : null, cardFlag = cardDec ? (cardDec.flagged ? (nd.status === 'parked' ? 'accepted' : nd.status) : nd.status === 'accepted' ? 'parked' : nd.status) : null;
+    const cardDec = nd && nd.type === 'Decision' ? own : null, replacedCard = cardDec && cardDec.decision && cardDec.decision.replacedBy && c.messages[cardDec.decision.replacedBy] && c.messages[cardDec.decision.replacedBy].flagged;
+    const cardFlag = cardDec ? (cardDec.flagged ? (nd.status === 'parked' ? 'accepted' : nd.status) : replacedCard ? 'superseded' : nd.status === 'accepted' ? 'parked' : nd.status) : null; // chosen again over it (W2)
     const cardWords = cardDec && cardDec.decision && cardDec.decision.summary && cardDec.decision.summary !== asRead(nd.description || nd.title) ? cardDec.decision.summary : '';
     const said = b.msgIds.filter(id => c.messages[id] && !c.messages[id].node); // a card is its node, not something said here
     const wordedAt = Math.max((isRoot ? c.namedAt || c.created : b.namedAt || b.created) || 0, firstLines.length ? lead.editedAt || lead.ts || 0 : 0);
@@ -4976,7 +5015,7 @@ function bundleFilesOf(c, quiet, mine, all) {
       status: nd ? (b.parentId && statusOf(b) !== (cardStatus || 'open') ? statusOf(b) : cardFlag || nd.status) : b.parentId ? statusOf(b) : 'open', links: nd ? nd.links : null, parent: b.parentId ? byBranch[b.parentId] : null, sources: [{ resource: b.parentId ? `/${session}#br${b.id}` : b.msgIds[0] ? `/${session}#${b.msgIds[0]}` : `/${session}`, title: 'Where this branch starts in the session', ...(!nd && !eo && lead && lead.text ? { quote: { mid: lead.id, text: desc0 } } : {}) }],
       body: said.length ? `## Conversation\n\n${transcript(said)}` : '', ...(Object.keys(lateOf(b, msgs)).length ? { ext: lateOf(b, msgs) } : {}) });
     // a flag is an open Decision, a summary accepts it, and an unflagged one keeps its summary as a parked Decision (spec §7.1)
-    for (const m of msgs.filter(x => x !== own && (x.flagged || (x.decision && x.decision.summary)))) {
+    for (const m of msgs.filter(x => (x !== own || (x.node && x.node.type !== 'Decision' && x.decision && x.decision.choice)) && (x.flagged || (x.decision && x.decision.summary)))) { // a choice on an option's card too
       const d = m.decision || {}, summary = d.summary || sentenceOf(m.text, 240) || sentenceOf(withMarks(m), 240) || 'A flagged message'; // a message of images is titled by them
       const did = m.node && m.node.id && m.node.id !== id && !taken.has(m.node.id) ? m.node.id : keep(m.nodeId, m.ts); taken.add(did);
       if (!(m.node && m.node.id === did) && m.nodeId !== did) { m.nodeId = did; given = true; }
@@ -4986,7 +5025,7 @@ function bundleFilesOf(c, quiet, mine, all) {
       nodes.push({ id: did, type: 'Decision', title: sentenceOf(summary, 120), description: summary, status: replaced ? 'superseded' : !m.flagged ? 'parked' : d.summary ? 'accepted' : 'open', parent: id, revisions,
         generated: { by: m.decision && m.decision.summary ? (m.decision.model ? `mindbough-demo/${m.decision.model}` : 'human:me') : (m.role === 'model' && m.model ? `mindbough-demo/${m.model}` : 'human:me'),
           at: isoOf((m.decision && m.decision.at) || m.ts) },
-        sources: [{ resource: `/${session}#${m.id}`, title: 'The flagged message', author: m.role === 'model' ? `mindbough-demo/${m.model || 'unknown'}` : 'human:me' }],
+        sources: [{ resource: `/${session}#${m.id}`, title: 'The flagged message', author: m.node ? 'process:mindbough-demo' : m.role === 'model' ? `mindbough-demo/${m.model || 'unknown'}` : 'human:me' }, ...(m.node ? [{ resource: `/nodes/${m.node.id}.md`, title: 'The option chosen' }] : [])],
         body: decisionBody(d, m.text), ...(!m.flagged && d.unflaggedAt && okTime(d.unflaggedAt) ? { ext: { unflaggedAt: isoOf(d.unflaggedAt), ...(d.dropped ? { dropped: true } : {}) } } : {}) });
     }
   }
@@ -4998,9 +5037,11 @@ function bundleFilesOf(c, quiet, mine, all) {
     const cmp = m.compare && Array.isArray(m.compare.cols) && m.compare.cols.length ? m.compare : null, chosen = m.compare && m.compare.chosen;
     // the branches that answer this fork: options, compared branches, and, once you chose among them, all those you chose among
     // (not a follow-up next to options, nor a branch opened after the choice)
-    const opts = choiceAlts(c, m).filter(k => byBranch[k.id] && !imported(k) && (k.option || chosen || (cmp && cmp.cols.some(x => x.bid === k.id))));
+    // a choice point another tool wrote is its Question's card, and its options are cards (cardChoices): those nodes are written as mb.py does
+    const qCard = m.node && m.node.type === 'Question' && m.choiceId === m.node.id ? nodeOf(m.node.id) : null;
+    const opts = choiceAlts(c, m).filter(k => byBranch[k.id] && (qCard || !imported(k)) && (k.option || chosen || (cmp && cmp.cols.some(x => x.bid === k.id))));
     if (!opts.length) continue;
-    const qid = keep(m.choiceId, m.ts); if (m.choiceId !== qid) { m.choiceId = qid; given = true; }
+    const qid = qCard ? m.choiceId : keep(m.choiceId, m.ts); if (m.choiceId !== qid) { m.choiceId = qid; given = true; }
     const q = m.role === 'model' ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : m;
     const dm = chosen && opts.some(k => k.id === chosen) && !droppedAt(c, chosen) ? Object.values(c.messages).find(x => x.flagged && x.decision && x.decision.choice === m.id && byBranch[x.branchId] && (x.branchId === chosen || isUnder(c, x.branchId, chosen))) : null;
     const pk = !dm ? parkedChoice(c, m) : null, pkAt = pk && okTime(pk.decision.unflaggedAt) ? pk.decision.unflaggedAt : null; // parked when its option was dropped (§14.4)
@@ -5011,7 +5052,11 @@ function bundleFilesOf(c, quiet, mine, all) {
     const qTitle = whole(((cmp && cmp.question) || sentenceOf(q ? q.text : m.text, 120) || 'A choice').slice(0, 120));
     const qRev = { ...(qGen.by !== 'human:me' ? { title: qTitle } : {}), description: qOpen, generated: qGen }; // a helper's title stays its own
     const answered = x => ({ description: `Answered: ${x.decision.summary}`, generated: { by: 'human:me', at: iso((cmp && cmp.chosenAt) || x.decision.at) } });
-    nodes.push({ id: qid, type: 'Question', title: qTitle,
+    if (qCard) { // its words change only with the choice, and the wording it had goes to its revisions (§14.4, §8.5)
+      const to = dm ? answered(dm) : pkAt ? { description: `Open again: ${name(chosen)} was dropped.`, generated: { by: 'human:me', at: iso(pkAt) } } : null;
+      if (to && to.description !== qCard.description) { qCard.revisions = [{ description: qCard.description, generated: { by: m.node.by || 'human:me', ...(m.node.at ? { at: m.node.at } : {}) } }, ...(qCard.revisions || [])]; qCard.description = to.description; qCard.generated = to.generated; }
+      if (dm) qCard.status = 'accepted'; else if (pkAt) qCard.status = 'open';
+    } else nodes.push({ id: qid, type: 'Question', title: qTitle,
       // answered, it is your choice that words it, and the choice point it was stays in its revisions, as mb.py decide writes it (P4);
       // its option dropped, it is open again, as mb.py writes it then, and the answer it had joins its revisions
       ...(dm ? { ...answered(dm), revisions: [qRev] } : pkAt ? { description: `Open again: ${name(chosen)} was dropped.`, generated: { by: 'human:me', at: iso(pkAt) }, revisions: [answered(pk), qRev] } : { description: qOpen, generated: qGen }),
@@ -5028,7 +5073,8 @@ function bundleFilesOf(c, quiet, mine, all) {
       }
       const ch = dm || (pkAt && pk);
       if (ch && alt && k.id !== chosen && n.status === 'rejected') { // a choice parked since still turned them down (§14.4)
-        n.revisions = [{ title: n.title, description: n.description, generated: n.generated || { by: 'human:me', at: iso(k.created) } }, ...(n.revisions || [])].slice(0, 10);
+        const kc = c.messages[k.msgIds[0]], kn = kc && kc.node && kc.node.id === n.id ? kc.node : null; // an option's card: its words are its author's
+        n.revisions = [{ title: n.title, description: n.description, generated: n.generated || (kn && kn.by ? { by: kn.by, ...(kn.at ? { at: kn.at } : {}) } : { by: 'human:me', at: iso(k.created) }) }, ...(n.revisions || [])].slice(0, 10);
         n.description = notChosenText(c, m.compare, k.id); // why it lost, worded for your choice: yours (P4)
         n.generated = { by: 'human:me', at: iso((cmp && cmp.chosenAt) || ch.decision.at) };
       }
@@ -5065,14 +5111,14 @@ function bundleFilesOf(c, quiet, mine, all) {
             generated: { by: `mindbough-demo/${x.model || 'unknown'}`, at: iso(x.at) }, sources: [], body: '' }); });
       nodes.push(finding(cmp, cols, fid, 'open', before.length ? { supersedes: before.map(x => x.nodeId) } : null));
     }
-    const dn = dm && nodeOf(dm.nodeId);
+    const dn = dm && nodeOf(dm.nodeId || (dm.node && dm.node.type === 'Decision' && dm.node.id)); // the choice: yours, or another tool's card
     if (dn && dn.type === 'Decision') {
       dn.parent = qid; dn.links = { ...(dn.links || {}), answers: [qid] };
       if (fid) dn.sources.push({ resource: `/nodes/${fid}.md`, title: 'The comparison' });
     }
     // the choices made here before it answered the same Question, and the later one supersedes them
-    for (const x of Object.values(c.messages).filter(x => x !== dm && x.decision && x.decision.choice === m.id && x.nodeId)) {
-      const on = nodeOf(x.nodeId), by = c.messages[x.decision.replacedBy], bn = by && by.nodeId && nodeOf(by.nodeId);
+    for (const x of Object.values(c.messages).filter(x => x !== dm && x.decision && x.decision.choice === m.id && (x.nodeId || (x.node && x.node.type === 'Decision')))) {
+      const on = nodeOf(x.nodeId || x.node.id), by = c.messages[x.decision.replacedBy], bn = by && by.nodeId && nodeOf(by.nodeId);
       if (on && on.type === 'Decision' && on.status === 'parked') { on.parent = qid; on.links = { ...(on.links || {}), answers: [qid] }; continue; } // a choice parked stays under it (§14.4)
       if (!on || on.type !== 'Decision' || on.status !== 'superseded' || !bn || bn.type !== 'Decision') continue;
       on.parent = qid; on.links = { ...(on.links || {}), answers: [qid] };
@@ -5810,36 +5856,20 @@ function sessionToConvo(r, files, nodes, rootId, own) {
   }
   // a comparison is its Finding (spec §14.3): the relation, the table or the list, the suggestion, what it compared, when and by whom;
   // what its call read is on the call (§10.4), and the choice made here is its Decision and the choice point's wording (§14.4)
-  const unesc = t => String(t).replace(/\\\|/g, '|').trim();
-  const cellsOf = l => { // a table row's cells, split at each | that isn't written \| (no lookbehind: Safari before 16.4 can't parse one)
-    const t = l.trim(); if (t.length < 2 || !t.startsWith('|') || !t.endsWith('|')) return null;
-    const x = t.slice(1, -1), out = []; let cur = '';
-    for (let i = 0; i < x.length; i++) { if (x[i] === '\\' && x[i + 1] === '|') { cur += '\\|'; i++; } else if (x[i] === '|') { out.push(unesc(cur)); cur = ''; } else cur += x[i]; }
-    out.push(unesc(cur)); return out;
-  };
-  const linked = t => (String(t).match(/^\[[^\]]*\]\(\/nodes\/([0-9]{8}-[0-9a-z]{6})\.md\)$/) || [])[1];
   const genOf = n => isObj(n.meta.generated) ? n.meta.generated : {};
   const colBid = nid => nid && withEntries.has(nid) && convo.branches[bidOf(nid)] ? bidOf(nid) : null;
   const findingCmp = (fid, f) => {
-    const lines = String(f.body || '').split('\n').map(l => l.trim()), rel = lines.map(l => l.match(/^\*\*Relation:\*\* (alternatives|complementary|sequential|unrelated)(?:: (.*))?$/)).find(Boolean);
-    if (!rel) return null;
-    const rows = lines.map(cellsOf).filter(Boolean).filter(r => !r.every(x => /^:?-{3,}:?$/.test(x))), head = rows.length && !rows[0][0] ? rows[0].slice(1).map(linked) : null;
-    let criteria = [], cols;
-    if (head && head.length > 1 && head.every(Boolean)) {
-      const body = rows.slice(1), short = body.find(r => r[0] === '**In short**'), crit = body.filter(r => r !== short);
-      criteria = crit.map(r => { const k = r[0].match(/^\*\*(.*)\*\*(?: \((.*)\))?$/); return k ? { name: k[1], why: k[2] || '' } : null; });
-      if (criteria.some(x => !x)) return null;
-      cols = head.map((nid, j) => ({ bid: colBid(nid), cells: crit.map(r => r[j + 1] || ''), summary: short ? short[j + 1] || '' : '' }));
-    } else cols = lines.map(l => l.match(/^- \[[^\]]*\]\(\/nodes\/([0-9]{8}-[0-9a-z]{6})\.md\): ?(.*)$/)).filter(Boolean).map(k => ({ bid: colBid(k[1]), cells: [], summary: unesc(k[2]) })); // the list: no criteria
-    if (cols.length < 2 || cols.some(x => !x.bid) || new Set(cols.map(x => x.bid)).size < cols.length) return null;
+    const k = comparisonOf(f.body);
+    if (!k) return null;
+    const cols = k.cols.map(x => ({ bid: colBid(x.nid), cells: x.cells, summary: x.summary }));
+    if (cols.some(x => !x.bid)) return null;
     // each branch's answer as it was compared: the entry its source names
     const srcs = (Array.isArray(f.meta.sources) ? f.meta.sources : []).filter(isObj).map(x => String(x.resource || '')).filter(x => x.startsWith(`/sessions/${sid}.jsonl#`)).map(x => x.split('#')[1]);
     for (const e of srcs) { const mid = toMsg.get(e), m = mid && convo.messages[mid], col = m && cols.find(y => y.bid === m.branchId && !y.mid); if (col) { col.mid = mid; col.sig = sigOf(entryText.get(e) || ''); } }
     const call = srcs.find(e => convo.calls.some(y => y.id === e)), g = genOf(f), by = actorOk(String(g.by || '')) ? String(g.by) : '';
-    const pk = lines.map(l => l.match(/^\*\*Suggested:\*\* (\[[^\]]*\]\(\/nodes\/[0-9]{8}-[0-9a-z]{6}\.md\))(?:: (.*))?$/)).find(Boolean), nx = lines.map(l => l.match(/^\*\*Next:\*\* (.*)$/)).find(Boolean);
-    const pb = pk && colBid(linked(pk[1]));
-    return { at: time(g.at, now), model: modelOf(by) || 'unknown', ...(by && !by.startsWith('mindbough-demo/') ? { by } : {}), relation: rel[1], relationWhy: rel[2] ? unesc(rel[2]) : '', criteria, cols,
-      ...(pb && cols.some(y => y.bid === pb) ? { pick: { bid: pb, why: pk[2] ? unesc(pk[2]) : '' } } : {}), ...(nx ? { next: unesc(nx[1]) } : {}), ...(call ? { call } : {}), nodeId: fid };
+    const pb = k.pick && colBid(k.pick.nid);
+    return { at: time(g.at, now), model: modelOf(by) || 'unknown', ...(by && !by.startsWith('mindbough-demo/') ? { by } : {}), relation: k.relation, relationWhy: k.relationWhy, criteria: k.criteria, cols,
+      ...(pb && cols.some(y => y.bid === pb) ? { pick: { bid: pb, why: k.pick.why } } : {}), ...(k.next ? { next: k.next } : {}), ...(call ? { call } : {}), nodeId: fid };
   };
   // what a call read (0.18 on), as the comparison's "built from": its blocks, the messages, decisions and memory they name
   const readOf = x => { const r = x && x.request; if (!isObj(r) || !Array.isArray(r.blocks) || r.blocks.length < 2) return null;
@@ -5907,7 +5937,73 @@ function sessionToConvo(r, files, nodes, rootId, own) {
       ...(['accepted', 'parked', 'rejected', 'superseded'].includes(status) ? { status: status === 'superseded' ? 'rejected' : status } : {}) };
     cardAt.set(nid, bid);
   }
+  cardChoices(convo, nodes);
   return convo;
+}
+// A comparison's body in its fixed shape (spec §14.3): the relation, the table or the list, the suggestion or the next step, and the
+// branches as the nodes it links; null when the body isn't that shape
+function comparisonOf(body) {
+  const unesc = t => String(t).replace(/\\\|/g, '|').trim();
+  const cellsOf = l => { // a table row's cells, split at each | that isn't written \| (no lookbehind: Safari before 16.4 can't parse one)
+    const t = l.trim(); if (t.length < 2 || !t.startsWith('|') || !t.endsWith('|')) return null;
+    const x = t.slice(1, -1), out = []; let cur = '';
+    for (let i = 0; i < x.length; i++) { if (x[i] === '\\' && x[i + 1] === '|') { cur += '\\|'; i++; } else if (x[i] === '|') { out.push(unesc(cur)); cur = ''; } else cur += x[i]; }
+    out.push(unesc(cur)); return out;
+  };
+  const linked = t => (String(t).match(/^\[[^\]]*\]\(\/nodes\/([0-9]{8}-[0-9a-z]{6})\.md\)$/) || [])[1];
+  const lines = String(body || '').split('\n').map(l => l.trim()), rel = lines.map(l => l.match(/^\*\*Relation:\*\* (alternatives|complementary|sequential|unrelated)(?:: (.*))?$/)).find(Boolean);
+  if (!rel) return null;
+  const rows = lines.map(cellsOf).filter(Boolean).filter(r => !r.every(x => /^:?-{3,}:?$/.test(x))), head = rows.length && !rows[0][0] ? rows[0].slice(1).map(linked) : null;
+  let criteria = [], cols;
+  if (head && head.length > 1 && head.every(Boolean)) {
+    const body = rows.slice(1), short = body.find(r => r[0] === '**In short**'), crit = body.filter(r => r !== short);
+    criteria = crit.map(r => { const k = r[0].match(/^\*\*(.*)\*\*(?: \((.*)\))?$/); return k ? { name: k[1], why: k[2] || '' } : null; });
+    if (criteria.some(x => !x)) return null;
+    cols = head.map((nid, j) => ({ nid, cells: crit.map(r => r[j + 1] || ''), summary: short ? short[j + 1] || '' : '' }));
+  } else cols = lines.map(l => l.match(/^- \[[^\]]*\]\(\/nodes\/([0-9]{8}-[0-9a-z]{6})\.md\): ?(.*)$/)).filter(Boolean).map(k => ({ nid: k[1], cells: [], summary: unesc(k[2]) })); // the list: no criteria
+  if (cols.length < 2 || new Set(cols.map(x => x.nid)).size < cols.length) return null;
+  const pk = lines.map(l => l.match(/^\*\*Suggested:\*\* (\[[^\]]*\]\(\/nodes\/[0-9]{8}-[0-9a-z]{6}\.md\))(?:: (.*))?$/)).find(Boolean), nx = lines.map(l => l.match(/^\*\*Next:\*\* (.*)$/)).find(Boolean);
+  return { relation: rel[1], relationWhy: rel[2] ? unesc(rel[2]) : '', criteria, cols, ...(pk ? { pick: { nid: linked(pk[1]), why: pk[2] ? unesc(pk[2]) : '' } } : {}), ...(nx ? { next: unesc(nx[1]) } : {}) };
+}
+// A choice point another tool wrote (spec §14.2–14.4), opened here as cards, is a choice point here too: a Question's card whose option
+// cards answer it. Its options are options, its comparison (a Finding under it, in the fixed shape) is the comparison rather than a
+// card, and a Decision that answers it, citing an option, is the choice, under that option. What you then do there writes those
+// nodes, as mb.py does
+function cardChoices(convo, nodes) {
+  const th = n => n && objOf(n.meta.thinking) ? n.meta.thinking : {}, at = n => { const g = n && objOf(n.meta.generated) ? n.meta.generated : {}; const t = Date.parse(g.at); return Number.isFinite(t) ? t : 0; };
+  const cardOf = b => { const m = b && convo.messages[b.msgIds[0]]; return m && m.node ? m : null; };
+  const kidsOf = mid => Object.values(convo.branches).filter(b => b.forkMsgId === mid);
+  const cites = (nid, id) => (Array.isArray(nodes.get(nid) && nodes.get(nid).meta.sources) ? nodes.get(nid).meta.sources : []).some(x => objOf(x) && String(x.resource || '').includes(`/nodes/${id}.md`));
+  for (const q of Object.values(convo.messages).filter(m => m.node && m.node.type === 'Question' && !m.srcRole)) {
+    const qid = q.node.id, answers = b => { const m = cardOf(b); return m && (m.node.links.answers || []).includes(qid); };
+    const opts = kidsOf(q.id).filter(b => answers(b) && cardOf(b).node.type === 'Thought');
+    if (opts.length < 2) continue;
+    q.choiceId = qid;
+    // an option's own words: a choice may have reworded it "Not chosen", and choosing it again gives them back (§14.4)
+    for (const b of opts) if (!b.option) { const n = nodes.get(cardOf(b).node.id), d = String((n && n.meta.description) || cardOf(b).node.description || '');
+      const own = /^Not chosen:/.test(d) ? (Array.isArray(th(n).revisions) ? th(n).revisions : []).find(r => objOf(r) && r.description && !/^Not chosen:/.test(String(r.description))) : null;
+      b.option = { why: String(own ? own.description : d).slice(0, 200) }; }
+    const bidOf = nid => (opts.find(b => cardOf(b).node.id === nid) || {}).id;
+    // its comparisons: the newest one in force, the earlier ones superseded; a Finding read so is no longer a card of its own
+    const fs = kidsOf(q.id).filter(b => cardOf(b) && cardOf(b).node.type === 'Finding' && !kidsOf(cardOf(b).id).length).map(b => ({ b, n: nodes.get(cardOf(b).node.id) }))
+      .map(x => ({ ...x, k: x.n && comparisonOf(x.n.body) })).filter(x => x.k && x.k.cols.every(y => bidOf(y.nid))).sort((a, b) => at(b.n) - at(a.n));
+    const asCmp = x => { const by = String((objOf(x.n.meta.generated) && x.n.meta.generated.by) || ''), slash = by.lastIndexOf('/');
+      return { at: at(x.n), model: slash > 0 ? by.slice(slash + 1) : 'unknown', ...(ACTOR.test(by) && !by.startsWith('mindbough-demo/') ? { by } : {}), relation: x.k.relation, relationWhy: x.k.relationWhy, criteria: x.k.criteria,
+        cols: x.k.cols.map(y => ({ bid: bidOf(y.nid), cells: y.cells, summary: y.summary, mid: convo.branches[bidOf(y.nid)].msgIds.slice(-1)[0] })),
+        ...(x.k.pick && bidOf(x.k.pick.nid) ? { pick: { bid: bidOf(x.k.pick.nid), why: x.k.pick.why } } : {}), ...(x.k.next ? { next: x.k.next } : {}), nodeId: x.n.id }; };
+    const cur = fs.find(x => th(x.n).status !== 'superseded'), earlier = cur ? fs.filter(x => th(x.n).status === 'superseded') : [];
+    let cmp = cur ? { ...asCmp(cur), question: String(q.node.title || ''), ...(earlier.length ? { before: earlier.map(x => ({ ...earlierCmp(asCmp(x)), text: String(x.n.meta.description || '') })) } : {}) } : null;
+    for (const x of cur ? [cur, ...earlier] : []) { delete convo.messages[x.b.msgIds[0]]; delete convo.branches[x.b.id]; }
+    // the choice: a Decision under it that cites an option goes under that option, as a choice made here would be
+    for (const b of kidsOf(q.id)) { const m = cardOf(b), opt = m && m.node.type === 'Decision' && m.decision && (m.node.links.answers || []).includes(qid) && opts.find(o => cites(m.node.id, cardOf(o).node.id));
+      if (opt) { b.parentId = opt.id; b.forkMsgId = opt.msgIds[opt.msgIds.length - 1]; } }
+    for (const m of Object.values(convo.messages)) { const nid = m.decision && (m.nodeId || (m.node && m.node.type === 'Decision' && m.node.id)), n = nid && nodes.get(nid);
+      if (n && (Array.isArray(th(n).answers) ? th(n).answers : []).map(String).includes(qid) && opts.some(o => o.id === m.branchId || isUnder(convo, m.branchId, o.id))) m.decision.choice = q.id; }
+    const ds = Object.values(convo.messages).filter(x => x.decision && x.decision.choice === q.id && !x.decision.replacedBy), d = ds.find(x => x.flagged) || ds[0], opt = d && optionOf(convo, d);
+    if (opt) { const qn = nodes.get(qid), said = /^Answered: /.test(String(qn && qn.meta.description || '')) ? at(qn) : 0;
+      cmp = { ...(cmp || {}), chosen: opt.id, over: opts.filter(o => o.id !== opt.id).map(o => o.id), chosenAt: said || d.decision.at || Date.now() }; }
+    if (cmp) q.compare = cmp;
+  }
 }
 // A Thinking State becomes a conversation whose branches mirror the tree: each node is a branch holding the node's card,
 // so writing in a branch sends the path of cards from the root to that node (spec §13, as a conversation)
@@ -5958,6 +6054,7 @@ function bundleToConvo(r, files, own) {
     (kids.get(node.id) || []).forEach(k => visit(k, bid, mid));
   };
   visit(nodes.get(rootId), null, null);
+  cardChoices(convo, nodes);
   return convo;
 }
 async function exportThinkingState(id) {
