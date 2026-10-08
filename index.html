@@ -670,9 +670,9 @@ const whole = t => t.replace(/[\uD800-\uDBFF]$/, '');
 const firstWords = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); if (x.length <= max) return x; const cut = x.slice(0, max - 1).replace(/\s+\S*$/, ''); return whole(cut || x.slice(0, max - 1)) + '…'; };
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_MODELS = ['gemini-3.6-flash'];
-const APP_VERSION = '0.17.0';
+const APP_VERSION = '0.18.0';
 const FORMAT_PROFILE = '0.2'; // the Thinking State profile this version writes (spec/README.md)
-const BUILD = 'main 9a8a38d'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
+const BUILD = 'main 00dc7d8'; // replaced by scripts/build-demo.sh with the commit (and PR number) of the build
 
 const ICON = {
   branch: '<svg class="i" viewBox="0 0 24 24"><path d="M5 5v6a4 4 0 0 0 4 4h10M15 11l4 4-4 4"/></svg>',
@@ -1605,6 +1605,7 @@ $('#canvas').addEventListener('click', async e => {
     if (by && by.flagged) { toast(`Replaced by “${snippetOf(by.decision.summary, 60)}”: choose it again in Compare`); return; }
     m.flagged = !m.flagged;
     if (m.decision) { if (m.flagged) { delete m.decision.unflaggedAt; delete m.decision.dropped; } else m.decision.unflaggedAt = Date.now(); } // the person's act, for the log (spec §7.1)
+    if (m.decision && m.decision.summary) logAct(c, m.flagged ? { kind: 'flag', mid: m.id, was: 'parked', now: 'accepted' } : { kind: 'flag', mid: m.id, was: 'accepted', now: 'parked', why: 'unflagged' });
     // a flag makes the message a decision; its summary, a sentence and its details, is what later prompts carry (unflag keeps the text)
     if (m.flagged) { if (!m.decision) m.decision = { summary: '', at: Date.now() }; delete m.decision.replacedBy; if (!m.decision.summary) summarize(c, m); }
   }
@@ -2137,6 +2138,8 @@ function detailsIn(body) {
   return readDetails(out);
 }
 // Every change keeps the previous text (newest first, up to 10), so a decision can be rolled back
+// a flagged message's first wording makes the decision: log.md says so (W9)
+const decided = (c, m, had) => { if (!had && m.flagged && m.decision && m.decision.summary) logAct(c, { kind: 'decision', mid: m.id }); };
 function setDecision(m, summary, model, sig, details, asIs) {
   const d = m.decision || (m.decision = { summary: '', at: Date.now() }), next = !summary ? [] : asIs ? readDetails(details) : cleanDetails(details); // no sentence, no details; a version restored stays as it was
   if (d.summary && (d.summary !== summary || detailsOf(d).join('\n') !== next.join('\n'))) d.history = [{ summary: d.summary, ...(detailsOf(d).length ? { details: d.details } : {}), at: d.at, ...(d.model ? { model: d.model } : {}), ...(d.sig ? { sig: d.sig } : {}) }, ...(d.history || [])].slice(0, 10);
@@ -2157,7 +2160,8 @@ function textChanged(c, m, before) {
 function saveDecision(c, m) {
   const ta = document.querySelector(`.msg[data-mid="${m.id}"] .dec-area:not(.dec-det)`), dt = document.querySelector(`.msg[data-mid="${m.id}"] .dec-det`);
   if (!detailsOk((ta ? ta.value : '').trim(), dt ? dt.value : '')) { if (ta) ta.focus(); return; }
-  setDecision(m, clean(ta ? ta.value : '', 300), undefined, undefined, dt ? dt.value : detailsOf(m.decision));
+  const had = !!(m.decision && m.decision.summary);
+  setDecision(m, clean(ta ? ta.value : '', 300), undefined, undefined, dt ? dt.value : detailsOf(m.decision)); decided(c, m, had);
   decEdit = null; c.updated = Date.now(); save(); setTimeout(settled);
   rerenderMsg(c.id, m.id); scheduleLayout(); renderOutline(); renderDecCount();
 }
@@ -2199,8 +2203,8 @@ const PROMPTS = {
     + '- decision: one sentence, at most 30 words: what was decided or recommended, and the main reason. When the message weighs options, name the one it recommends, or the one the user chose, not the list.\n'
     + '- details: 2 to 5 short points, at most 25 words each, fewer for a short message: the specifics the decision rests on, such as conditions, numbers, names, limits, trade-offs and next steps. Take them from the message only, and leave out general advice and background.\n'
     + 'Write in the language of the message.' },
-  name: { version: 2, description: 'A short title for a conversation or a branch, from its first answer.',
-    text: 'Give the conversation, or the branch of it, named below a short title of 2 to 6 words, in the language of the conversation, like a heading. No quotes and no final period.' },
+  name: { version: 3, description: 'A short title for a conversation or a branch, from its first answer, and for a conversation what it is about.',
+    text: 'Give the conversation, or the branch of it, named below a short title of 2 to 6 words, in the language of the conversation, like a heading. No quotes and no final period. When you name the whole conversation, also give its description: one sentence, at most 25 words, in the same language, of what it works out or decides.' },
   options: { version: 2, description: 'The distinct options in an answer, or directions for a question, for Branch into options.',
     text: 'List the distinct options or directions worth exploring separately, 2 to 6 of them. Given a question and its answer, take them from the answer; if it has no distinct options, propose the most useful different directions to explore next. Given a question alone, the user wants to brainstorm it: propose genuinely different directions or answers. For each option give a title of at most 6 words, and "why": one short sentence on what makes it different from the others. Use the language of the conversation.' },
   compare: { version: 2, description: 'How the branches relate, and for alternatives a table by criteria with a suggested pick.',
@@ -2237,12 +2241,25 @@ const callPrompt = x => typeof x.prompt === 'string' ? x.prompt : x.request ? (t
 // Each helper call is kept on its conversation (F-30), and becomes a call entry of its session (spec §10.3, §14.8):
 // the task, the model, the prompt template it used, its tokens and a short text of what came back
 const usageOf = j => j && j.usageMetadata ? { prompt: j.usageMetadata.promptTokenCount | 0, answer: j.usageMetadata.candidatesTokenCount | 0, thoughts: j.usageMetadata.thoughtsTokenCount | 0 } : null;
-function recordCall(c, { task, model, prompt, tpl, mid, usage, output, error }) {
+function recordCall(c, { task, model, prompt, tpl, mid, usage, output, error, blocks }) {
   if (!c || db.convos[c.id] !== c) return null;
   const id = 'c' + uid();
-  c.calls = (c.calls || []).concat({ id, task, at: Date.now(), model, chars: prompt.length, ...(tpl ? { prompt: tpl } : {}), ...(mid ? { mid } : {}), ...(usage ? { usage } : {}),
+  c.calls = (c.calls || []).concat({ id, task, at: Date.now(), model, chars: prompt.length, ...(tpl ? { prompt: tpl } : {}), ...(mid ? { mid } : {}), ...(blocks ? { blocks } : {}), ...(usage ? { usage } : {}),
     ...(output ? { output: clean(output, 300) } : {}), ...(error ? { error: clean(error, 200) } : {}) }); // every one: a call entry stays in its session (S6)
   return id;
+}
+// A helper's prompt and what it was built from, as blocks by reference (spec §10.4): its task, then each part, which names the
+// messages it holds (their entries), the memory items or the decisions, so a call's request says what it read, not a copy of it
+function helperPrompt(task, parts) {
+  let prompt = task;
+  const blocks = [{ kind: 'prompt', chars: task.length }];
+  for (const x of parts.filter(Boolean)) {
+    prompt += x.text;
+    const msgs = (x.msgs || []).filter(Boolean);
+    blocks.push({ kind: x.kind, chars: x.text.length, ...(x.label ? { label: x.label } : {}), ...(msgs.length ? { ids: msgs.map(y => y.id), sigs: msgs.map(y => sigOf(y.text || '')) } : x.ids ? { ids: x.ids } : {}),
+      ...(x.items ? { items: x.items } : {}), ...(typeof x.keep === 'string' ? { text: x.keep } : {}) });
+  }
+  return { prompt, blocks };
 }
 const tok = n => (n | 0).toLocaleString('en-US');
 function callsLine(calls) {
@@ -2331,7 +2348,7 @@ async function summarize(c, m, force) {
   // the decision goes into every later prompt of the conversation, often without its message: so it keeps what was decided and
   // the specifics it rests on, read from the whole message (a long one's conclusion is often at its end)
   const tpl = promptFor('summary');
-  const prompt = `${tpl.text}\n\n` + (q ? `Question it answers:\n${withMarks(q).slice(0, 8000)}\n\n` : '') + `Message:\n${withMarks(m).slice(0, 40000)}`;
+  const { prompt, blocks } = helperPrompt(tpl.text, [q && { kind: 'history', text: `\n\nQuestion it answers:\n${withMarks(q).slice(0, 8000)}`, msgs: [q] }, { kind: 'message', text: `\n\nMessage:\n${withMarks(m).slice(0, 40000)}`, msgs: [m] }]);
   const sig = sigOf(m.text || ''); // the text being summarized, even if it changes while the helper writes
   const live = () => { const lc = db.convos[c.id]; return [lc || c, (lc && lc.messages[m.id]) || m]; };
   m.decision.pending = true; inflight++; holdConvo(c.id);
@@ -2355,11 +2372,11 @@ async function summarize(c, m, force) {
     // the conversation may have been replaced meanwhile (an Undo, another tab): write into the one shown now
     const [lc, lm] = live();
     const why = cutWhy(finishOf(j));
-    recordCall(lc, { task: 'summary', model, prompt, tpl: tpl.id, mid: m.id, usage: usageOf(j), output: text, ...(why ? { error: why } : text ? {} : { error: 'empty reply' }) });
+    recordCall(lc, { task: 'summary', model, prompt, blocks, tpl: tpl.id, mid: m.id, usage: usageOf(j), output: text, ...(why ? { error: why } : text ? {} : { error: 'empty reply' }) });
     if (!text || why) throw new Error('empty');
-    if (lm.flagged && lm.decision && (force || !lm.decision.summary)) setDecision(lm, text, model, sig, details); // unflagged meanwhile: no decision
+    if (lm.flagged && lm.decision && (force || !lm.decision.summary)) { const had = !!lm.decision.summary; setDecision(lm, text, model, sig, details); decided(lc, lm, had); } // unflagged meanwhile: no decision
   } catch (err) {
-    if (!/^empty$/.test(err.message)) recordCall(live()[0], { task: 'summary', model, prompt, tpl: tpl.id, mid: m.id, error: err.message });
+    if (!/^empty$/.test(err.message)) recordCall(live()[0], { task: 'summary', model, prompt, blocks, tpl: tpl.id, mid: m.id, error: err.message });
     toast('Couldn’t write the decision. Write it yourself in the Decision box.');
   }
   finally {
@@ -2400,10 +2417,10 @@ async function helperJSON(prompt, schema, task, at) {
     if (!found) throw new Error('the reply had no JSON');
     const data = JSON.parse(found[0]);
     let output = ''; try { output = at && at.output ? String(at.output(data) || '') : ''; } catch (e) {}
-    const call = at ? recordCall(db.convos[at.c.id] || at.c, { task, model, prompt, tpl: at.tpl, mid: at.mid, usage, output }) : null; // the live conversation
+    const call = at ? recordCall(db.convos[at.c.id] || at.c, { task, model, prompt, tpl: at.tpl, mid: at.mid, blocks: at.blocks, usage, output }) : null; // the live conversation
     return { data, model, call };
   } catch (err) {
-    if (at) recordCall(db.convos[at.c.id] || at.c, { task, model, prompt, tpl: at.tpl, mid: at.mid, usage, error: err.message });
+    if (at) recordCall(db.convos[at.c.id] || at.c, { task, model, prompt, tpl: at.tpl, mid: at.mid, blocks: at.blocks, usage, error: err.message });
     throw err;
   } finally { inflight--; setTimeout(settled); }
 }
@@ -2423,12 +2440,13 @@ async function findOptions() {
   if (!b) return;
   const q = m.role === 'model' ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
   const tpl = promptFor('options');
-  const prompt = m.role === 'model' ? `${tpl.text}\n\nQuestion:\n${withMarks(q).slice(0, 2000)}\n\nAnswer:\n${(m.text || '').slice(0, 8000)}` : `${tpl.text}\n\nQuestion:\n${withMarks(m).slice(0, 4000)}`;
+  const { prompt, blocks } = m.role === 'model' ? helperPrompt(tpl.text, [{ kind: 'history', text: `\n\nQuestion:\n${withMarks(q).slice(0, 2000)}`, msgs: [q] }, { kind: 'message', text: `\n\nAnswer:\n${(m.text || '').slice(0, 8000)}`, msgs: [m] }])
+    : helperPrompt(tpl.text, [{ kind: 'message', text: `\n\nQuestion:\n${withMarks(m).slice(0, 4000)}`, msgs: [m] }]);
   const schema = { type: 'OBJECT', required: ['options'], properties: { options: { type: 'ARRAY', items: { type: 'OBJECT', required: ['title', 'why'], properties: { title: { type: 'STRING' }, why: { type: 'STRING' } } } } } };
   const mine = opt;
   mine.loading = true; mine.error = ''; renderOptionsIfOpen();
   try {
-    const { data, model, call } = await helperJSON(prompt, schema, 'options', { c, mid: m.id, tpl: tpl.id, output: d => (d.options || []).map(o => o && o.title).filter(Boolean).join('; ') });
+    const { data, model, call } = await helperJSON(prompt, schema, 'options', { c, mid: m.id, tpl: tpl.id, blocks, output: d => (d.options || []).map(o => o && o.title).filter(Boolean).join('; ') });
     mine.call = call; mine.model = model;
     const found = (Array.isArray(data.options) ? data.options : []).map(o => ({ title: clean(o && o.title, 80), why: clean(o && o.why, 200), on: true })).filter(o => o.title).slice(0, 6);
     mine.items = found.concat(mine.items.filter(x => x.manual && x.title.trim()));
@@ -2603,7 +2621,7 @@ function renderCompare() {
   if (done && cmp.next) html += `<p class="cmp-pick"><b>Next:</b> ${esc(cmp.next)}</p>`;
   if (done) html += `<p class="set-hint">Compared ${esc(shortDate(cmp.at))} by ${esc(cmp.model)}.</p>`;
   if (done && cmp.request && Array.isArray(cmp.request.blocks)) html += `<details class="cmp-built"><summary>What the comparison was built from · ${esc(fmtChars(cmp.request.chars || 0))}</summary>
-    ${cmp.request.blocks.map(k => `<div>${esc(k.label)} · ${esc(fmtChars(k.chars || 0))}</div>${k.omitted ? '<p class="pv-empty">Memory is personal, so its text is left out of exported and shared copies.</p>' : `<pre>${esc(k.text || '')}</pre>`}`).join('')}</details>`;
+    ${cmp.request.blocks.map(k => `<div>${esc(k.label)} · ${esc(fmtChars(k.chars || 0))}</div>${k.omitted ? '<p class="pv-empty">Memory is personal, so its text is left out of exported and shared copies.</p>' : `<pre>${esc(builtText(c, k))}</pre>`}`).join('')}</details>`;
   if (!RO && hasKey) html += `<input class="cmp-focus" data-cmp-focus maxlength="300" placeholder="Compare by… (optional)" value="${esc(cmpView.focus != null ? cmpView.focus : cmp.focus || '')}" aria-label="Compare by">`;
   if (cmpView.loading) html += `<p class="pv-empty">Comparing ${kids.length} branches…</p>`;
   if (cmpView.error) html += `<p class="set-hint warn">${esc(cmpView.error)}</p>`;
@@ -2620,7 +2638,10 @@ function compareClick(e) {
   if (b.dataset.cmp === 'ai') compareWithAI(c, m);
   if (b.dataset.cmp === 'choose') chooseBranch(c, m, b.dataset.bid);
 }
-const CMP_KEYS = ['at', 'model', 'question', 'relation', 'relationWhy', 'criteria', 'cols', 'pick', 'next', 'focus', 'request', 'chosen', 'over', 'chosenAt', 'call', 'nodeId', 'before'];
+// a block of what a comparison was built from: its text, or what it names, the messages as they read now and the decisions
+const builtText = (c, k) => k.text || (Array.isArray(k.ids) ? k.ids.map(id => c.messages[id]).filter(Boolean).map(x => `${x.role === 'user' ? 'User' : 'Assistant'}: ${x.text || ''}`).join('\n\n')
+  : Array.isArray(k.nodes) ? k.nodes.map(n => Object.values(c.messages).find(x => x.nodeId === n)).filter(x => x && x.decision).map(x => decisionLine(x.decision)).join('\n') : '');
+const CMP_KEYS = ['at', 'model', 'by', 'question', 'relation', 'relationWhy', 'criteria', 'cols', 'pick', 'next', 'focus', 'request', 'chosen', 'over', 'chosenAt', 'call', 'nodeId', 'before'];
 // A comparison's finding in a line: its suggestion, or how the branches relate (spec §14.3)
 // a comparison replaced by Refresh, as it is kept: everything but its prompt, its own earlier ones and the choice made after it
 const earlierCmp = k => { const { request, before, chosen, focus, ...rest } = k; return rest; };
@@ -2636,12 +2657,13 @@ function compareBlocks(c, m, kids, focus, cols, at) {
   const path = b ? historyFor(c, b.id, m.id).filter(x => !x.hidden && !x.error && (x.text || imgsOf(x).length)).slice(-6) : [];
   const said = x => `${x.role === 'user' ? 'User' : 'Assistant'}: ${withMarks(x).slice(0, x.id === m.id ? 3000 : 1500)}`;
   const decisions = decisionsIn(c).filter(x => !under(x) && !(at && (x.decision.at || 0) > at && pathIds(c, x.id).includes(m.id))), memory = db.memory.filter(x => x.text && !x.off);
-  const blocks = [{ kind: 'fork', label: 'Conversation up to the fork', text: path.map(said).join('\n\n') }];
-  if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions in force:\n' + decisions.map(x => decisionLine(x.decision)).join('\n') });
-  if (memory.length) blocks.push({ kind: 'memory', label: `Memory · ${memory.length}`, text: 'About the user and their work:\n' + memory.map(x => `- ${x.text}`).join('\n') });
-  if (focus) blocks.push({ kind: 'focus', label: 'Compare by', text: `The user asks to compare by: ${focus}` });
-  kids.forEach((k, i) => { const col = cols && cols.find(x => x.bid === k.id);
-    blocks.push({ kind: 'branch', label: branchName(k, c), text: `=== Option ${i + 1}${cols ? '' : `: ${branchName(k, c)}`} ===\n${branchDigest(c, k, cols ? (col && col.mid) || null : undefined) || '(not answered yet)'}` }); });
+  // each with what it names (ref), for the call's request: the messages, the decisions and the memory items, by reference
+  const blocks = [{ kind: 'fork', label: 'Conversation up to the fork', text: path.map(said).join('\n\n'), ref: { msgs: path } }];
+  if (decisions.length) blocks.push({ kind: 'decisions', label: `Decisions · ${decisions.length}`, text: 'Decisions in force:\n' + decisions.map(x => decisionLine(x.decision)).join('\n'), ref: { ids: decisions.map(x => x.id) } });
+  if (memory.length) blocks.push({ kind: 'memory', label: `Memory · ${memory.length}`, text: 'About the user and their work:\n' + memory.map(x => `- ${x.text}`).join('\n'), ref: { items: memory.map(itemIdOf) } });
+  if (focus) blocks.push({ kind: 'focus', label: 'Compare by', text: `The user asks to compare by: ${focus}`, ref: { keep: `The user asks to compare by: ${focus}` } });
+  kids.forEach((k, i) => { const col = cols && cols.find(x => x.bid === k.id), upTo = cols ? (col && col.mid) || null : undefined;
+    blocks.push({ kind: 'branch', label: branchName(k, c), text: `=== Option ${i + 1}${cols ? '' : `: ${branchName(k, c)}`} ===\n${branchDigest(c, k, upTo) || '(not answered yet)'}`, ref: { msgs: branchMsgs(c, k).filter(x => !upTo || k.msgIds.indexOf(x.id) <= k.msgIds.indexOf(upTo)) } }); });
   blocks.forEach(x => { x.chars = x.text.length; });
   return blocks;
 }
@@ -2652,7 +2674,9 @@ async function compareWithAI(c, m) {
   const focus = clean(v.focus != null ? v.focus : (m.compare && m.compare.focus) || '', 300);
   const blocks = compareBlocks(c, m, kids, focus);
   const tpl = promptFor('compare');
-  const prompt = `${tpl.text}\n\n${blocks.map(x => x.kind === 'branch' ? x.text : `## ${x.label}\n${x.text}`).join('\n\n')}`;
+  // the call names what the comparison read: the entries up to the fork and each compared branch's, by reference (spec §14.3)
+  const { prompt, blocks: sent } = helperPrompt(tpl.text, blocks.map(x => ({ kind: x.kind === 'fork' ? 'history' : x.kind, label: x.label, text: `\n\n${x.kind === 'branch' ? x.text : `## ${x.label}\n${x.text}`}`, ...x.ref })));
+  blocks.forEach(x => { delete x.ref; });
   const schema = { type: 'OBJECT', required: ['question', 'relation', 'relation_why', 'criteria', 'options', 'pick'], properties: {
     question: { type: 'STRING' }, relation: { type: 'STRING', enum: Object.keys(RELATIONS) }, relation_why: { type: 'STRING' },
     criteria: { type: 'ARRAY', items: { type: 'OBJECT', required: ['name', 'why'], properties: { name: { type: 'STRING' }, why: { type: 'STRING' } } } },
@@ -2661,7 +2685,7 @@ async function compareWithAI(c, m) {
     next: { type: 'STRING' } } };
   v.loading = true; v.error = ''; renderCompareIfOpen();
   try {
-    const { data, model, call } = await helperJSON(prompt, schema, 'compare', { c, mid: m.id, tpl: tpl.id, output: d => [d.question, d.relation].filter(Boolean).join(' · ') });
+    const { data, model, call } = await helperJSON(prompt, schema, 'compare', { c, mid: m.id, tpl: tpl.id, blocks: sent, output: d => [d.question, d.relation].filter(Boolean).join(' · ') });
     const relation = Object.prototype.hasOwnProperty.call(RELATIONS, data.relation) ? data.relation : 'alternatives', alt = relation === 'alternatives';
     const criteria = alt ? (Array.isArray(data.criteria) ? data.criteria : []).map(x => ({ name: clean(x && (x.name || x), 60), why: clean(x && x.why, 140) })).filter(x => x.name).slice(0, 5) : [];
     if (alt && !criteria.length) throw new Error('no criteria in the reply');
@@ -2677,7 +2701,7 @@ async function compareWithAI(c, m) {
     const at = Date.now();
     m.compare = { at, model, question: clean(data.question, 200), relation, relationWhy: clean(data.relation_why, 240), criteria, cols,
       ...(pick ? { pick } : {}), ...(!alt && data.next ? { next: clean(data.next, 300) } : {}), ...(focus ? { focus } : {}), request,
-      ...(m.compare && m.compare.chosen ? { chosen: m.compare.chosen } : {}), ...(call ? { call } : {}),
+      ...(m.compare && m.compare.chosen ? { chosen: m.compare.chosen, ...(Array.isArray(m.compare.over) ? { over: m.compare.over } : {}), ...(m.compare.chosenAt ? { chosenAt: m.compare.chosenAt } : {}) } : {}), ...(call ? { call } : {}), // a refresh keeps the choice whole
       // the comparison this one replaces, kept whole (its table, what it suggested, what it compared) as a finding it supersedes, up to 5
       ...(m.compare && m.compare.nodeId ? { before: [{ ...earlierCmp(m.compare), text: findingText(c, m.compare, (m.compare.cols || []).length) }, ...(m.compare.before || [])] } : {}) }; // every refreshed Finding stays (W1)
     v.focus = null;
@@ -2754,6 +2778,7 @@ function chooseBranch(c, m, bid) {
   setDecision(target, clean(`Chose ${branchName(win, c)}${over}${why ? `: ${/[.!?…]$/.test(why.trim()) ? why.trim() : why.trim() + '.'}` : '.'}`, 300));
   target.decision.choice = m.id; // the choice at this fork (spec §14.4)
   delete target.decision.unflaggedAt; delete target.decision.dropped;
+  const acts = [logAct(c, { kind: 'decision', mid: target.id, qmid: m.id }), ...earlier.map(x => logAct(c, { kind: 'supersede', mid: target.id, old: x.id }))]; // W9, W2
   others.forEach(b => { b.collapsed = true; if (!cmp.relation || cmp.relation === 'alternatives') { b.status = 'rejected'; b.statusAt = Date.now(); } });
   win.collapsed = false; win.status = 'accepted'; win.statusAt = Date.now();
   m.compare = { ...cmp, chosen: bid, over: others.map(b => b.id), chosenAt: Date.now() }; // what it chose over, and when (F-28)
@@ -2766,6 +2791,7 @@ function chooseBranch(c, m, bid) {
     const lc = db.convos[c.id], lt = lc && lc.messages[target.id], lm = lc && lc.messages[m.id];
     if (!lt || !lm) return;
     if (!lt.decision || lt.decision.summary !== made) { toast('Can’t undo: the choice’s decision was edited since'); return; }
+    unlogAct(lc, acts);
     lt.flagged = undo.flagged;
     if (undo.decision) { lt.decision = undo.decision; delete lt.decision.pending; } else delete lt.decision; // never a "Writing…" put back
     undo.folds.forEach(([id, was]) => { const b = lc.branches[id]; if (b) b.collapsed = was; });
@@ -2854,13 +2880,17 @@ function statusClick(e) {
   const c = db.convos[statusFor.cid], b = c && c.branches[statusFor.bid]; if (!b) return;
   const was = statusOf(b);
   const drop = x.dataset.status === 'parked' || x.dataset.status === 'rejected', parked = drop ? parkChoices(c, b) : [], back = drop ? [] : unparkChoices(c, b);
+  const now = BRANCH_STATUS.some(y => y.id === x.dataset.status) ? x.dataset.status : 'open';
+  const acts = was === now ? [] : [logAct(c, { kind: 'status', bid: b.id, was, now }), // W9; a choice that holds while its option does (§14.4)
+    ...parked.map(id => logAct(c, { kind: 'flag', mid: id, was: 'accepted', now: 'parked', bid: optionOf(c, c.messages[id]).id, option: now })),
+    ...back.map(([id]) => logAct(c, { kind: 'flag', mid: id, was: 'parked', now: 'accepted', bid: optionOf(c, c.messages[id]).id, option: `${now} again` }))];
   setStatus(c, b, x.dataset.status);
   closeSheet();
   const cid = c.id, bid = b.id;
   if (was !== statusOf(b)) toast(`“${branchName(b, c)}” is ${statusLabel(b).toLowerCase()}${parked.length ? ': its choice is parked' : back.length ? ': its choice stands again' : ''}`, { label: 'Undo', fn: () => { const lc = db.convos[cid], lb = lc && lc.branches[bid]; if (!lb) return;
     parked.forEach(id => { const lm = lc.messages[id]; if (lm && lm.decision && lm.decision.dropped) { lm.flagged = true; delete lm.decision.unflaggedAt; delete lm.decision.dropped; } });
     back.forEach(([id, at]) => { const lm = lc.messages[id]; if (lm && lm.decision && lm.flagged) { lm.flagged = false; lm.decision.unflaggedAt = at; lm.decision.dropped = true; } });
-    setStatus(lc, lb, was); toast(`“${branchName(lb, lc)}” is ${statusLabel(lb).toLowerCase()} again`); } });
+    unlogAct(lc, acts); setStatus(lc, lb, was); toast(`“${branchName(lb, lc)}” is ${statusLabel(lb).toLowerCase()} again`); } });
 }
 function setStatus(c, b, st) {
   if (st === 'open' || !BRANCH_STATUS.some(x => x.id === st)) { delete b.status; delete b.statusAt; } else { b.status = st; b.statusAt = Date.now(); } // when, for the log (W9)
@@ -2876,9 +2906,9 @@ async function nameBranch(c, am) {
   if (b.msgIds.map(id => c.messages[id]).find(x => x && x.role === 'model') !== am) return;
   const q = historyFor(c, b.id, am.id).reverse().find(x => x.role === 'user');
   const tpl = promptFor('name');
-  const prompt = `${tpl.text}\n\nTo name: one branch of the conversation\n\nQuestion:\n${withMarks(q).slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
+  const { prompt, blocks } = helperPrompt(`${tpl.text}\n\nTo name: one branch of the conversation`, [{ kind: 'history', text: `\n\nQuestion:\n${withMarks(q).slice(0, 2000)}`, msgs: [q] }, { kind: 'message', text: `\n\nAnswer:\n${am.text.slice(0, 4000)}`, msgs: [am] }]);
   try {
-    const { data, model } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, tpl: tpl.id, output: d => d.title });
+    const { data, model } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, tpl: tpl.id, blocks, output: d => d.title });
     const name = clean(data && data.title, 60).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim();
     const lc = db.convos[c.id], lb = lc && lc.branches[b.id]; // the live ones: an Undo or another tab may have replaced them
     if (!name || !lb || lb.name) return;
@@ -2894,13 +2924,14 @@ async function nameConvo(c, am) {
   if (b.msgIds.map(id => c.messages[id]).find(x => x && x.role === 'model') !== am) return;
   const q = historyFor(c, b.id, am.id).reverse().find(x => x.role === 'user');
   const tpl = promptFor('name');
-  const prompt = `${tpl.text}\n\nTo name: the whole conversation\n\nQuestion:\n${withMarks(q).slice(0, 2000)}\n\nAnswer:\n${am.text.slice(0, 4000)}`;
+  const { prompt, blocks } = helperPrompt(`${tpl.text}\n\nTo name: the whole conversation`, [{ kind: 'history', text: `\n\nQuestion:\n${withMarks(q).slice(0, 2000)}`, msgs: [q] }, { kind: 'message', text: `\n\nAnswer:\n${am.text.slice(0, 4000)}`, msgs: [am] }]);
   try {
-    const { data, model } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' } } }, 'name', { c, mid: am.id, tpl: tpl.id, output: d => d.title });
-    const name = clean(data && data.title, 80).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim();
+    const { data, model } = await helperJSON(prompt, { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING' }, description: { type: 'STRING' } } }, 'name', { c, mid: am.id, tpl: tpl.id, blocks, output: d => d.title });
+    const name = clean(data && data.title, 80).replace(/^["“'«]+|["”'»]+$|\.$/g, '').trim(), about = clean(data && data.description, 240);
     const lc = db.convos[c.id]; // the live one: an Undo or another tab may have replaced it
     if (!name || !lc || lc.named) return;
     lc.title = name; lc.named = 'model'; lc.titleBy = `mindbough-demo/${model}`; lc.namedAt = Date.now(); // the root node's producer (P3)
+    if (about) lc.about = about; else delete lc.about; // and what the conversation is about, in its words, while its title is the helper's
     save(); paintConvoTitle(lc);
   } catch (err) { console.warn('naming:', err && err.message); } // the first words of the message stay
 }
@@ -3242,8 +3273,14 @@ function merge3(base, ours, theirs) {
   }
   // a branch taken whole from one side may list messages the other side deleted: they are gone
   for (const br of Object.values(out.branches || {})) if (Array.isArray(br.msgIds)) br.msgIds = br.msgIds.filter(id => out.messages[id]);
+  // both sides wrote in log.md: the other's lines, and this side's new ones under their days
+  if (typeof ours.log === 'string' && typeof theirs.log === 'string' && !same(ours.log, base.log) && !same(theirs.log, base.log)) {
+    const had = new Set(logItems(base.log).map(x => x.join('\n'))), there = new Set(logItems(theirs.log).map(x => x.join('\n')));
+    out.log = logItems(ours.log).reverse().filter(x => !had.has(x.join('\n')) && !there.has(x.join('\n'))).reduce((t, [day, line]) => logWith(t, day, line), theirs.log);
+  }
   return out;
 }
+const logItems = t => { const out = []; let day = ''; for (const l of String(t || '').split('\n')) { const d = l.match(/^## (.+)$/); if (d) day = d[1].trim(); else if (/^\* /.test(l)) out.push([day, l.slice(2)]); } return out; };
 function settled() {
   if (writing() || editingNow()) return;
   let merged = false;
@@ -3629,11 +3666,36 @@ function decisionsIn(c) { return Object.values(c.messages).filter(m => m.flagged
 // the other settled ground: accepted Constraints and Assumptions of an opened Thinking State, in force as its files say, without a
 // flag of their own (spec §13: In force)
 function groundIn(c) { return Object.values(c.messages).filter(m => m.node && ['Constraint', 'Assumption'].includes(m.node.type) && m.node.status === 'accepted' && !droppedAt(c, m.branchId)).sort((a, b) => a.ts - b.ts); }
-// { kind, label, text } blocks sent as the system instruction, in this order
-function systemBlocks(c, skip) {
+// An opened Thinking State's own memory (spec §9.1): its memory/ items, as their files came, that aren't copies of yours (an item its
+// requests name as yours, or one in your memory). It is this conversation's project memory: in its prompts and no other's
+function projectMemory(c) {
+  const files = c && c.keep && c.keep.files; if (!files) return [];
+  const yours = new Set(db.memory.map(x => x.itemId).filter(Boolean));
+  for (const m of Object.values(c.messages)) for (const b of (m.request && m.request.blocks) || []) if (b.kind === 'memory' && !b.project) (b.items || []).forEach(i => yours.add(i));
+  const line = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  return Object.entries(files).filter(([p, t]) => /^memory\/[0-9]{8}-[0-9a-z]{6}\.md$/.test(p) && typeof t === 'string' && !yours.has(p.slice(7, -3))).map(([p, t]) => {
+    const fm = frontmatter(t), th = fm && objOf(fm.meta.thinking) ? fm.meta.thinking : {};
+    if (!fm || !fm.meta.title || th.off === true) return null; // one switched off goes into no request (spec §9.2)
+    const res = /^https?:\/\//.test(String(fm.meta.resource || '')) ? String(fm.meta.resource) : '';
+    const cites = (Array.isArray(fm.meta.sources) ? fm.meta.sources : []).filter(objOf).map(x => (String(x.resource || '').match(/\/nodes\/([0-9]{8}-[0-9a-z]{6})\.md/) || [])[1]).filter(Boolean);
+    return { id: p.slice(7, -3), title: line(fm.meta.title), description: line(fm.meta.description), body: String(fm.body || '').trim().slice(0, 6000), resource: res, pinned: th.pinned === true, cites };
+  }).filter(Boolean).sort((a, b) => (a.id < b.id ? -1 : 1));
+}
+// { kind, label, text } blocks sent as the system instruction, in this order; path: the messages the request is built from
+function systemBlocks(c, skip, path) {
   const blocks = [];
   const memory = db.memory.filter(x => x.text && !x.off); // a fact you switched off is kept, and in no request (#146)
   if (memory.length) blocks.push({ kind: 'memory', label: `Memory · ${memory.length}`, text: 'Things to remember about the user and their work (shared by all conversations):\n' + memory.map(x => `- ${x.text}`).join('\n'), items: memory.map(itemIdOf) });
+  // this Thinking State's own memory, disclosed as spec §9.3 says: a fact whole; an item with a body whole when it is pinned or cites a
+  // node on the path (L1), else its index line (L0). One that came inside the first column's card, as before 0.18, is there already
+  const own = (c.root && Object.values(c.messages).some(m => m.node && m.branchId === c.root && /\*\*Project memory\*\*/.test(m.text || ''))) ? [] : projectMemory(c);
+  if (own.length) {
+    const on = new Set((path || []).filter(Boolean).flatMap(m => [m.node && m.node.id, c.branches[m.branchId] && c.branches[m.branchId].nodeId]).filter(Boolean));
+    const whole = x => !x.body || x.pinned || x.cites.some(n => on.has(n)), index = x => `- **${x.title}** — ${x.description}${x.resource ? ` (${x.resource})` : ''}`;
+    const l1 = own.filter(whole), l0 = own.filter(x => !whole(x));
+    if (l1.length) blocks.push({ kind: 'memory', project: true, level: 'L1', label: `Project memory · ${l1.length}`, text: 'This Thinking State’s own memory:\n' + l1.map(x => x.body ? `${index(x)}\n\n${x.body}` : index(x)).join('\n'), items: l1.map(x => x.id) });
+    if (l0.length) blocks.push({ kind: 'memory', project: true, level: 'L0', label: `Project memory, by title · ${l0.length}`, text: 'More of its memory, by title:\n' + l0.map(index).join('\n'), items: l0.map(x => x.id) });
+  }
   // an answer written again gets neither its own decision nor those made further down its branch: they grew from what is replaced
   const decisions = decisionsIn(c).filter(m => !skip || (m.id !== skip && !pathIds(c, m.id).includes(skip)));
   const ground = groundIn(c).filter(m => !skip || !pathIds(c, m.id).includes(skip)), n = decisions.length + ground.length;
@@ -3657,7 +3719,7 @@ function mergeTurns(msgs, all) {
 }
 function buildRequest(c, msgs, skip) {
   const turns = mergeTurns(msgs);
-  const system = systemBlocks(c, skip).filter(b => b.text);
+  const system = systemBlocks(c, skip, msgs).filter(b => b.text);
   const current = turns.length && turns[turns.length - 1].role === 'user' ? turns[turns.length - 1] : null;
   const past = current ? turns.slice(0, -1) : turns;
   const size = ts => ts.reduce((n, t) => n + t.text.length, 0);
@@ -3686,7 +3748,7 @@ const routeOk = r => !!(r && typeof r === 'object' && typeof r.rule === 'string'
 const routeOf = r => routeOk(r) ? { rule: r.rule.replace(/\s+/g, ' ').trim().slice(0, 200), model: r.model.trim().slice(0, 100), ...(r.effort ? { effort: r.effort } : {}) } : null;
 function requestRecord(req, model, route) {
   return { model, ...(route ? { route } : {}), at: Date.now(), chars: req.chars, blocks: req.blocks.map(b => b.text != null
-    ? { kind: b.kind, label: b.label, chars: b.chars, text: b.text, ...(b.items ? { items: b.items } : {}), ...(b.ids ? { ids: b.ids } : {}) }
+    ? { kind: b.kind, label: b.label, chars: b.chars, text: b.text, ...(b.items ? { items: b.items } : {}), ...(b.project ? { project: true, level: b.level } : {}), ...(b.ids ? { ids: b.ids } : {}) }
     : { kind: b.kind, label: b.label, chars: b.chars, ids: b.ids, ...(b.sigs ? { sigs: b.sigs } : {}), ...(b.files ? { files: b.files, tokens: b.tokens | 0 } : {}) }) };
 }
 
@@ -3977,7 +4039,7 @@ function pvRender(pv) {
       <p class="pv-meta"><span><b>${esc(r.model || 'unknown model')}</b>${pv.preview ? '' : ` · ${esc(when)}`}</span><span>${fmtChars(total)}</span>${tokens}</p>
       ${r.route && r.route.rule ? `<p class="pv-note pv-route"><b>Auto</b> picked it: ${esc(r.route.rule)}${pv.preview ? '' : '. The request keeps the rule.'}</p>` : ''}
       <div class="pbar" role="list">${sized.map(([b, i]) => `<button class="pbar-seg k-${b.kind}" style="flex-grow:${Math.max(b.kind === 'attachments' ? (b.tokens | 0) * 4 : b.chars, 1)}" data-block="${i}" title="${esc(b.label)} · ${b.kind === 'attachments' ? `≈ ${tok(b.tokens)} tokens` : fmtChars(b.chars)}" aria-label="${esc(b.label)}"></button>`).join('')}</div>
-      <div>${sized.map(([b, i]) => `<button class="pb-row" data-block="${i}"><span class="pb-dot k-${b.kind}"></span><span class="pb-main"><span class="pb-name">${esc(b.label)}</span>${BLOCK_WHY[b.kind] ? `<span class="pb-why">${pv.preview && b.kind === 'message' ? 'What you have typed' : BLOCK_WHY[b.kind]}</span>` : ''}</span><span class="pb-size">${b.kind === 'attachments' ? `≈ ${tok(b.tokens)} tokens` : `${fmtChars(b.chars)} · ${Math.round(b.chars * 100 / total)}%`}</span>${ICON.chevRight}</button>`).join('')}</div>
+      <div>${sized.map(([b, i]) => `<button class="pb-row" data-block="${i}"><span class="pb-dot k-${b.kind}"></span><span class="pb-main"><span class="pb-name">${esc(b.label)}</span>${BLOCK_WHY[b.kind] ? `<span class="pb-why">${pv.preview && b.kind === 'message' ? 'What you have typed' : b.project ? 'This Thinking State’s own memory, for its prompts only' : BLOCK_WHY[b.kind]}</span>` : ''}</span><span class="pb-size">${b.kind === 'attachments' ? `≈ ${tok(b.tokens)} tokens` : `${fmtChars(b.chars)} · ${Math.round(b.chars * 100 / total)}%`}</span>${ICON.chevRight}</button>`).join('')}</div>
       ${(() => { const ns = notSent(pv); return ns.length ? `<div class="pv-search pv-not"><b>Not in this prompt</b><ul>${ns.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="set-hint">Each branch sends only its own path, so the other lines of thinking don’t mix in.</p></div>` : ''; })()}
       ${web && !pv.search ? `<div class="pv-search pv-web"><b>${pv.preview ? 'Web search is on' : 'Web search was available'}</b><p class="set-hint">${pv.preview
         ? 'The model may search the web for the next answer. It decides itself whether it needs fresh facts, and what it finds is added inside the Gemini API.'
@@ -3994,7 +4056,7 @@ function pvRender(pv) {
     // an item not in your memory may be in the conversation's own Thinking State, as a sample's is: shown from there, marked so
     const kept = id => { const t = pv.c && pv.c.keep && pv.c.keep.files && pv.c.keep.files[`memory/${id}.md`], fm = typeof t === 'string' && frontmatter(t); return fm && fm.meta.description ? String(fm.meta.description) : ''; };
     const theirs = items.filter(i => !db.memory.some(x => x.itemId === i)).map(kept).filter(Boolean);
-    return `<p class="pv-empty">Memory is personal, so its text is left out of exported and shared copies.</p>`
+    return `<p class="pv-empty">${b.project ? 'Its items are this Thinking State’s own memory, in its <code>memory/</code> folder: the request names them, without their text.' : 'Memory is personal, so its text is left out of exported and shared copies.'}</p>`
       + (items.length ? `<p class="pv-meta"><span>It used ${items.length} memory item${items.length === 1 ? '' : 's'}${known.length < items.length ? `, ${items.length - known.length} of them not in your memory` : ''}</span></p>${known.length ? `<ul class="pv-used">${known.map(x => `<li>${esc(x.text)}</li>`).join('')}</ul>` : ''}` : '')
       + (theirs.length ? `<p class="pv-meta"><span>From this Thinking State, not in your memory:</span></p><ul class="pv-used">${theirs.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : '');
   }
@@ -4190,14 +4252,13 @@ function rememberFrom(c, m) {
 async function draftFact(c, m, draft) {
   const b = branchOf(c, m.id);
   const q = m.role === 'model' && b ? historyFor(c, b.id, m.id).reverse().find(x => x.role === 'user') : null;
-  const known = db.memory.filter(x => x.text).map(x => `- ${x.text}`).join('\n');
+  const facts = db.memory.filter(x => x.text && !x.off), known = facts.map(x => `- ${x.text}`).join('\n'); // a fact switched off is in no request (#146)
   const tpl = promptFor('memory');
-  const prompt = tpl.text
-    + (known ? `\n\nAlready in memory (don't repeat these):\n${known.slice(0, 3000)}` : '')
-    + (q ? `\n\nThe user's question:\n${withMarks(q).slice(0, 4000)}` : '') + `\n\nMessage (${m.role === 'user' ? 'by the user' : 'by the assistant'}):\n${withMarks(m).slice(0, 20000)}`;
+  const { prompt, blocks } = helperPrompt(tpl.text, [known && { kind: 'memory', text: `\n\nAlready in memory (don't repeat these):\n${known.slice(0, 3000)}`, items: facts.map(itemIdOf) },
+    q && { kind: 'history', text: `\n\nThe user's question:\n${withMarks(q).slice(0, 4000)}`, msgs: [q] }, { kind: 'message', text: `\n\nMessage (${m.role === 'user' ? 'by the user' : 'by the assistant'}):\n${withMarks(m).slice(0, 20000)}`, msgs: [m] }]);
   let text = '', model = '';
   try {
-    const r = await helperJSON(prompt, { type: 'OBJECT', required: ['fact'], properties: { fact: { type: 'STRING' } } }, 'memory', { c, mid: m.id, tpl: tpl.id, output: d => d.fact });
+    const r = await helperJSON(prompt, { type: 'OBJECT', required: ['fact'], properties: { fact: { type: 'STRING' } } }, 'memory', { c, mid: m.id, tpl: tpl.id, blocks, output: d => d.fact });
     text = clean(r.data && r.data.fact, 300); model = r.model;
   } catch (e) { toast('Couldn’t draft the fact: write it yourself'); }
   if (memDraft !== draft) return; // closed, or another draft opened meanwhile
@@ -4251,14 +4312,15 @@ function decisionsPanelClick(e) {
     case 'cancel': panelEdit = null; break;
     case 'save': { const ta = card.querySelector('.dp-area:not(.dp-det-area)'), dt = card.querySelector('.dp-det-area');
       if (!detailsOk(ta.value.trim(), dt.value)) { ta.focus(); return; }
-      setDecision(m, clean(ta.value, 300), undefined, undefined, dt.value); panelEdit = null; c.updated = Date.now(); save(); } break;
+      const had = !!(m.decision && m.decision.summary); setDecision(m, clean(ta.value, 300), undefined, undefined, dt.value); decided(c, m, had); panelEdit = null; c.updated = Date.now(); save(); } break;
     case 'auto': summarize(c, m, true).then(refreshDecisions); break;
     case 'hist': panelHist = panelHist === m.id ? null : m.id; break;
-    case 'reflag': m.flagged = true; delete m.decision.replacedBy; delete m.decision.unflaggedAt; delete m.decision.dropped; c.updated = Date.now(); save(); rerenderMsg(c.id, m.id); toast('Flagged again: it goes into the prompts'); break;
+    case 'reflag': m.flagged = true; delete m.decision.replacedBy; delete m.decision.unflaggedAt; delete m.decision.dropped; if (m.decision.summary) logAct(c, { kind: 'flag', mid: m.id, was: 'parked', now: 'accepted' }); c.updated = Date.now(); save(); rerenderMsg(c.id, m.id); toast('Flagged again: it goes into the prompts'); break;
     case 'restore': { const i = +btn.dataset.i, h = m.decision.history[i]; m.decision.history.splice(i, 1); setDecision(m, h.summary, h.model, h.sig, h.details, true); if (h.at) m.decision.at = h.at; c.updated = Date.now(); save(); break; } // Restore: the wording as it was, when and for which text (F-22)
-    case 'remove': { m.flagged = false; if (m.decision) m.decision.unflaggedAt = Date.now(); panelEdit = panelHist = null; c.updated = Date.now(); save(); rerenderMsg(c.id, m.id);
+    case 'remove': { m.flagged = false; if (m.decision) m.decision.unflaggedAt = Date.now(); const act = m.decision && m.decision.summary ? logAct(c, { kind: 'flag', mid: m.id, was: 'accepted', now: 'parked', why: 'unflagged' }) : null;
+      panelEdit = panelHist = null; c.updated = Date.now(); save(); rerenderMsg(c.id, m.id);
       const cid = c.id, mid = m.id;
-      toast('Unflagged: it leaves the prompts', { label: 'Undo', fn: () => { const lc = db.convos[cid], lm = lc && lc.messages[mid]; if (!lm) return; lm.flagged = true; if (lm.decision) delete lm.decision.unflaggedAt; lc.updated = Date.now(); save(); if (db.current === cid) { rerenderMsg(cid, mid); renderOutline(); renderDecCount(); } refreshDecisions(); toast('Flagged again'); } });
+      toast('Unflagged: it leaves the prompts', { label: 'Undo', fn: () => { const lc = db.convos[cid], lm = lc && lc.messages[mid]; if (!lm) return; lm.flagged = true; if (lm.decision) delete lm.decision.unflaggedAt; unlogAct(lc, act); lc.updated = Date.now(); save(); if (db.current === cid) { rerenderMsg(cid, mid); renderOutline(); renderDecCount(); } refreshDecisions(); toast('Flagged again'); } });
       break; }
   }
   refreshDecisions();
@@ -4310,7 +4372,7 @@ const HELP = [
     <li><b>Edit</b> your message → <b>Save in place</b>, or <b>Send as new branch</b> to keep the original. An edited answer is saved in place too. Either way the earlier text is kept: the message is tagged <b>edited</b>, and the tag opens its versions, with <b>Restore</b>. What the edit made out of date gets a line, on the first such message of the branch: <b>⋯</b> on it regenerates it in place, keeps it as valid or answers in a new branch, and the line moves on to the next.</li>
     <li>Tap an answer's model chip to regenerate it with any model. The old answer stays as a version (<b>N versions</b> next to the model); in the middle of a chain the new one opens in a new branch. Every version is kept, and <b>Restore</b> puts an earlier one back as the current text; each text shows once.</li>
     <li>The <b>status</b> chip on a branch: Open, Accepted, Parked or Rejected. The decisions of a parked or rejected branch, and of the branches under it, leave the prompts.</li>
-    <li>Branches name themselves; <b>⋯</b> on a column renames it (on a desktop, a double-click too; clear your name and the model's comes back) or deletes it, with the branches under it; <b>Undo</b> in the toast brings them back. The first column is the conversation itself: renaming it renames the conversation.</li>
+    <li>Branches name themselves; <b>⋯</b> on a column renames it (on a desktop, a double-click too; clear your name and the model's comes back) or deletes it, with the branches under it; <b>Undo</b> in the toast brings them back. The first column is the conversation itself: renaming it renames the conversation. The name the model gives a conversation comes with a sentence of what it is about, which its Thinking State keeps as its description.</li>
     <li>Fold a column with its chevron, or all of them with <b>Fold all</b> in the Branches panel: a folded column shows its last message and its decisions.</li>
     <li>Move around: <b>Back</b>, the ↳ badges and the breadcrumbs. On a phone the top bar names the conversation (tap it for the tree), and you swipe left into a branch that continues from here and right back to its parent; on a desktop, drag the canvas or scroll with Shift, drag a column's right edge to resize it, and use Alt+← / Alt+→. The <b>Branches panel</b> (right) shows the tree and a filter.</li></ul>` },
   { id: 'choose', title: 'Options, compare and choose', cards: ['F-27', 'F-28'], body: `
@@ -4330,23 +4392,31 @@ const HELP = [
     <p class="help-why">A cheap model for small jobs, and the tokens in view.</p>
     <ul><li>Pick the model for your next request above the message box. Each answer shows the model that wrote it, and its prompt view the tokens.</li>
     <li><b>Auto</b>, first in the model picker, lets rules pick the model of each request you send: the effort of the line you write in, if its node has one, images, a long message or code (the frontier model), a short follow-up (a fast one), else the balanced one. Each answer's prompt view says which rule picked its model, and the Thinking State keeps it.</li>
-    <li>Settings → <b>Models for helper tasks</b>: the model for decisions, names, options, comparisons and memory drafts. <b>Automatic</b> takes a light model, the newest Flash-Lite your key can reach; decisions, names and memory drafts can be turned off. It also sums this conversation's helper calls, and an answer's prompt view lists the ones made on it.</li>
+    <li>Settings → <b>Models for helper tasks</b>: the model for decisions, names, options, comparisons and memory drafts. <b>Automatic</b> takes a light model, the newest Flash-Lite your key can reach; decisions, names and memory drafts can be turned off. It also sums this conversation's helper calls, and an answer's prompt view lists the ones made on it. The Thinking State keeps what each call read, by reference: the messages, decisions and memory items it sent.</li>
     <li>Settings → <b>Instructions for helper tasks</b>: what each helper is told, such as <code>summary@2</code> for decisions. <b>See and edit</b>, then save, and they are yours, as <code>summary@2.1</code>: every later call follows them and names them, in its prompt view and in the Thinking State. <b>Use the built-in</b> brings the demo's back. Export all saves them in <code>home/prompts/</code>, your earlier versions too, so the instructions of every call can still be found, and an import asks before it uses them.</li>
     <li><b>Web</b> (the globe next to the model picker) is on from the start: the model may search the web with Google Search, inside the Gemini API, when a message needs fresh facts. The answer lists its sources, with Google's Search Suggestions under them, as the Gemini API terms ask (shown, never exported), and the prompt view says whether it searched. Turn it off for private topics, or to avoid search costs.</li></ul>` },
   { id: 'data', title: 'Your data and the format', cards: ['F-13', 'F-14', 'F-17', 'F-25', 'F-26'], body: `
     <p class="help-why">Yours: open files that any tool can read.</p>
     <ul><li>Everything is saved in this browser only (IndexedDB), as Thinking States: the files an export holds. It survives reloads, closed tabs and crashes, and two tabs on one conversation keep each other's changes. Clearing the site's data deletes it, and Safari may clear it after 7 days without a visit, so <b>Export all</b> is your backup. If the browser's storage doesn't answer, the demo says so and saves nothing until you reload.</li>
     <li>Menu → <b>⋯</b> on a conversation → <b>Export as a Thinking State</b>: a .zip with its thoughts, decisions and the facts remembered from it, and the session with the model, prompt and tokens of every answer.</li>
-    <li>What you do is data too: options answer a question, a comparison is a finding, a choice sets statuses, an answer keeps its versions, helper calls keep their tokens, a prompt names the facts it used, every node says who worded it, and <code>log.md</code> lists the decisions and branch statuses as they stand, each dated when it was made and naming who made it. Exports and shared pages leave the memory text out of the prompts, and name the decisions a prompt carried by their nodes; a conversation's export includes only the facts remembered from it.</li>
+    <li>What you do is data too: options answer a question, a comparison is a finding, a choice sets statuses, an answer keeps its versions, helper calls keep their tokens, a prompt names the facts it used, every node says who worded it, and <code>log.md</code> lists what you did as you did it, each decision, choice, status change and unflag, dated and naming who acted (<b>Undo</b> takes a line back). Exports and shared pages leave the memory text out of the prompts, and name the decisions a prompt carried by their nodes; a conversation's export includes only the facts remembered from it.</li>
     <li><b>Export all</b> saves one .zip: a Thinking State per conversation, and your memory as documents in <code>home/memory/</code>, each fact once.</li>
     <li>Images are files too: <code>sessions/files/</code>, each once, named by its hash, and the message names them. They are private with the session, and a shared page carries them inside it.</li>
     <li><b>⋯</b> → <b>Share as a read-only page</b> saves a read-only page of the conversation, with its decisions under ⚑ and a link to the demo. On that page, <b>Download Thinking State</b> gets the Thinking State it holds, the conversation as <b>Export all</b> writes it, without your facts, to import and continue.</li>
-    <li><b>Import</b> opens a Thinking State or an Export all (.zip), a shared page, or a .json from an earlier version. The demo's own Thinking States come back whole; one made by another tool opens as a tree of cards, each labelled with its node's type and author, to keep writing in, and its export keeps everything you didn't change there, byte for byte: authors, sources, tags, memory, log and session entries, in their order. Files the demo can't read are named, and kept as they are. A Thinking State that brings memory facts you don't have asks before adding them, an Export all too, as a restore: memory goes into every request, and anyone can make such a zip.</li></ul>` },
+    <li><b>Import</b> opens a Thinking State or an Export all (.zip), a shared page, or a .json from an earlier version. The demo's own Thinking States come back whole; one made by another tool opens as a tree of cards, each labelled with its node's type and author, to keep writing in, and its export keeps everything you didn't change there, byte for byte: authors, sources, tags, memory, log and session entries, in their order. Files the demo can't read are named, and kept as they are. Its own memory items are that conversation's project memory: its prompts carry them, a fact whole and a document by its title unless it is pinned or about the branch you are in, and no other conversation's. A Thinking State that brings memory facts you don't have asks before adding them, an Export all too, as a restore: memory goes into every request, and anyone can make such a zip.</li></ul>` },
   { id: 'help', title: 'About this help', cards: ['F-34'], body: `
     <p>This help changes with the app: every new feature adds itself here, and <b>What's new</b> lists what changed in this version, with earlier versions below it. Press <b>?</b> on a keyboard to open it.</p>` },
 ];
 // What each version brought, newest first; "Unreleased" is what this build adds before the next version (demo/CHANGELOG.md)
 const WHATS_NEW = [
+  { version: '0.18.0', items: [
+    'A Thinking State another tool wrote brings its own memory: that conversation’s prompts carry it as project memory, documents by their titles unless they matter where you are, and no other conversation’s.',
+    'A conversation’s name now comes with a sentence of what it is about, and its Thinking State is described by it.',
+    '<code>log.md</code> is written as you act: each decision, choice and status change gets a line when it happens, and keeps it.',
+    'Fixed: a choice made without <b>Compare with AI</b> stayed chosen only until a reload, and <b>Refresh</b> after a choice forgot what it was made over.',
+    'A comparison is read from its Finding, and a choice from its Decision: the export keeps no copy of them, and a comparison another tool wrote under the choice point shows as the comparison.',
+    'Every helper call says what it read: the Thinking State names the messages, decisions and memory items each one sent, and a memory draft no longer sends a fact you switched off.',
+  ] },
   { version: '0.17.0', items: [
     'Fixed: memory you switched off stays out of every prompt, a message you excluded stays out of its node, and imports keep what helper calls and comparisons were built from.',
     'A choice is parked when you park or reject its branch, as the format says: it leaves the prompts, and the choice point is open again until you open the branch again.',
@@ -4848,6 +4918,11 @@ function bundleFilesOf(c, quiet, mine, all) {
     return { ...(b.status && b.statusAt ? { statusAt: isoOf(b.statusAt) } : {}), ...(Object.keys(kept).length ? { kept } : {}) }; };
   // a saved comparison, as the demo keeps it, on its choice point: what it was built from by size and by reference, its texts only
   // in the demo's own storage (an export left out a copy of the prompt, a quarter of a session)
+  // a choice point is its node and its comparison is its Finding (spec §14.2, §14.3): what the comparison read is on its call (§10.4).
+  // Only a comparison made before 0.18, whose call doesn't say what it read, keeps that here: its prompt's blocks and what you asked
+  const legacyCmp = cmp => { const call = cmp && cmp.nodeId && cmp.call && (c.calls || []).find(y => y.id === cmp.call);
+    if (!cmp || (call && (Array.isArray(call.blocks) || (call.request && Array.isArray(call.request.blocks) && call.request.blocks.length > 1))) || !(cmp.request || cmp.focus)) return null;
+    return cmpOut({ nodeId: cmp.nodeId, ...(cmp.request ? { request: cmp.request } : {}), ...(cmp.focus ? { focus: cmp.focus } : {}) }); };
   const cmpOut = cmp => { const x = JSON.parse(JSON.stringify(Object.fromEntries(CMP_KEYS.filter(k => cmp[k] !== undefined).map(k => [k, cmp[k]])))); if (!mine) { omitMemory(x.request); if (x.request && Array.isArray(x.request.blocks)) x.request.blocks.forEach(b => { if (b.kind !== 'memory') delete b.text; }); } return x; };
   const keep = (v, t) => { const id = typeof v === 'string' && TS_ID.test(v) && !taken.has(v) ? v : nodeId(t, taken); taken.add(id); return id; };
   const iso = isoOf;
@@ -4897,7 +4972,7 @@ function bundleFilesOf(c, quiet, mine, all) {
     const wordedAt = Math.max((isRoot ? c.namedAt || c.created : b.namedAt || b.created) || 0, firstLines.length ? lead.editedAt || lead.ts || 0 : 0);
     nodes.push({ id, type: nd ? nd.type : isRoot && c.rootType ? c.rootType : 'Thought', title: whole((title || id).slice(0, 120)),
       ...(nd ? (renamedCard ? { generated: { by: nameByOf(b), at: iso(b.namedAt || b.created) } } : {}) : { generated: { by: titleBy, at: iso(wordedAt) } }), ...(revs.length ? { revisions: revs } : {}),
-      description: nd ? cardWords || nd.description || nd.title : eo ? `Edited version of: ${snippetOf(eo.text, 200)}` : desc0,
+      description: nd ? cardWords || nd.description || nd.title : eo ? `Edited version of: ${snippetOf(eo.text, 200)}` : isRoot && c.named === 'model' && typeof c.about === 'string' && c.about ? c.about : desc0, // P2: one producer for title and description
       status: nd ? (b.parentId && statusOf(b) !== (cardStatus || 'open') ? statusOf(b) : cardFlag || nd.status) : b.parentId ? statusOf(b) : 'open', links: nd ? nd.links : null, parent: b.parentId ? byBranch[b.parentId] : null, sources: [{ resource: b.parentId ? `/${session}#br${b.id}` : b.msgIds[0] ? `/${session}#${b.msgIds[0]}` : `/${session}`, title: 'Where this branch starts in the session', ...(!nd && !eo && lead && lead.text ? { quote: { mid: lead.id, text: desc0 } } : {}) }],
       body: said.length ? `## Conversation\n\n${transcript(said)}` : '', ...(Object.keys(lateOf(b, msgs)).length ? { ext: lateOf(b, msgs) } : {}) });
     // a flag is an open Decision, a summary accepts it, and an unflagged one keeps its summary as a parked Decision (spec §7.1)
@@ -4941,7 +5016,7 @@ function bundleFilesOf(c, quiet, mine, all) {
       // its option dropped, it is open again, as mb.py writes it then, and the answer it had joins its revisions
       ...(dm ? { ...answered(dm), revisions: [qRev] } : pkAt ? { description: `Open again: ${name(chosen)} was dropped.`, generated: { by: 'human:me', at: iso(pkAt) }, revisions: [answered(pk), qRev] } : { description: qOpen, generated: qGen }),
       status: dm ? 'accepted' : 'open', parent: byBranch[b.id],
-      sources: [{ resource: `/${session}#${m.id}`, title: 'Where the options start' }], ext: { pattern: 'choice', ...(cmp ? { compare: cmpOut(cmp) } : {}) }, body: '' });
+      sources: [{ resource: `/${session}#${m.id}`, title: 'Where the options start' }], ...(legacyCmp(cmp) ? { ext: { compare: legacyCmp(cmp) } } : {}), body: '' });
     for (const k of opts) {
       const n = nodeOf(byBranch[k.id]);
       n.parent = qid; n.links = { ...(n.links || {}), answers: [qid] };
@@ -4975,10 +5050,9 @@ function bundleFilesOf(c, quiet, mine, all) {
       const last = y => { const kb = c.branches[y.bid]; return (y.mid && kb.msgIds.includes(y.mid) && c.messages[y.mid]) || [...kb.msgIds].reverse().map(id => c.messages[id]).find(mm => mm && versionsOf(mm)[0].ts <= x.at + 999); };
       const lk = { ...(pick ? { supports: [byBranch[pick.bid]] } : {}), ...(links || {}) };
       return { id, type: 'Finding', title: sentenceOf(desc, 120) || 'A comparison', description: desc, status, parent: qid, links: Object.keys(lk).length ? lk : null,
-        generated: { by: `mindbough-demo/${x.model || 'unknown'}`, at: iso(x.at) },
+        generated: { by: actorOk(x.by) ? x.by : `mindbough-demo/${x.model || 'unknown'}`, at: iso(x.at) }, // another tool's comparison stays its own
         sources: [...(x.call && (c.calls || []).some(y => y.id === x.call) ? [{ resource: `/${session}#${x.call}`, title: 'The helper call that compared' }] : []),
           ...xcols.filter(last).map(y => ({ resource: `/${session}#${last(y).id}`, title: name(y.bid), mid: last(y).id, sig: y.mid === last(y).id ? y.sig : null, at: x.at }))],
-        ext: { pattern: 'comparison' },
         body: [`**Relation:** ${x.relation || 'alternatives'}${x.relationWhy ? `: ${cell(x.relationWhy)}` : ''}`, '', ...table, '',
           pick ? `**Suggested:** ${link(pick.bid)}${pick.why ? `: ${cell(pick.why)}` : ''}` : x.next ? `**Next:** ${cell(x.next)}` : ''].join('\n').trim() };
     };
@@ -4988,7 +5062,7 @@ function bundleFilesOf(c, quiet, mine, all) {
       before.forEach(x => { taken.add(x.nodeId); const xcols = (x.cols || []).filter(y => byBranch[y.bid] && c.branches[y.bid]);
         nodes.push(xcols.length > 1 ? finding(x, xcols, x.nodeId, 'superseded')
           : { id: x.nodeId, type: 'Finding', title: sentenceOf(x.text, 120) || 'An earlier comparison', description: String(x.text || ''), status: 'superseded', parent: qid, // kept before 0.11 as its line only
-            generated: { by: `mindbough-demo/${x.model || 'unknown'}`, at: iso(x.at) }, sources: [], ext: { pattern: 'comparison' }, body: '' }); });
+            generated: { by: `mindbough-demo/${x.model || 'unknown'}`, at: iso(x.at) }, sources: [], body: '' }); });
       nodes.push(finding(cmp, cols, fid, 'open', before.length ? { supersedes: before.map(x => x.nodeId) } : null));
     }
     const dn = dm && nodeOf(dm.nodeId);
@@ -5026,7 +5100,7 @@ function bundleFilesOf(c, quiet, mine, all) {
     { name: 'memory/index.md', text: '# Memory\n\n' + (items.length ? items.map(x => `* [${x.title}](${x.id}.md) - ${x.description}${itemPinned(x.fact) ? ' · pinned' : ''}${x.fact.off ? ' · off' : ''}`).join('\n') : '_Nothing remembered yet: `mb.py remember <dir> "…" --by <actor>` adds an item._') + '\n' },
     ...items.map(x => ({ name: `memory/${x.id}.md`, text: itemDoc(x.fact, ['---', 'type: Memory', `title: ${yq(x.title)}`, `description: ${yq(x.description)}`, `generated: { by: ${yq(x.by || 'human:me')}, at: ${yq(x.at)} }`,
       ...(x.sources.length ? ['sources:', ...x.sources.map(y => `  - { resource: ${yq(y.resource)}, title: ${yq(y.title)} }`)] : []), ...x.thinking, '---', ''].join('\n')) })),
-    { name: 'log.md', text: logOf(c, nodes, byBranch, iso) },
+    { name: 'log.md', text: logText(c, nodes, byBranch, iso) },
     { name: '.gitignore', text: '# raw interaction logs may hold private data\nsessions/\n.mindbough/\n' },
     { name: session, text: sessionLines(c, byBranch, nodes, iso, mine) },
     ...nodes.map(n => ({ name: `nodes/${n.id}.md`, text: nodeDoc(n, new Set(nodes.map(x => x.id))) })),
@@ -5082,6 +5156,50 @@ function keepIn(k, files, all) {
 }
 // The log of a conversation's Thinking State (OKF §9, spec W9): what the person decided and when, newest first. Decisions and choices
 // date from their first summary, a supersession from the later choice, a status from when it was set, and the start from the session
+// log.md is written as acts happen (spec W9), as mb.py writes it: each act is queued with what it names, and the next save writes it in,
+// under its day, newest first, once its nodes have their ids; a line stays as written. Undo takes its line back. A conversation
+// without a log yet starts from the state as it stands (logOf), and one opened from another tool adds its lines to that tool's log
+function logAct(c, act) { const id = uid(); (c.logq = c.logq || []).push({ id, at: Date.now(), ...act }); return id; }
+function unlogAct(c, ids) {
+  for (const id of [].concat(ids || []).filter(Boolean)) {
+    c.logq = (c.logq || []).filter(x => x.id !== id);
+    const done = (c.logDone || []).find(x => x.id === id);
+    if (done && typeof c.log === 'string') { c.log = logWithout(c.log, done.line); c.logDone = c.logDone.filter(x => x !== done); }
+  }
+}
+function logWith(text, day, line) {
+  const t = typeof text === 'string' && text ? text : '# Thinking log\n', head = `## ${day}\n`;
+  if (t.includes(head)) return t.replace(head, `${head}* ${line}\n`);
+  const k = t.search(/^## /m);
+  return k < 0 ? `${t.replace(/\n+$/, '')}\n\n${head}* ${line}\n` : `${t.slice(0, k).replace(/\n+$/, '')}\n\n${head}* ${line}\n\n${t.slice(k)}`;
+}
+function logWithout(text, line) {
+  const ls = text.split('\n'), k = ls.indexOf(`* ${line}`);
+  if (k < 0) return text;
+  ls.splice(k, 1);
+  const out = []; // a day left without lines goes, with the blank line after it
+  for (let i = 0; i < ls.length; i++) {
+    if (/^## /.test(ls[i]) && !/^\* /.test(ls.slice(i + 1).find(l => l.trim()) || '')) { while (i + 1 < ls.length && !ls[i + 1].trim()) i++; continue; }
+    out.push(ls[i]);
+  }
+  return out.join('\n');
+}
+function logText(c, nodes, byBranch, iso) {
+  if (typeof c.log !== 'string') c.log = logOf(c, nodes, byBranch, iso);
+  const byId = new Map(nodes.map(n => [n.id, n])), link = n => `[${String(n.title).replace(/[[\]]/g, '')}](/nodes/${n.id}.md)`;
+  const decOf = mid => c.messages[mid] && byId.get(c.messages[mid].nodeId), branchOf = bid => c.branches[bid] && byId.get(byBranch[bid]);
+  const lineOf = x => {
+    const d = x.mid && decOf(x.mid), b = x.bid && branchOf(x.bid);
+    if (x.kind === 'decision') { const q = x.qmid && c.messages[x.qmid] && byId.get(c.messages[x.qmid].choiceId); return d && `**Decision**: ${link(d)}${q ? ` answers ${link(q)}` : ''}, by human:me.`; }
+    if (x.kind === 'supersede') { const old = decOf(x.old); return d && old && `**Supersession**: ${link(d)} supersedes ${link(old)}, by human:me.`; }
+    if (x.kind === 'status') return b && `**Status**: ${link(b)} ${x.was} → ${x.now}, by human:me.`;
+    if (x.kind === 'flag') return d && `**Status**: ${link(d)} ${x.was} → ${x.now}, by human:me${x.option ? `: its option ${b ? link(b) : 'a branch'} is ${x.option}.` : x.why ? `: ${x.why}.` : '.'}`;
+    return null;
+  };
+  for (const x of c.logq || []) { const line = lineOf(x); if (!line) continue; c.log = logWith(c.log, iso(x.at).slice(0, 10), line); c.logDone = [{ id: x.id, line }, ...(c.logDone || [])].slice(0, 50); }
+  c.logq = [];
+  return c.log;
+}
 function logOf(c, nodes, byBranch, iso) {
   const link = n => `[${String(n.title).replace(/[[\]]/g, '')}](/nodes/${n.id}.md)`, byId = new Map(nodes.map(n => [n.id, n])), out = [];
   for (const n of nodes) {
@@ -5101,7 +5219,7 @@ function logOf(c, nodes, byBranch, iso) {
     const opt = m.decision.dropped && m.decision.choice && optionOf(c, m), on = opt && byId.get(byBranch[opt.id]);
     out.push([iso(m.decision.unflaggedAt), `* **Status**: ${link(byId.get(m.nodeId))} is parked, by human:me: ${on ? `its option ${link(on)} was dropped` : 'unflagged'}.`]);
   }
-  out.push([iso(c.created), `* **Creation**: “${String(c.title).replace(/[[\]]/g, '')}”, a conversation in the Mindbough demo, by human:me.`]);
+  out.push([iso(c.created), '* **Creation**: A conversation started in the Mindbough demo, by human:me.']);
   out.forEach(x => { x[1] = x[1].replace(/([.!?…])\]\(([^)]*)\)\.$/, '$1]($2)'); }); // a title that ends a sentence ends the line
   out.sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0));
   const days = []; for (const [t, line] of out) { const d = t.slice(0, 10); if (!days.length || days[days.length - 1][0] !== d) days.push([d, []]); days[days.length - 1][1].push(line); }
@@ -5117,7 +5235,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
   const block = (b, at) => {
     const out = { kind: b.was || b.kind, chars: b.chars | 0, ...(b.label && !b.auto ? { label: b.label } : {}) }; // a kind the demo doesn't know, and no label it didn't have
     if (b.kind === 'memory') { // memory is personal and spans conversations: an export names the items, and leaves their text out
-      const refs = Array.isArray(b.items) && b.items.length ? { memory: b.items.map(i => 'home:' + i), level: 'L1' } : {};
+      const refs = Array.isArray(b.items) && b.items.length ? { memory: b.items.map(i => (b.project ? i : 'home:' + i)), level: b.project && b.level === 'L0' ? 'L0' : 'L1' } : {}; // the bundle's own by their ids (spec §10.4)
       return mine && !b.omitted && b.text ? { ...out, ...refs, text: b.text } : { ...out, ...refs, omitted: true };
     }
     if (b.kind === 'decisions') { // the decisions sent, by their messages: a summary edited since still names its Decision (spec §10.4)
@@ -5215,7 +5333,7 @@ function sessionLines(c, byBranch, nodes, iso, mine) {
     const m = x.mid && c.messages[x.mid], chars = x.chars | 0;
     const after = x.request ? x.after : m ? m.id : null; // the message it served (spec §10.3); a call read back keeps its line as it was
     lines.push({ id: x.id, kind: 'call', task: x.task, ...(m ? { node: byBranch[m.branchId] } : x.mid ? {} : { node: byBranch[c.root] }), ...(after ? { after } : {}), by: `mindbough-demo/${x.model || 'unknown'}`, at: iso(x.at), // on a message deleted since: no node
-      request: x.request || { at: iso(x.at), chars, ...(callPrompt(x) ? { prompt: callPrompt(x) } : {}), blocks: [{ kind: 'prompt', chars }] }, // as read
+      request: x.request || { at: iso(x.at), chars, ...(callPrompt(x) ? { prompt: callPrompt(x) } : {}), blocks: Array.isArray(x.blocks) && x.blocks.length ? x.blocks.map(b => block(b, x.at)) : [{ kind: 'prompt', chars }] }, // as read; a call before 0.18 kept no blocks
       ...(x.usage ? { usage: { input: x.usage.prompt | 0, output: x.usage.answer | 0, ...(x.usage.thoughts ? { reasoning: x.usage.thoughts | 0 } : {}) } } : {}),
       // a memory draft is about you: like memory itself, its text stays out of exports and shared pages
       ...(x.output && (mine || x.task !== 'memory') ? { output: x.output } : {}), ...(x.error ? { error: x.error } : {}),
@@ -5509,7 +5627,8 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     const known = BLOCK_KINDS.includes(b.kind), was = !known && typeof b.kind === 'string' && /^[a-z][a-z0-9_.:-]{0,40}$/i.test(b.kind) ? { was: b.kind } : {};
     const out = { kind: known ? b.kind : 'harness', ...was, ...(b.label ? {} : { auto: true }), label: String(b.label || (Object.prototype.hasOwnProperty.call(names, b.kind) ? names[b.kind] : typeof b.kind === 'string' && b.kind ? b.kind : 'Block')).slice(0, 80), chars: Math.max(0, b.chars | 0) };
     if (b.kind === 'memory') {
-      const items = (Array.isArray(b.memory) ? b.memory : []).map(String).filter(x => /^home:[0-9]{8}-[0-9a-z]{6}$/.test(x)).map(x => x.slice(5)).slice(0, 200), it = items.length ? { items } : {};
+      const ids = (Array.isArray(b.memory) ? b.memory : []).map(String), project = ids.length > 0 && ids.every(x => TS_ID.test(x)); // the bundle's own, or yours (home:)
+      const items = (project ? ids : ids.filter(x => /^home:[0-9]{8}-[0-9a-z]{6}$/.test(x)).map(x => x.slice(5))).slice(0, 200), it = items.length ? { items, ...(project ? { project: true, level: b.level === 'L0' ? 'L0' : 'L1' } : {}) } : {};
       return own && !b.omitted && typeof b.text === 'string' ? { ...out, text: b.text, ...it } : { ...out, text: '', omitted: true, ...it };
     }
     if (b.kind === 'attachments' && Array.isArray(b.entries)) { // the images a prompt sent, by their messages (spec §10.4)
@@ -5624,6 +5743,9 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     if (gen.at && (nid === rootId || b.name)) holder.namedAt = time(gen.at, b.created);
     if (nid === rootId) {
       if (tool) { convo.titleBy = gby; convo.named = 'model'; }
+      // a description that isn't its first message's first sentence is the words of whoever named it (B10)
+      { const dsc = String(node.meta.description || ''), lead = first ? sentenceOf(first.text || first.error || '', 240) || 'A branch.' : 'An empty branch.';
+        if (tool && dsc && dsc !== lead && !/^An? (empty )?branch\.$/.test(dsc)) convo.about = dsc.slice(0, 240); }
       if (b.msgIds.length && /^[A-Z][A-Za-z]{1,30}$/.test(String(node.meta.type || ''))) convo.rootType = String(node.meta.type); // kept as it was; an empty one gets it from its first message
     } else {
       const given = tool && b.name ? { title: b.name, by: gby } : titles.find(x => !x.by.startsWith('human:'));
@@ -5632,6 +5754,9 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     convo.branches[id] = b;
   }
   convo.root = bidOf(rootId); convo.focus = convo.root;
+  // its log: the demo's own goes on as written; another tool's is that tool's, and the demo's lines join it (keepOf)
+  { const lf = files.find(f => f.name === `${r.dir}log.md`), mine = own || /^mindbough-demo\//.test(String(isObj(r.fm.meta.generated) ? r.fm.meta.generated.by : ''));
+    convo.log = mine && lf && typeof lf.text === 'string' ? lf.text : mine ? undefined : '# Thinking log\n'; }
   const entryIds = new Set(entries.map(y => y.id));
   convo.calls = entries.filter(e => e.kind === 'call' && typeof e.task === 'string').map(e => {
     const ext = isObj(e.ext) && isObj(e.ext['mindbough-demo']) ? e.ext['mindbough-demo'] : {}, mid = (ext.message && toMsg.get(String(ext.message))) || (typeof e.after === 'string' && toMsg.get(e.after)); // after, or as calls before 0.17 said
@@ -5642,15 +5767,19 @@ function sessionToConvo(r, files, nodes, rootId, own) {
       ...(typeof ext.message === 'string' && ENTRY_ID.test(ext.message) ? { extMessage: ext.message } : {}), // as calls before 0.17 also named it: their lines stay (S6)
       ...(isObj(e.request) ? { request: e.request } : {}) }; // its request as written, blocks and all
   });
-  // choice points and comparisons the demo wrote (spec §14): data about the conversation, not cards of their own
+  // choice points (spec §14.2), known by their structure: a Question anchored at a message of this session that the branches continuing
+  // from it answer; exports before 0.18 also marked them (pattern). Data about the conversation, not cards of their own
   const used = new Set(withEntries), choiceAt = new Map();
   const anchorOf = node => { const src = (Array.isArray(node.meta.sources) ? node.meta.sources : []).filter(isObj).map(x => String(x.resource || '')).find(x => x.startsWith(`/sessions/${sid}.jsonl#`)); return src && toMsg.get(src.split('#')[1]); };
+  const extOf = node => { const x = th(node).ext; return isObj(x) && isObj(x['mindbough-demo']) ? x['mindbough-demo'] : {}; };
+  const answered = new Map(); for (const nid of withEntries) { const n = nodes.get(nid); for (const q of (n && Array.isArray(th(n).answers) ? th(n).answers : []).map(String)) answered.set(q, (answered.get(q) || []).concat(nid)); }
   for (const [nid, node] of nodes) {
-    const x = th(node).ext, pattern = isObj(x) && isObj(x['mindbough-demo']) ? x['mindbough-demo'].pattern : null;
-    if (pattern !== 'choice' && pattern !== 'comparison') continue;
-    used.add(nid);
-    const mid = pattern === 'choice' && anchorOf(node);
-    if (mid && convo.messages[mid]) { convo.messages[mid].choiceId = nid; choiceAt.set(nid, mid); if (isObj(x['mindbough-demo'].compare)) convo.messages[mid].compare = x['mindbough-demo'].compare; } // a comparison on its choice point (S6)
+    const pattern = extOf(node).pattern;
+    if (pattern === 'comparison') used.add(nid); // an earlier export's own, even one this version can't read
+    if (withEntries.has(nid) || String(node.meta.type) !== 'Question' || !(pattern === 'choice' || answered.has(nid))) continue;
+    const mid = anchorOf(node);
+    if (!mid || !convo.messages[mid]) { if (pattern === 'choice') used.add(nid); continue; }
+    used.add(nid); convo.messages[mid].choiceId = nid; choiceAt.set(nid, mid);
   }
   // decisions anchored at entries (spec §7.1, §10.6)
   for (const [nid, node] of nodes) {
@@ -5678,6 +5807,74 @@ function sessionToConvo(r, files, nodes, rootId, own) {
     const t = th(node), by = String(node.meta.type) === 'Decision' && decAt.get(nid);
     if (!by || !Array.isArray(t.supersedes)) continue;
     t.supersedes.map(String).map(x => decAt.get(x)).filter(x => x && x !== by && x.decision && !x.flagged).forEach(x => { x.decision.replacedBy = by.id; });
+  }
+  // a comparison is its Finding (spec §14.3): the relation, the table or the list, the suggestion, what it compared, when and by whom;
+  // what its call read is on the call (§10.4), and the choice made here is its Decision and the choice point's wording (§14.4)
+  const unesc = t => String(t).replace(/\\\|/g, '|').trim();
+  const cellsOf = l => { // a table row's cells, split at each | that isn't written \| (no lookbehind: Safari before 16.4 can't parse one)
+    const t = l.trim(); if (t.length < 2 || !t.startsWith('|') || !t.endsWith('|')) return null;
+    const x = t.slice(1, -1), out = []; let cur = '';
+    for (let i = 0; i < x.length; i++) { if (x[i] === '\\' && x[i + 1] === '|') { cur += '\\|'; i++; } else if (x[i] === '|') { out.push(unesc(cur)); cur = ''; } else cur += x[i]; }
+    out.push(unesc(cur)); return out;
+  };
+  const linked = t => (String(t).match(/^\[[^\]]*\]\(\/nodes\/([0-9]{8}-[0-9a-z]{6})\.md\)$/) || [])[1];
+  const genOf = n => isObj(n.meta.generated) ? n.meta.generated : {};
+  const colBid = nid => nid && withEntries.has(nid) && convo.branches[bidOf(nid)] ? bidOf(nid) : null;
+  const findingCmp = (fid, f) => {
+    const lines = String(f.body || '').split('\n').map(l => l.trim()), rel = lines.map(l => l.match(/^\*\*Relation:\*\* (alternatives|complementary|sequential|unrelated)(?:: (.*))?$/)).find(Boolean);
+    if (!rel) return null;
+    const rows = lines.map(cellsOf).filter(Boolean).filter(r => !r.every(x => /^:?-{3,}:?$/.test(x))), head = rows.length && !rows[0][0] ? rows[0].slice(1).map(linked) : null;
+    let criteria = [], cols;
+    if (head && head.length > 1 && head.every(Boolean)) {
+      const body = rows.slice(1), short = body.find(r => r[0] === '**In short**'), crit = body.filter(r => r !== short);
+      criteria = crit.map(r => { const k = r[0].match(/^\*\*(.*)\*\*(?: \((.*)\))?$/); return k ? { name: k[1], why: k[2] || '' } : null; });
+      if (criteria.some(x => !x)) return null;
+      cols = head.map((nid, j) => ({ bid: colBid(nid), cells: crit.map(r => r[j + 1] || ''), summary: short ? short[j + 1] || '' : '' }));
+    } else cols = lines.map(l => l.match(/^- \[[^\]]*\]\(\/nodes\/([0-9]{8}-[0-9a-z]{6})\.md\): ?(.*)$/)).filter(Boolean).map(k => ({ bid: colBid(k[1]), cells: [], summary: unesc(k[2]) })); // the list: no criteria
+    if (cols.length < 2 || cols.some(x => !x.bid) || new Set(cols.map(x => x.bid)).size < cols.length) return null;
+    // each branch's answer as it was compared: the entry its source names
+    const srcs = (Array.isArray(f.meta.sources) ? f.meta.sources : []).filter(isObj).map(x => String(x.resource || '')).filter(x => x.startsWith(`/sessions/${sid}.jsonl#`)).map(x => x.split('#')[1]);
+    for (const e of srcs) { const mid = toMsg.get(e), m = mid && convo.messages[mid], col = m && cols.find(y => y.bid === m.branchId && !y.mid); if (col) { col.mid = mid; col.sig = sigOf(entryText.get(e) || ''); } }
+    const call = srcs.find(e => convo.calls.some(y => y.id === e)), g = genOf(f), by = actorOk(String(g.by || '')) ? String(g.by) : '';
+    const pk = lines.map(l => l.match(/^\*\*Suggested:\*\* (\[[^\]]*\]\(\/nodes\/[0-9]{8}-[0-9a-z]{6}\.md\))(?:: (.*))?$/)).find(Boolean), nx = lines.map(l => l.match(/^\*\*Next:\*\* (.*)$/)).find(Boolean);
+    const pb = pk && colBid(linked(pk[1]));
+    return { at: time(g.at, now), model: modelOf(by) || 'unknown', ...(by && !by.startsWith('mindbough-demo/') ? { by } : {}), relation: rel[1], relationWhy: rel[2] ? unesc(rel[2]) : '', criteria, cols,
+      ...(pb && cols.some(y => y.bid === pb) ? { pick: { bid: pb, why: pk[2] ? unesc(pk[2]) : '' } } : {}), ...(nx ? { next: unesc(nx[1]) } : {}), ...(call ? { call } : {}), nodeId: fid };
+  };
+  // what a call read (0.18 on), as the comparison's "built from": its blocks, the messages, decisions and memory they name
+  const readOf = x => { const r = x && x.request; if (!isObj(r) || !Array.isArray(r.blocks) || r.blocks.length < 2) return null;
+    return { chars: Math.max(0, r.chars | 0), ...(typeof r.prompt === 'string' ? { prompt: r.prompt } : {}), blocks: r.blocks.filter(isObj).slice(0, 20).map(b => {
+      const base = { kind: b.kind === 'prompt' ? 'task' : String(b.kind || 'other'), label: String(b.label || (b.kind === 'prompt' ? 'Task' : b.kind === 'history' ? 'Conversation up to the fork' : String(b.kind || 'Block'))).slice(0, 80), chars: Math.max(0, b.chars | 0) };
+      if (b.kind === 'memory') return { ...base, text: '', omitted: true };
+      if (Array.isArray(b.entries)) return { ...base, text: '', ids: b.entries.map(String).map(e => toMsg.get(e)).filter(Boolean) };
+      if (Array.isArray(b.nodes)) return { ...base, text: '', nodes: b.nodes.map(String).filter(y => TS_ID.test(y)) };
+      return { ...base, text: typeof b.text === 'string' ? b.text : '' };
+    }) }; };
+  for (const [qid, mid] of choiceAt) {
+    const m = convo.messages[mid], q = nodes.get(qid), legacy = isObj(extOf(q).compare) ? extOf(q).compare : null, at = n => time(genOf(n).at, 0);
+    const read = [...nodes].filter(([id, n]) => String(n.meta.type) === 'Finding' && String(th(n).parent) === qid && !withEntries.has(id)).map(([id, n]) => ({ id, n, cmp: findingCmp(id, n) }));
+    const cur = read.filter(x => x.cmp && th(x.n).status !== 'superseded').sort((a, b) => at(b.n) - at(a.n))[0] || null;
+    const earlier = cur ? read.filter(x => th(x.n).status === 'superseded' && (x.cmp || !String(x.n.body || '').trim())).sort((a, b) => at(b.n) - at(a.n)) : [];
+    [cur, ...earlier].filter(Boolean).forEach(x => used.add(x.id));
+    let cmp = cur ? cur.cmp : legacy && Array.isArray(legacy.cols) ? legacy : null; // older exports kept it on the choice point only
+    if (cur) {
+      // what the choice point asks, when the helper that compared worded it: its title is the comparison's question
+      const revs = (Array.isArray(th(q).revisions) ? th(q).revisions : []).filter(isObj), first = revs.length ? (isObj(revs[revs.length - 1].generated) ? revs[revs.length - 1].generated : {}) : genOf(q);
+      if (modelOf(first.by)) cmp.question = String(q.meta.title || '');
+      if (earlier.length) cmp.before = earlier.map(x => ({ ...(x.cmp ? earlierCmp(x.cmp) : {}), nodeId: x.id, at: at(x.n), model: modelOf(genOf(x.n).by) || 'unknown', text: String(x.n.meta.description || '') }));
+      const built = readOf(cmp.call && convo.calls.find(y => y.id === cmp.call)), fb = built && built.blocks.find(y => y.kind === 'focus');
+      if (built) { cmp.request = built; if (fb && /^The user asks to compare by: /.test(fb.text)) cmp.focus = fb.text.slice(29); }
+      else if (legacy && legacy.nodeId === cur.id) { if (isObj(legacy.request)) cmp.request = legacy.request; if (typeof legacy.focus === 'string') cmp.focus = legacy.focus; }
+    }
+    // the choice made here: its Decision, the option it is in, the options it was made over, and when (the choice point's wording)
+    const ds = Object.values(convo.messages).filter(x => x.decision && x.decision.choice === mid && !x.decision.replacedBy);
+    const d = ds.find(x => x.flagged) || ds.find(x => x.decision.dropped) || ds[0], opt = d && optionOf(convo, d);
+    if (opt) {
+      const answer = [genOf(q), ...(Array.isArray(th(q).revisions) ? th(q).revisions : []).filter(isObj).map(r => isObj(r.generated) ? { ...r.generated, description: r.description } : {})];
+      const said = /^Answered: /.test(String(q.meta.description || '')) ? genOf(q) : answer.slice(1).find(r => /^Answered: /.test(String(r.description || '')));
+      cmp = { ...(cmp || {}), chosen: opt.id, over: (answered.get(qid) || []).map(bidOf).filter(b => b !== opt.id && convo.branches[b]), chosenAt: time(said && said.at, d.decision.at) };
+    }
+    if (cmp) m.compare = cmp;
   }
   // the facts remembered from this conversation's messages (spec §9); the demo's own storage keeps them with the settings
   for (const f of own ? [] : files) {
@@ -5733,12 +5930,7 @@ function bundleToConvo(r, files, own) {
     if (p && n.id !== rootId) { if (!kids.has(p)) kids.set(p, []); kids.get(p).push(n); }
   }
   kids.forEach(list => list.sort((a, b) => (a.id < b.id ? -1 : 1)));
-  // project memory: its items, one per memory/<id>.md (their index lines)
-  const itemLines = files.filter(f => f.name.startsWith(r.dir + 'memory/') && /^memory\/[^/]+\.md$/.test(f.name.slice(r.dir.length)) && !/\/index\.md$/.test(f.name))
-    .sort((a, b) => (a.name < b.name ? -1 : 1)).map(f => frontmatter(f.text)).filter(x => x && x.meta.title && !(objOf(x.meta.thinking) && x.meta.thinking.off === true)) // one switched off goes into no request (spec §9.2)
-    .map(x => `- **${String(x.meta.title).replace(/\s+/g, ' ')}** — ${String(x.meta.description || '').replace(/\s+/g, ' ')}${x.meta.resource && /^https?:\/\//.test(String(x.meta.resource)) ? ` ([link](${x.meta.resource}))` : ''}`);
-  const memory = itemLines.join('\n');
-  const now = Date.now(), convo = { title: String(r.fm.meta.title || 'Thinking State'), created: now, updated: now, root: 'b' + rootId, focus: 'b' + rootId, branches: {}, messages: {} };
+  const now = Date.now(), convo = { title: String(r.fm.meta.title || 'Thinking State'), created: now, updated: now, root: 'b' + rootId, focus: 'b' + rootId, branches: {}, messages: {}, log: '# Thinking log\n' }; // its log is its author's
   if (TS_ID.test(String(r.fm.meta.thinking.id || ''))) convo.tsId = String(r.fm.meta.thinking.id);
   const visit = (node, parentBranch, parentMsg) => {
     const bid = 'b' + node.id, mid = 'm' + node.id, t = th(node);
@@ -5748,7 +5940,7 @@ function bundleToConvo(r, files, own) {
     const linkLine = Object.entries(links).filter(([, v]) => v.length).map(([k, v]) => `${k.replace('_', ' ')} → ${v.map(x => nodes.has(x) ? `“${title(nodes.get(x))}”` : x).join(', ')}`).join('; ');
     const srcs = (Array.isArray(node.meta.sources) ? node.meta.sources : []).filter(x => x && /^https?:\/\//.test(String(x.resource))).map(x => `[${String(x.title || x.resource).replace(/[[\]]/g, '')}](${x.resource})`);
     const text = [`**${type} · ${status}** — ${title(node)}`, desc && desc !== title(node) ? `_${desc}_` : '',
-      node.id === rootId && memory ? `**Project memory**\n\n${memory}` : '', node.body,
+      node.body,
       linkLine ? `Links: ${linkLine}` : '', srcs.length ? `Sources: ${srcs.join(', ')}` : ''].filter(Boolean).join('\n\n');
     const accepted = type === 'Decision' && status === 'accepted', parked = type === 'Decision' && status === 'parked';
     const history = (Array.isArray(t.revisions) ? t.revisions : []).filter(r => r && r.description).slice(0, 10).map(r => {
@@ -5864,6 +6056,7 @@ function adoptConvo(src) {
   const titlesOf = (v, max) => (Array.isArray(v) ? v : []).filter(x => isObj(x) && typeof x.title === 'string' && x.title.trim()).slice(0, 10).map(x => ({ title: str(x.title, max).trim(), at: time(x.at), ...(actorOk(x.by) ? { by: x.by } : {}) }));
   if (/^[A-Z][A-Za-z]{1,30}$/.test(String(src.rootType || ''))) c.rootType = src.rootType; // the root's type, set once
   if (c.named === 'model' && actorOk(src.titleBy)) c.titleBy = src.titleBy;
+  if (c.named === 'model' && typeof src.about === 'string' && src.about.trim()) c.about = str(src.about, 240).trim(); // what it is about, in its namer's words
   if (titlesOf(src.titles, 80).length) c.titles = titlesOf(src.titles, 80);
   if (okTime(src.namedAt)) c.namedAt = src.namedAt;
   for (const k of order) {
@@ -5929,9 +6122,11 @@ function adoptConvo(src) {
   const cmpOf = k => {
     const cols = (Array.isArray(k.cols) ? k.cols : []).filter(isObj).slice(0, 8).map(y => ({ bid: bid.get(y.bid), cells: (Array.isArray(y.cells) ? y.cells : []).slice(0, 5).map(v => str(v, 140)), summary: str(y.summary, 240),
       ...(typeof y.mid === 'string' && mid.has(y.mid) ? { mid: mid.get(y.mid), ...(typeof y.sig === 'string' && /^[0-9a-z]{1,8}:\d{1,7}$/.test(y.sig) ? { sig: y.sig } : {}) } : {}) })).filter(y => y.bid);
-    if (cols.length < 2) return null;
-    const blocks = isObj(k.request) && Array.isArray(k.request.blocks) ? k.request.blocks.filter(isObj).slice(0, 20).map(b => ({ kind: /^[a-z]{2,12}$/.test(b.kind) ? b.kind : 'other', label: str(b.label, 80), text: str(b.text, 20000), chars: count(b.chars), ...(b.omitted ? { omitted: true } : {}) })) : [];
-    return { at: time(k.at), model: str(k.model, 100), question: str(k.question, 200), relation: Object.prototype.hasOwnProperty.call(RELATIONS, k.relation) ? k.relation : 'alternatives', relationWhy: str(k.relationWhy, 240),
+    // a choice made without a comparison is the choice alone (F-28)
+    if (cols.length < 2) return bid.has(k.chosen) ? { chosen: bid.get(k.chosen), ...(Array.isArray(k.over) ? { over: k.over.filter(x => bid.has(x)).map(x => bid.get(x)), chosenAt: time(k.chosenAt) } : {}) } : null;
+    const blocks = isObj(k.request) && Array.isArray(k.request.blocks) ? k.request.blocks.filter(isObj).slice(0, 20).map(b => ({ kind: /^[a-z]{2,12}$/.test(b.kind) ? b.kind : 'other', label: str(b.label, 80), text: str(b.text, 20000), chars: count(b.chars), ...(b.omitted ? { omitted: true } : {}),
+      ...(Array.isArray(b.ids) ? { ids: b.ids.filter(x => mid.has(x)).map(x => mid.get(x)).slice(0, 2000) } : {}), ...(Array.isArray(b.nodes) ? { nodes: b.nodes.filter(tsIdOk).slice(0, 200) } : {}) })) : []; // by reference (0.18 on)
+    return { at: time(k.at), model: str(k.model, 100), ...(actorOk(k.by) ? { by: k.by } : {}), question: str(k.question, 200), relation: Object.prototype.hasOwnProperty.call(RELATIONS, k.relation) ? k.relation : 'alternatives', relationWhy: str(k.relationWhy, 240),
       criteria: (Array.isArray(k.criteria) ? k.criteria : []).map(y => typeof y === 'string' ? { name: y, why: '' } : y).filter(isObj).slice(0, 5).map(y => ({ name: str(y.name, 60), why: str(y.why, 140) })).filter(y => y.name), cols,
       ...(isObj(k.pick) && bid.has(k.pick.bid) ? { pick: { bid: bid.get(k.pick.bid), why: str(k.pick.why, 240) } } : {}), ...(k.next ? { next: str(k.next, 300) } : {}), ...(k.focus ? { focus: str(k.focus, 300) } : {}),
       request: { chars: count(isObj(k.request) ? k.request.chars : 0), ...(isObj(k.request) && typeof k.request.prompt === 'string' && /^[a-z][a-z0-9-]*@[0-9A-Za-z.+-]{1,20}$/.test(k.request.prompt) ? { prompt: k.request.prompt } : {}), blocks },
@@ -5961,7 +6156,7 @@ function adoptConvo(src) {
         if (pairs.some(([, g]) => g)) out.sigs = pairs.map(([, g]) => g);
       }
       if (Array.isArray(b.nodes)) out.nodes = b.nodes.filter(x => typeof x === 'string' && TS_ID.test(x)).slice(0, 200); // the Decisions it named
-      if (b.kind === 'memory' && Array.isArray(b.items)) out.items = b.items.filter(x => typeof x === 'string' && TS_ID.test(x)).slice(0, 200);
+      if (b.kind === 'memory' && Array.isArray(b.items)) { out.items = b.items.filter(x => typeof x === 'string' && TS_ID.test(x)).slice(0, 200); if (b.project) { out.project = true; out.level = b.level === 'L0' ? 'L0' : 'L1'; } }
       if (b.kind === 'attachments') { out.files = (Array.isArray(b.files) ? b.files : []).filter(x => typeof x === 'string' && SHA_HEX.test(x)).slice(0, 64); out.tokens = count(b.tokens); }
       return out;
     });
@@ -5994,6 +6189,7 @@ function adoptConvo(src) {
     ...(typeof x.extMessage === 'string' && ENTRY_ID.test(x.extMessage) ? { extMessage: x.extMessage } : {}),
     ...((r => r ? { request: r } : {})(isObj(x.request) ? jsonOf(x.request, 50000) : null)) })); // a request as read: only ever written back
   if (calls.length) c.calls = calls;
+  if (typeof src.log === 'string') c.log = src.log.slice(0, 500000).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ''); // its log.md as written (W9): text, written back as a file
   const callId = new Map(srcCalls.map((x, i) => [x.id, calls[i].id]));
   Object.values(c.branches).forEach(b => { if (b.option && b.option.call) { if (callId.get(b.option.call)) b.option.call = callId.get(b.option.call); else delete b.option.call; } });
   Object.values(c.messages).forEach(m => { if (m.compare && m.compare.call) { if (callId.get(m.compare.call)) m.compare.call = callId.get(m.compare.call); else delete m.compare.call; } });
